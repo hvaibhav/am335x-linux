@@ -15,7 +15,6 @@
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
 #include <linux/irqdomain.h>
-#include <linux/i2c/twl.h>
 
 #include <mach/hardware.h>
 #include <asm/hardware/gic.h>
@@ -36,34 +35,6 @@ static void __init omap_init_irq(void)
 	of_irq_init(irq_match);
 }
 
-/*
- * XXX: Still needed to boot until the i2c & twl driver is adapted to
- * device-tree
- */
-#ifdef CONFIG_ARCH_OMAP4
-static struct twl4030_platform_data sdp4430_twldata = {
-	.irq_base	= TWL6030_IRQ_BASE,
-	.irq_end	= TWL6030_IRQ_END,
-};
-
-static void __init omap4_i2c_init(void)
-{
-	omap4_pmic_init("twl6030", &sdp4430_twldata);
-}
-#endif
-
-#ifdef CONFIG_ARCH_OMAP3
-static struct twl4030_platform_data beagle_twldata = {
-	.irq_base	= TWL4030_IRQ_BASE,
-	.irq_end	= TWL4030_IRQ_END,
-};
-
-static void __init omap3_i2c_init(void)
-{
-	omap3_pmic_init("twl4030", &beagle_twldata);
-}
-#endif
-
 static struct of_device_id omap_dt_match_table[] __initdata = {
 	{ .compatible = "simple-bus", },
 	{ .compatible = "ti,omap-infra", },
@@ -77,21 +48,6 @@ static void __init omap_generic_init(void)
 	of_platform_populate(NULL, omap_dt_match_table, NULL, NULL);
 }
 
-#ifdef CONFIG_ARCH_OMAP4
-static void __init omap4_init(void)
-{
-	omap4_i2c_init();
-	omap_generic_init();
-}
-#endif
-
-#ifdef CONFIG_ARCH_OMAP3
-static void __init omap3_init(void)
-{
-	omap3_i2c_init();
-	omap_generic_init();
-}
-#endif
 
 #ifdef CONFIG_SOC_OMAP2420
 static const char *omap242x_boards_compat[] __initdata = {
@@ -143,7 +99,7 @@ DT_MACHINE_START(OMAP3_DT, "Generic OMAP3 (Flattened Device Tree)")
 	.init_early	= omap3430_init_early,
 	.init_irq	= omap_init_irq,
 	.handle_irq	= omap3_intc_handle_irq,
-	.init_machine	= omap3_init,
+	.init_machine	= omap_generic_init,
 	.timer		= &omap3_timer,
 	.dt_compat	= omap3_boards_compat,
 	.restart	= omap_prcm_restart,
@@ -162,7 +118,7 @@ DT_MACHINE_START(OMAP4_DT, "Generic OMAP4 (Flattened Device Tree)")
 	.init_early	= omap4430_init_early,
 	.init_irq	= omap_init_irq,
 	.handle_irq	= gic_handle_irq,
-	.init_machine	= omap4_init,
+	.init_machine	= omap_generic_init,
 	.timer		= &omap4_timer,
 	.dt_compat	= omap4_boards_compat,
 	.restart	= omap_prcm_restart,
