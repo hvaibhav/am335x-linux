@@ -1081,6 +1081,13 @@ config MFD_PALMAS
 	  If you say yes here you get support for the Palmas
 	  series of PMIC chips from Texas Instruments.
 
+config MFD_PALMAS_GPADC
+	bool "Support for the GPADC on the Palmas series chips"
+	depends on MFD_PALMAS
+	help
+	  If you say yes here you get support for the GPADC on
+	  Palmas series of PMIC chips from Texas Instruments.
+
 config MFD_VIPERBOARD
         tristate "Support for Nano River Technologies Viperboard"
 	select MFD_CORE
