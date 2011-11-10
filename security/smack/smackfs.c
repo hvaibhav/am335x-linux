@@ -102,6 +102,9 @@ static int smk_cipso_doi_value = SMACK_CIPSO_DOI_DEFAULT;
 
 const char *smack_cipso_option = SMACK_CIPSO_OPTION;
 
+
+#define	SEQ_READ_FINISHED	((loff_t)-1)
+
 /*
  * Values for parsing cipso rules
  * SMK_DIGITLEN: Length of a digit field in a rule.
@@ -354,12 +357,10 @@ static ssize_t smk_write_load_list(struct file *file, const char __user *buf,
 
 	rc = count;
 	/*
-	 * If this is "load" as opposed to "load-self" and a new rule
-	 * it needs to get added for reporting.
 	 * smk_set_access returns true if there was already a rule
 	 * for the subject/object pair, and false if it was new.
 	 */
-	if (load && !smk_set_access(rule, rule_list, rule_lock)) {
+	if (!smk_set_access(rule, rule_list, rule_lock)) {
 		smlp = kzalloc(sizeof(*smlp), GFP_KERNEL);
 		if (smlp != NULL) {
 			smlp->smk_rule = rule;
@@ -376,12 +377,12 @@ out:
 	return rc;
 }
 
+
 /*
- * Core logic for smackfs seq list operations.
+ * Seq_file read operations for /smack/load
  */
 
-static void *smk_seq_start(struct seq_file *s, loff_t *pos,
-				struct list_head *head)
+static void *load_seq_start(struct seq_file *s, loff_t *pos)
 {
 	struct list_head *list;
 
@@ -389,7 +390,7 @@ static void *smk_seq_start(struct seq_file *s, loff_t *pos,
 	 * This is 0 the first time through.
 	 */
 	if (s->index == 0)
-		s->private = head;
+		s->private = &smack_rule_list;
 
 	if (s->private == NULL)
 		return NULL;
@@ -403,36 +404,16 @@ static void *smk_seq_start(struct seq_file *s, loff_t *pos,
 	return list;
 }
 
-static void *smk_seq_next(struct seq_file *s, void *v, loff_t *pos,
-				struct list_head *head)
+static void *load_seq_next(struct seq_file *s, void *v, loff_t *pos)
 {
 	struct list_head *list = v;
 
-	if (list_is_last(list, head)) {
+	if (list_is_last(list, &smack_rule_list)) {
 		s->private = NULL;
 		return NULL;
 	}
 	s->private = list->next;
 	return list->next;
-}
-
-static void smk_seq_stop(struct seq_file *s, void *v)
-{
-	/* No-op */
-}
-
-/*
- * Seq_file read operations for /smack/load
- */
-
-static void *load_seq_start(struct seq_file *s, loff_t *pos)
-{
-	return smk_seq_start(s, pos, &smack_rule_list);
-}
-
-static void *load_seq_next(struct seq_file *s, void *v, loff_t *pos)
-{
-	return smk_seq_next(s, v, pos, &smack_rule_list);
 }
 
 static int load_seq_show(struct seq_file *s, void *v)
@@ -465,11 +446,16 @@ static int load_seq_show(struct seq_file *s, void *v)
 	return 0;
 }
 
+static void load_seq_stop(struct seq_file *s, void *v)
+{
+	/* No-op */
+}
+
 static const struct seq_operations load_seq_ops = {
 	.start = load_seq_start,
 	.next  = load_seq_next,
 	.show  = load_seq_show,
-	.stop  = smk_seq_stop,
+	.stop  = load_seq_stop,
 };
 
 /**
@@ -588,12 +574,28 @@ static void smk_unlbl_ambient(char *oldambient)
 
 static void *cipso_seq_start(struct seq_file *s, loff_t *pos)
 {
-	return smk_seq_start(s, pos, &smack_known_list);
+	if (*pos == SEQ_READ_FINISHED)
+		return NULL;
+	if (list_empty(&smack_known_list))
+		return NULL;
+
+	return smack_known_list.next;
 }
 
 static void *cipso_seq_next(struct seq_file *s, void *v, loff_t *pos)
 {
-	return smk_seq_next(s, v, pos, &smack_known_list);
+	struct list_head  *list = v;
+
+	/*
+	 * labels with no associated cipso value wont be printed
+	 * in cipso_seq_show
+	 */
+	if (list_is_last(list, &smack_known_list)) {
+		*pos = SEQ_READ_FINISHED;
+		return NULL;
+	}
+
+	return list->next;
 }
 
 /*
@@ -632,11 +634,16 @@ static int cipso_seq_show(struct seq_file *s, void *v)
 	return 0;
 }
 
+static void cipso_seq_stop(struct seq_file *s, void *v)
+{
+	/* No-op */
+}
+
 static const struct seq_operations cipso_seq_ops = {
 	.start = cipso_seq_start,
+	.stop  = cipso_seq_stop,
 	.next  = cipso_seq_next,
 	.show  = cipso_seq_show,
-	.stop  = smk_seq_stop,
 };
 
 /**
@@ -781,12 +788,23 @@ static const struct file_operations smk_cipso_ops = {
 
 static void *netlbladdr_seq_start(struct seq_file *s, loff_t *pos)
 {
-	return smk_seq_start(s, pos, &smk_netlbladdr_list);
+	if (*pos == SEQ_READ_FINISHED)
+		return NULL;
+	if (list_empty(&smk_netlbladdr_list))
+		return NULL;
+	return smk_netlbladdr_list.next;
 }
 
 static void *netlbladdr_seq_next(struct seq_file *s, void *v, loff_t *pos)
 {
-	return smk_seq_next(s, v, pos, &smk_netlbladdr_list);
+	struct list_head *list = v;
+
+	if (list_is_last(list, &smk_netlbladdr_list)) {
+		*pos = SEQ_READ_FINISHED;
+		return NULL;
+	}
+
+	return list->next;
 }
 #define BEBITS	(sizeof(__be32) * 8)
 
@@ -810,11 +828,16 @@ static int netlbladdr_seq_show(struct seq_file *s, void *v)
 	return 0;
 }
 
+static void netlbladdr_seq_stop(struct seq_file *s, void *v)
+{
+	/* No-op */
+}
+
 static const struct seq_operations netlbladdr_seq_ops = {
 	.start = netlbladdr_seq_start,
+	.stop  = netlbladdr_seq_stop,
 	.next  = netlbladdr_seq_next,
 	.show  = netlbladdr_seq_show,
-	.stop  = smk_seq_stop,
 };
 
 /**
@@ -1382,14 +1405,23 @@ static void *load_self_seq_start(struct seq_file *s, loff_t *pos)
 {
 	struct task_smack *tsp = current_security();
 
-	return smk_seq_start(s, pos, &tsp->smk_rules);
+	if (*pos == SEQ_READ_FINISHED)
+		return NULL;
+	if (list_empty(&tsp->smk_rules))
+		return NULL;
+	return tsp->smk_rules.next;
 }
 
 static void *load_self_seq_next(struct seq_file *s, void *v, loff_t *pos)
 {
 	struct task_smack *tsp = current_security();
+	struct list_head *list = v;
 
-	return smk_seq_next(s, v, pos, &tsp->smk_rules);
+	if (list_is_last(list, &tsp->smk_rules)) {
+		*pos = SEQ_READ_FINISHED;
+		return NULL;
+	}
+	return list->next;
 }
 
 static int load_self_seq_show(struct seq_file *s, void *v)
@@ -1421,11 +1453,16 @@ static int load_self_seq_show(struct seq_file *s, void *v)
 	return 0;
 }
 
+static void load_self_seq_stop(struct seq_file *s, void *v)
+{
+	/* No-op */
+}
+
 static const struct seq_operations load_self_seq_ops = {
 	.start = load_self_seq_start,
 	.next  = load_self_seq_next,
 	.show  = load_self_seq_show,
-	.stop  = smk_seq_stop,
+	.stop  = load_self_seq_stop,
 };
 
 
