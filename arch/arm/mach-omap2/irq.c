@@ -18,6 +18,8 @@
 #include <asm/exception.h>
 #include <asm/mach/irq.h>
 #include <linux/irqdomain.h>
+#include <linux/of.h>
+#include <linux/of_address.h>
 
 #include <mach/hardware.h>
 
@@ -183,7 +185,7 @@ static void __init omap_init_irq(u32 base, int nr_irqs)
 		/* Static mapping, never released */
 		bank->base_reg = ioremap(base, SZ_4K);
 		if (!bank->base_reg) {
-			printk(KERN_ERR "Could not ioremap irq bank%i\n", i);
+			pr_err("Could not ioremap irq bank%i\n", i);
 			continue;
 		}
 
@@ -196,8 +198,8 @@ static void __init omap_init_irq(u32 base, int nr_irqs)
 		nr_banks++;
 	}
 
-	printk(KERN_INFO "Total of %ld interrupts on %d active controller%s\n",
-	       nr_of_irqs, nr_banks, nr_banks > 1 ? "s" : "");
+	pr_info("Total of %ld interrupts on %d active controller%s\n",
+		nr_of_irqs, nr_banks, nr_banks > 1 ? "s" : "");
 }
 
 void __init omap2_init_irq(void)
@@ -253,6 +255,28 @@ asmlinkage void __exception_irq_entry omap2_intc_handle_irq(struct pt_regs *regs
 {
 	void __iomem *base_addr = OMAP2_IRQ_BASE;
 	omap_intc_handle_irq(base_addr, regs);
+}
+
+int __init intc_of_init(struct device_node *node, struct device_node *parent)
+{
+	struct resource res;
+	u32 nr_irqs = 96;
+
+	if (WARN_ON(!node))
+		return -ENODEV;
+
+	if (of_address_to_resource(node, 0, &res)) {
+		WARN(1, "unable to get intc registers\n");
+		return -EINVAL;
+	}
+
+	if (of_property_read_u32(node, "ti,intc-size", &nr_irqs))
+		pr_warn("unable to get intc-size, default to %d\n", nr_irqs);
+
+	omap_init_irq(res.start, nr_irqs);
+	domain.of_node = of_node_get(node);
+
+	return 0;
 }
 
 #ifdef CONFIG_ARCH_OMAP3

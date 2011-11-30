@@ -98,6 +98,16 @@ void am33xx_init_early(void);
 void omap4430_init_early(void);
 void omap_prcm_restart(char, const char *);
 
+struct device_node;
+#ifdef CONFIG_OF
+int __init intc_of_init(struct device_node *node, struct device_node *parent);
+#else
+int __init intc_of_init(struct device_node *node, struct device_node *parent)
+{
+	return 0;
+}
+#endif
+
 /*
  * IO bases for various OMAP processors
  * Except the tap base, rest all the io bases
