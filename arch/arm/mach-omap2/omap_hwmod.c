@@ -1137,7 +1137,7 @@ static struct omap_hwmod *_lookup(const char *name)
  */
 static int _init_clkdm(struct omap_hwmod *oh)
 {
-	if (cpu_is_omap24xx() || cpu_is_omap34xx())
+	if (cpu_is_omap24xx() || (cpu_is_omap34xx() && !cpu_is_am33xx()))
 		return 0;
 
 	if (!oh->clkdm_name) {
