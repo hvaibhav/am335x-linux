@@ -212,14 +212,14 @@ static int omap2_clkdm_clk_disable(struct clockdomain *clkdm)
 static int omap3_clkdm_sleep(struct clockdomain *clkdm)
 {
 	omap3xxx_cm_clkdm_force_sleep(clkdm->pwrdm.ptr->prcm_offs,
-				clkdm->clktrctrl_mask);
+			clkdm->clktrctrl_mask);
 	return 0;
 }
 
 static int omap3_clkdm_wakeup(struct clockdomain *clkdm)
 {
 	omap3xxx_cm_clkdm_force_wakeup(clkdm->pwrdm.ptr->prcm_offs,
-				clkdm->clktrctrl_mask);
+			clkdm->clktrctrl_mask);
 	return 0;
 }
 
