@@ -234,21 +234,6 @@ static void __init omap2_gp_clockevent_init(int gptimer_id,
 }
 
 /* Clocksource code */
-
-#ifdef CONFIG_OMAP_32K_TIMER
-/*
- * When 32k-timer is enabled, don't use GPTimer for clocksource
- * instead, just leave default clocksource which uses the 32k
- * sync counter.  See clocksource setup in plat-omap/counter_32k.c
- */
-
-static void __init omap2_gp_clocksource_init(int unused, const char *dummy)
-{
-	omap_init_clocksource_32k();
-}
-
-#else
-
 static struct omap_dm_timer clksrc;
 
 /*
@@ -281,6 +266,17 @@ static void __init omap2_gp_clocksource_init(int gptimer_id,
 {
 	int res;
 
+	/*
+	 * First check for availability for 32k-sync timer.
+	 *
+	 * Return non-zero, means the device doesn't have 32k-sync timer and
+	 * execution will fallback to gp-timer.
+	 */
+	res = omap_init_clocksource_32k();
+	if (!res)
+		return;
+
+	/* Fall back to gp-timer code */
 	res = omap_dm_timer_init_one(&clksrc, gptimer_id, fck_source);
 	BUG_ON(res);
 
@@ -295,7 +291,6 @@ static void __init omap2_gp_clocksource_init(int gptimer_id,
 		pr_err("Could not register clocksource %s\n",
 			clocksource_gpt.name);
 }
-#endif
 
 #define OMAP_SYS_TIMER_INIT(name, clkev_nr, clkev_src,			\
 				clksrc_nr, clksrc_src)			\

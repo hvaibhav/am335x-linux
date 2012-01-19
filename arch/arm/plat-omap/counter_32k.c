@@ -70,52 +70,55 @@ void read_persistent_clock(struct timespec *ts)
 
 int __init omap_init_clocksource_32k(void)
 {
-	static char err[] __initdata = KERN_ERR
-			"%s: can't register clocksource!\n";
+	u32 pbase;
+	unsigned long size = SZ_4K;
+	void __iomem *base;
+	struct clk *sync_32k_ick;
 
-	if (cpu_is_omap16xx() || cpu_class_is_omap2()) {
-		u32 pbase;
-		unsigned long size = SZ_4K;
-		void __iomem *base;
-		struct clk *sync_32k_ick;
+	if (cpu_is_omap16xx()) {
+		pbase = OMAP16XX_TIMER_32K_SYNCHRONIZED;
+		size = SZ_1K;
+	} else if (cpu_class_is_omap2()) {
+		struct omap_hwmod *oh;
+		const char *oh_name = "counter_32k";
 
-		if (cpu_is_omap16xx()) {
-			pbase = OMAP16XX_TIMER_32K_SYNCHRONIZED;
-			size = SZ_1K;
-		} else if (cpu_is_omap2420())
-			pbase = OMAP2420_32KSYNCT_BASE + 0x10;
-		else if (cpu_is_omap2430())
-			pbase = OMAP2430_32KSYNCT_BASE + 0x10;
-		else if (cpu_is_omap34xx())
-			pbase = OMAP3430_32KSYNCT_BASE + 0x10;
-		else if (cpu_is_omap44xx())
-			pbase = OMAP4430_32KSYNCT_BASE + 0x10;
-		else
+		oh = omap_hwmod_lookup(oh_name);
+		if (!oh || oh->slaves_cnt == 0) {
+			pr_err("Could not lookup %s hwmod\n", oh_name);
 			return -ENODEV;
-
-		/* For this to work we must have a static mapping in io.c for this area */
-		base = ioremap(pbase, size);
-		if (!base)
-			return -ENODEV;
-
-		sync_32k_ick = clk_get(NULL, "omap_32ksync_ick");
-		if (!IS_ERR(sync_32k_ick))
-			clk_enable(sync_32k_ick);
-
-		timer_32k_base = base;
-
-		/*
-		 * 120000 rough estimate from the calculations in
-		 * __clocksource_updatefreq_scale.
-		 */
-		clocks_calc_mult_shift(&persistent_mult, &persistent_shift,
-				32768, NSEC_PER_SEC, 120000);
-
-		if (clocksource_mmio_init(base, "32k_counter", 32768, 250, 32,
-					  clocksource_mmio_readl_up))
-			printk(err, "32k_counter");
-
-		setup_sched_clock(omap_32k_read_sched_clock, 32, 32768);
+		}
+		pbase = oh->slaves[0]->addr->pa_start + 0x10;
+	} else {
+		return -ENODEV;
 	}
+
+	/*
+	 * For this to work we must have a static mapping in io.c
+	 * for this area
+	 */
+	base = ioremap(pbase, size);
+	if (!base)
+		return -ENODEV;
+
+	sync_32k_ick = clk_get(NULL, "omap_32ksync_ick");
+	if (!IS_ERR(sync_32k_ick))
+		clk_enable(sync_32k_ick);
+
+	timer_32k_base = base;
+
+	/*
+	 * 120000 rough estimate from the calculations in
+	 * __clocksource_updatefreq_scale.
+	 */
+	clocks_calc_mult_shift(&persistent_mult, &persistent_shift,
+			32768, NSEC_PER_SEC, 120000);
+
+	if (clocksource_mmio_init(base, "32k_counter", 32768, 250, 32,
+				clocksource_mmio_readl_up))
+		printk(KERN_ERR "%s: can't register clocksource!\n",
+				"32k_counter");
+
+	setup_sched_clock(omap_32k_read_sched_clock, 32, 32768);
+
 	return 0;
 }
