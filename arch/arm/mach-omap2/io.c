@@ -478,6 +478,7 @@ void __init am33xx_init_early(void)
 	am33xx_voltagedomains_init();
 	omap44xx_prminst_init();
 	am33xx_powerdomains_init();
+	omap44xx_cminst_init();
 	omap3xxx_clk_init();
 }
 #endif
