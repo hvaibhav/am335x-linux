@@ -36,6 +36,7 @@
 #include <linux/namei.h>
 #include <linux/bio.h>		/* struct bio */
 #include <linux/buffer_head.h>	/* various write calls */
+#include <linux/prefetch.h>
 
 #include "blocklayout.h"
 
@@ -89,9 +90,9 @@ static int is_writable(struct pnfs_block_extent *be, sector_t isect)
  */
 struct parallel_io {
 	struct kref refcnt;
-	struct rpc_call_ops call_ops;
-	void (*pnfs_callback) (void *data);
+	void (*pnfs_callback) (void *data, int num_se);
 	void *data;
+	int bse_count;
 };
 
 static inline struct parallel_io *alloc_parallel(void *data)
@@ -102,6 +103,7 @@ static inline struct parallel_io *alloc_parallel(void *data)
 	if (rv) {
 		rv->data = data;
 		kref_init(&rv->refcnt);
+		rv->bse_count = 0;
 	}
 	return rv;
 }
@@ -116,7 +118,7 @@ static void destroy_parallel(struct kref *kref)
 	struct parallel_io *p = container_of(kref, struct parallel_io, refcnt);
 
 	dprintk("%s enter\n", __func__);
-	p->pnfs_callback(p->data);
+	p->pnfs_callback(p->data, p->bse_count);
 	kfree(p);
 }
 
@@ -145,14 +147,19 @@ static struct bio *bl_alloc_init_bio(int npg, sector_t isect,
 {
 	struct bio *bio;
 
+	npg = min(npg, BIO_MAX_PAGES);
 	bio = bio_alloc(GFP_NOIO, npg);
-	if (!bio)
-		return NULL;
+	if (!bio && (current->flags & PF_MEMALLOC)) {
+		while (!bio && (npg /= 2))
+			bio = bio_alloc(GFP_NOIO, npg);
+	}
 
-	bio->bi_sector = isect - be->be_f_offset + be->be_v_offset;
-	bio->bi_bdev = be->be_mdev;
-	bio->bi_end_io = end_io;
-	bio->bi_private = par;
+	if (bio) {
+		bio->bi_sector = isect - be->be_f_offset + be->be_v_offset;
+		bio->bi_bdev = be->be_mdev;
+		bio->bi_end_io = end_io;
+		bio->bi_private = par;
+	}
 	return bio;
 }
 
@@ -175,17 +182,6 @@ retry:
 	return bio;
 }
 
-static void bl_set_lo_fail(struct pnfs_layout_segment *lseg)
-{
-	if (lseg->pls_range.iomode == IOMODE_RW) {
-		dprintk("%s Setting layout IOMODE_RW fail bit\n", __func__);
-		set_bit(lo_fail_bit(IOMODE_RW), &lseg->pls_layout->plh_flags);
-	} else {
-		dprintk("%s Setting layout IOMODE_READ fail bit\n", __func__);
-		set_bit(lo_fail_bit(IOMODE_READ), &lseg->pls_layout->plh_flags);
-	}
-}
-
 /* This is basically copied from mpage_end_io_read */
 static void bl_end_io_read(struct bio *bio, int err)
 {
@@ -205,7 +201,7 @@ static void bl_end_io_read(struct bio *bio, int err)
 	if (!uptodate) {
 		if (!rdata->pnfs_error)
 			rdata->pnfs_error = -EIO;
-		bl_set_lo_fail(rdata->lseg);
+		pnfs_set_lo_fail(rdata->lseg);
 	}
 	bio_put(bio);
 	put_parallel(par);
@@ -222,20 +218,13 @@ static void bl_read_cleanup(struct work_struct *work)
 }
 
 static void
-bl_end_par_io_read(void *data)
+bl_end_par_io_read(void *data, int unused)
 {
 	struct nfs_read_data *rdata = data;
 
+	rdata->task.tk_status = rdata->pnfs_error;
 	INIT_WORK(&rdata->task.u.tk_work, bl_read_cleanup);
 	schedule_work(&rdata->task.u.tk_work);
-}
-
-/* We don't want normal .rpc_call_done callback used, so we replace it
- * with this stub.
- */
-static void bl_rpc_do_nothing(struct rpc_task *task, void *calldata)
-{
-	return;
 }
 
 static enum pnfs_try_status
@@ -257,8 +246,6 @@ bl_read_pagelist(struct nfs_read_data *rdata)
 	par = alloc_parallel(rdata);
 	if (!par)
 		goto use_mds;
-	par->call_ops = *rdata->mds_ops;
-	par->call_ops.rpc_call_done = bl_rpc_do_nothing;
 	par->pnfs_callback = bl_end_par_io_read;
 	/* At this point, we can no longer jump to use_mds */
 
@@ -302,6 +289,7 @@ bl_read_pagelist(struct nfs_read_data *rdata)
 						 bl_end_io_read, par);
 			if (IS_ERR(bio)) {
 				rdata->pnfs_error = PTR_ERR(bio);
+				bio = NULL;
 				goto out;
 			}
 		}
@@ -331,6 +319,7 @@ static void mark_extents_written(struct pnfs_block_layout *bl,
 {
 	sector_t isect, end;
 	struct pnfs_block_extent *be;
+	struct pnfs_block_short_extent *se;
 
 	dprintk("%s(%llu, %u)\n", __func__, offset, count);
 	if (count == 0)
@@ -343,8 +332,11 @@ static void mark_extents_written(struct pnfs_block_layout *bl,
 		be = bl_find_get_extent(bl, isect, NULL);
 		BUG_ON(!be); /* FIXME */
 		len = min(end, be->be_f_offset + be->be_length) - isect;
-		if (be->be_state == PNFS_BLOCK_INVALID_DATA)
-			bl_mark_for_commit(be, isect, len); /* What if fails? */
+		if (be->be_state == PNFS_BLOCK_INVALID_DATA) {
+			se = bl_pop_one_short_extent(be->be_inval);
+			BUG_ON(!se);
+			bl_mark_for_commit(be, isect, len, se);
+		}
 		isect += len;
 		bl_put_extent(be);
 	}
@@ -366,16 +358,16 @@ static void bl_end_io_write_zero(struct bio *bio, int err)
 		end_page_writeback(page);
 		page_cache_release(page);
 	} while (bvec >= bio->bi_io_vec);
-	if (!uptodate) {
+
+	if (unlikely(!uptodate)) {
 		if (!wdata->pnfs_error)
 			wdata->pnfs_error = -EIO;
-		bl_set_lo_fail(wdata->lseg);
+		pnfs_set_lo_fail(wdata->lseg);
 	}
 	bio_put(bio);
 	put_parallel(par);
 }
 
-/* This is basically copied from mpage_end_io_read */
 static void bl_end_io_write(struct bio *bio, int err)
 {
 	struct parallel_io *par = bio->bi_private;
@@ -385,7 +377,7 @@ static void bl_end_io_write(struct bio *bio, int err)
 	if (!uptodate) {
 		if (!wdata->pnfs_error)
 			wdata->pnfs_error = -EIO;
-		bl_set_lo_fail(wdata->lseg);
+		pnfs_set_lo_fail(wdata->lseg);
 	}
 	bio_put(bio);
 	put_parallel(par);
@@ -401,7 +393,7 @@ static void bl_write_cleanup(struct work_struct *work)
 	dprintk("%s enter\n", __func__);
 	task = container_of(work, struct rpc_task, u.tk_work);
 	wdata = container_of(task, struct nfs_write_data, task);
-	if (!wdata->pnfs_error) {
+	if (likely(!wdata->pnfs_error)) {
 		/* Marks for LAYOUTCOMMIT */
 		mark_extents_written(BLK_LSEG2EXT(wdata->lseg),
 				     wdata->args.offset, wdata->args.count);
@@ -410,11 +402,16 @@ static void bl_write_cleanup(struct work_struct *work)
 }
 
 /* Called when last of bios associated with a bl_write_pagelist call finishes */
-static void bl_end_par_io_write(void *data)
+static void bl_end_par_io_write(void *data, int num_se)
 {
 	struct nfs_write_data *wdata = data;
 
-	wdata->task.tk_status = 0;
+	if (unlikely(wdata->pnfs_error)) {
+		bl_free_short_extents(&BLK_LSEG2EXT(wdata->lseg)->bl_inval,
+					num_se);
+	}
+
+	wdata->task.tk_status = wdata->pnfs_error;
 	wdata->verf.committed = NFS_FILE_SYNC;
 	INIT_WORK(&wdata->task.u.tk_work, bl_write_cleanup);
 	schedule_work(&wdata->task.u.tk_work);
@@ -493,6 +490,55 @@ cleanup:
 	return ret;
 }
 
+/* Find or create a zeroing page marked being writeback.
+ * Return ERR_PTR on error, NULL to indicate skip this page and page itself
+ * to indicate write out.
+ */
+static struct page *
+bl_find_get_zeroing_page(struct inode *inode, pgoff_t index,
+			struct pnfs_block_extent *cow_read)
+{
+	struct page *page;
+	int locked = 0;
+	page = find_get_page(inode->i_mapping, index);
+	if (page)
+		goto check_page;
+
+	page = find_or_create_page(inode->i_mapping, index, GFP_NOFS);
+	if (unlikely(!page)) {
+		dprintk("%s oom\n", __func__);
+		return ERR_PTR(-ENOMEM);
+	}
+	locked = 1;
+
+check_page:
+	/* PageDirty: Other will write this out
+	 * PageWriteback: Other is writing this out
+	 * PageUptodate: It was read before
+	 */
+	if (PageDirty(page) || PageWriteback(page)) {
+		print_page(page);
+		if (locked)
+			unlock_page(page);
+		page_cache_release(page);
+		return NULL;
+	}
+
+	if (!locked) {
+		lock_page(page);
+		locked = 1;
+		goto check_page;
+	}
+	if (!PageUptodate(page)) {
+		/* New page, readin or zero it */
+		init_page_for_write(page, cow_read);
+	}
+	set_page_writeback(page);
+	unlock_page(page);
+
+	return page;
+}
+
 static enum pnfs_try_status
 bl_write_pagelist(struct nfs_write_data *wdata, int sync)
 {
@@ -517,9 +563,7 @@ bl_write_pagelist(struct nfs_write_data *wdata, int sync)
 	 */
 	par = alloc_parallel(wdata);
 	if (!par)
-		return PNFS_NOT_ATTEMPTED;
-	par->call_ops = *wdata->mds_ops;
-	par->call_ops.rpc_call_done = bl_rpc_do_nothing;
+		goto out_mds;
 	par->pnfs_callback = bl_end_par_io_write;
 	/* At this point, have to be more careful with error handling */
 
@@ -527,12 +571,15 @@ bl_write_pagelist(struct nfs_write_data *wdata, int sync)
 	be = bl_find_get_extent(BLK_LSEG2EXT(wdata->lseg), isect, &cow_read);
 	if (!be || !is_writable(be, isect)) {
 		dprintk("%s no matching extents!\n", __func__);
-		wdata->pnfs_error = -EINVAL;
-		goto out;
+		goto out_mds;
 	}
 
 	/* First page inside INVALID extent */
 	if (be->be_state == PNFS_BLOCK_INVALID_DATA) {
+		if (likely(!bl_push_one_short_extent(be->be_inval)))
+			par->bse_count++;
+		else
+			goto out_mds;
 		temp = offset >> PAGE_CACHE_SHIFT;
 		npg_zero = do_div(temp, npg_per_block);
 		isect = (sector_t) (((offset - npg_zero * PAGE_CACHE_SIZE) &
@@ -542,42 +589,26 @@ bl_write_pagelist(struct nfs_write_data *wdata, int sync)
 fill_invalid_ext:
 		dprintk("%s need to zero %d pages\n", __func__, npg_zero);
 		for (;npg_zero > 0; npg_zero--) {
+			if (bl_is_sector_init(be->be_inval, isect)) {
+				dprintk("isect %llu already init\n",
+					(unsigned long long)isect);
+				goto next_page;
+			}
 			/* page ref released in bl_end_io_write_zero */
 			index = isect >> PAGE_CACHE_SECTOR_SHIFT;
 			dprintk("%s zero %dth page: index %lu isect %llu\n",
 				__func__, npg_zero, index,
 				(unsigned long long)isect);
-			page =
-			    find_or_create_page(wdata->inode->i_mapping, index,
-						GFP_NOFS);
-			if (!page) {
-				dprintk("%s oom\n", __func__);
-				wdata->pnfs_error = -ENOMEM;
+			page = bl_find_get_zeroing_page(wdata->inode, index,
+							cow_read);
+			if (unlikely(IS_ERR(page))) {
+				wdata->pnfs_error = PTR_ERR(page);
 				goto out;
-			}
-
-			/* PageDirty: Other will write this out
-			 * PageWriteback: Other is writing this out
-			 * PageUptodate: It was read before
-			 * sector_initialized: already written out
-			 */
-			if (PageDirty(page) || PageWriteback(page) ||
-			    bl_is_sector_init(be->be_inval, isect)) {
-				print_page(page);
-				unlock_page(page);
-				page_cache_release(page);
+			} else if (page == NULL)
 				goto next_page;
-			}
-			if (!PageUptodate(page)) {
-				/* New page, readin or zero it */
-				init_page_for_write(page, cow_read);
-			}
-			set_page_writeback(page);
-			unlock_page(page);
 
 			ret = bl_mark_sectors_init(be->be_inval, isect,
-						       PAGE_CACHE_SECTORS,
-						       NULL);
+						       PAGE_CACHE_SECTORS);
 			if (unlikely(ret)) {
 				dprintk("%s bl_mark_sectors_init fail %d\n",
 					__func__, ret);
@@ -586,17 +617,27 @@ fill_invalid_ext:
 				wdata->pnfs_error = ret;
 				goto out;
 			}
-			bio = bl_add_page_to_bio(bio, npg_zero, WRITE,
-						 isect, page, be,
-						 bl_end_io_write_zero, par);
-			if (IS_ERR(bio)) {
-				wdata->pnfs_error = PTR_ERR(bio);
+			if (likely(!bl_push_one_short_extent(be->be_inval)))
+				par->bse_count++;
+			else {
+				end_page_writeback(page);
+				page_cache_release(page);
+				wdata->pnfs_error = -ENOMEM;
 				goto out;
 			}
 			/* FIXME: This should be done in bi_end_io */
 			mark_extents_written(BLK_LSEG2EXT(wdata->lseg),
 					     page->index << PAGE_CACHE_SHIFT,
 					     PAGE_CACHE_SIZE);
+
+			bio = bl_add_page_to_bio(bio, npg_zero, WRITE,
+						 isect, page, be,
+						 bl_end_io_write_zero, par);
+			if (IS_ERR(bio)) {
+				wdata->pnfs_error = PTR_ERR(bio);
+				bio = NULL;
+				goto out;
+			}
 next_page:
 			isect += PAGE_CACHE_SECTORS;
 			extent_length -= PAGE_CACHE_SECTORS;
@@ -620,13 +661,21 @@ next_page:
 				wdata->pnfs_error = -EINVAL;
 				goto out;
 			}
+			if (be->be_state == PNFS_BLOCK_INVALID_DATA) {
+				if (likely(!bl_push_one_short_extent(
+								be->be_inval)))
+					par->bse_count++;
+				else {
+					wdata->pnfs_error = -ENOMEM;
+					goto out;
+				}
+			}
 			extent_length = be->be_length -
 			    (isect - be->be_f_offset);
 		}
 		if (be->be_state == PNFS_BLOCK_INVALID_DATA) {
 			ret = bl_mark_sectors_init(be->be_inval, isect,
-						       PAGE_CACHE_SECTORS,
-						       NULL);
+						       PAGE_CACHE_SECTORS);
 			if (unlikely(ret)) {
 				dprintk("%s bl_mark_sectors_init fail %d\n",
 					__func__, ret);
@@ -639,6 +688,7 @@ next_page:
 					 bl_end_io_write, par);
 		if (IS_ERR(bio)) {
 			wdata->pnfs_error = PTR_ERR(bio);
+			bio = NULL;
 			goto out;
 		}
 		isect += PAGE_CACHE_SECTORS;
@@ -667,6 +717,10 @@ out:
 	bl_submit_bio(WRITE, bio);
 	put_parallel(par);
 	return PNFS_ATTEMPTED;
+out_mds:
+	bl_put_extent(be);
+	kfree(par);
+	return PNFS_NOT_ATTEMPTED;
 }
 
 /* FIXME - range ignored */
@@ -693,10 +747,16 @@ static void
 release_inval_marks(struct pnfs_inval_markings *marks)
 {
 	struct pnfs_inval_tracking *pos, *temp;
+	struct pnfs_block_short_extent *se, *stemp;
 
 	list_for_each_entry_safe(pos, temp, &marks->im_tree.mtt_stub, it_link) {
 		list_del(&pos->it_link);
 		kfree(pos);
+	}
+
+	list_for_each_entry_safe(se, stemp, &marks->im_extents, bse_node) {
+		list_del(&se->bse_node);
+		kfree(se);
 	}
 	return;
 }
@@ -782,16 +842,13 @@ bl_cleanup_layoutcommit(struct nfs4_layoutcommit_data *lcdata)
 static void free_blk_mountid(struct block_mount_id *mid)
 {
 	if (mid) {
-		struct pnfs_block_dev *dev;
-		spin_lock(&mid->bm_lock);
-		while (!list_empty(&mid->bm_devlist)) {
-			dev = list_first_entry(&mid->bm_devlist,
-					       struct pnfs_block_dev,
-					       bm_node);
+		struct pnfs_block_dev *dev, *tmp;
+
+		/* No need to take bm_lock as we are last user freeing bm_devlist */
+		list_for_each_entry_safe(dev, tmp, &mid->bm_devlist, bm_node) {
 			list_del(&dev->bm_node);
 			bl_free_block_dev(dev);
 		}
-		spin_unlock(&mid->bm_lock);
 		kfree(mid);
 	}
 }
@@ -804,7 +861,7 @@ nfs4_blk_get_deviceinfo(struct nfs_server *server, const struct nfs_fh *fh,
 			struct nfs4_deviceid *d_id)
 {
 	struct pnfs_device *dev;
-	struct pnfs_block_dev *rv = NULL;
+	struct pnfs_block_dev *rv;
 	u32 max_resp_sz;
 	int max_pages;
 	struct page **pages = NULL;
@@ -822,18 +879,20 @@ nfs4_blk_get_deviceinfo(struct nfs_server *server, const struct nfs_fh *fh,
 	dev = kmalloc(sizeof(*dev), GFP_NOFS);
 	if (!dev) {
 		dprintk("%s kmalloc failed\n", __func__);
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	pages = kzalloc(max_pages * sizeof(struct page *), GFP_NOFS);
 	if (pages == NULL) {
 		kfree(dev);
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 	for (i = 0; i < max_pages; i++) {
 		pages[i] = alloc_page(GFP_NOFS);
-		if (!pages[i])
+		if (!pages[i]) {
+			rv = ERR_PTR(-ENOMEM);
 			goto out_free;
+		}
 	}
 
 	memcpy(&dev->dev_id, d_id, sizeof(*d_id));
@@ -846,8 +905,10 @@ nfs4_blk_get_deviceinfo(struct nfs_server *server, const struct nfs_fh *fh,
 	dprintk("%s: dev_id: %s\n", __func__, dev->dev_id.data);
 	rc = nfs4_proc_getdeviceinfo(server, dev);
 	dprintk("%s getdevice info returns %d\n", __func__, rc);
-	if (rc)
+	if (rc) {
+		rv = ERR_PTR(rc);
 		goto out_free;
+	}
 
 	rv = nfs4_blk_decode_device(server, dev);
  out_free:
@@ -865,7 +926,7 @@ bl_set_layoutdriver(struct nfs_server *server, const struct nfs_fh *fh)
 	struct pnfs_devicelist *dlist = NULL;
 	struct pnfs_block_dev *bdev;
 	LIST_HEAD(block_disklist);
-	int status = 0, i;
+	int status, i;
 
 	dprintk("%s enter\n", __func__);
 
@@ -897,8 +958,8 @@ bl_set_layoutdriver(struct nfs_server *server, const struct nfs_fh *fh)
 		for (i = 0; i < dlist->num_devs; i++) {
 			bdev = nfs4_blk_get_deviceinfo(server, fh,
 						       &dlist->dev_id[i]);
-			if (!bdev) {
-				status = -ENODEV;
+			if (IS_ERR(bdev)) {
+				status = PTR_ERR(bdev);
 				goto out_error;
 			}
 			spin_lock(&b_mt_id->bm_lock);
@@ -959,7 +1020,7 @@ static struct pnfs_layoutdriver_type blocklayout_type = {
 };
 
 static const struct rpc_pipe_ops bl_upcall_ops = {
-	.upcall		= bl_pipe_upcall,
+	.upcall		= rpc_pipe_generic_upcall,
 	.downcall	= bl_pipe_downcall,
 	.destroy_msg	= bl_pipe_destroy_msg,
 };
@@ -988,17 +1049,20 @@ static int __init nfs4blocklayout_init(void)
 			      mnt,
 			      NFS_PIPE_DIRNAME, 0, &path);
 	if (ret)
-		goto out_remove;
+		goto out_putrpc;
 
 	bl_device_pipe = rpc_mkpipe(path.dentry, "blocklayout", NULL,
 				    &bl_upcall_ops, 0);
+	path_put(&path);
 	if (IS_ERR(bl_device_pipe)) {
 		ret = PTR_ERR(bl_device_pipe);
-		goto out_remove;
+		goto out_putrpc;
 	}
 out:
 	return ret;
 
+out_putrpc:
+	rpc_put_mount();
 out_remove:
 	pnfs_unregister_layoutdriver(&blocklayout_type);
 	return ret;
@@ -1011,6 +1075,7 @@ static void __exit nfs4blocklayout_exit(void)
 
 	pnfs_unregister_layoutdriver(&blocklayout_type);
 	rpc_unlink(bl_device_pipe);
+	rpc_put_mount();
 }
 
 MODULE_ALIAS("nfs-layouttype4-3");

@@ -262,8 +262,7 @@ extern void hash_failure_debug(unsigned long ea, unsigned long access,
 extern int htab_bolt_mapping(unsigned long vstart, unsigned long vend,
 			     unsigned long pstart, unsigned long prot,
 			     int psize, int ssize);
-extern void add_gpage(unsigned long addr, unsigned long page_size,
-			  unsigned long number_of_pages);
+extern void add_gpage(u64 addr, u64 page_size, unsigned long number_of_pages);
 extern void demote_segment_4k(struct mm_struct *mm, unsigned long addr);
 
 extern void hpte_init_native(void);
@@ -313,10 +312,9 @@ extern void slb_set_size(u16 size);
  * (i.e. everything above 0xC000000000000000), except the very top
  * segment, which simplifies several things.
  *
- * 	- We allow for 15 significant bits of ESID and 20 bits of
- * context for user addresses.  i.e. 8T (43 bits) of address space for
- * up to 1M contexts (although the page table structure and context
- * allocation will need changes to take advantage of this).
+ *	- We allow for 16 significant bits of ESID and 19 bits of
+ * context for user addresses.  i.e. 16T (44 bits) of address space for
+ * up to half a million contexts.
  *
  * 	- The scramble function gives robust scattering in the hash
  * table (at least based on some initial results).  The previous

@@ -171,10 +171,11 @@ void __init ixdp2400_init_irq(void)
 
 MACHINE_START(IXDP2400, "Intel IXDP2400 Development Platform")
 	/* Maintainer: MontaVista Software, Inc. */
-	.boot_params	= 0x00000100,
+	.atag_offset	= 0x100,
 	.map_io		= ixdp2x00_map_io,
 	.init_irq	= ixdp2400_init_irq,
 	.timer		= &ixdp2400_timer,
 	.init_machine	= ixdp2x00_init_machine,
+	.restart	= ixp2000_restart,
 MACHINE_END
 

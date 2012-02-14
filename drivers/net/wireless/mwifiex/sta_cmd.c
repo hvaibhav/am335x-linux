@@ -748,7 +748,7 @@ static int mwifiex_cmd_802_11_rf_channel(struct mwifiex_private *priv,
 				cpu_to_le16(HostCmd_SCAN_RADIO_TYPE_A);
 
 		rf_type = le16_to_cpu(rf_chan->rf_type);
-		SET_SECONDARYCHAN(rf_type, priv->adapter->chan_offset);
+		SET_SECONDARYCHAN(rf_type, priv->adapter->sec_chan_offset);
 		rf_chan->current_channel = cpu_to_le16(*channel);
 	}
 	rf_chan->action = cpu_to_le16(cmd_action);
@@ -896,6 +896,59 @@ static int mwifiex_cmd_reg_access(struct host_cmd_ds_command *cmd,
 	}
 	default:
 		return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * This function prepares command to set PCI-Express
+ * host buffer configuration
+ *
+ * Preparation includes -
+ *      - Setting command ID, action and proper size
+ *      - Setting host buffer configuration
+ *      - Ensuring correct endian-ness
+ */
+static int
+mwifiex_cmd_pcie_host_spec(struct mwifiex_private *priv,
+				   struct host_cmd_ds_command *cmd, u16 action)
+{
+	struct host_cmd_ds_pcie_details *host_spec =
+					&cmd->params.pcie_host_spec;
+	struct pcie_service_card *card = priv->adapter->card;
+	phys_addr_t *buf_pa;
+
+	cmd->command = cpu_to_le16(HostCmd_CMD_PCIE_DESC_DETAILS);
+	cmd->size = cpu_to_le16(sizeof(struct
+					host_cmd_ds_pcie_details) + S_DS_GEN);
+	cmd->result = 0;
+
+	memset(host_spec, 0, sizeof(struct host_cmd_ds_pcie_details));
+
+	if (action == HostCmd_ACT_GEN_SET) {
+		/* Send the ring base addresses and count to firmware */
+		host_spec->txbd_addr_lo = (u32)(card->txbd_ring_pbase);
+		host_spec->txbd_addr_hi =
+				(u32)(((u64)card->txbd_ring_pbase)>>32);
+		host_spec->txbd_count = MWIFIEX_MAX_TXRX_BD;
+		host_spec->rxbd_addr_lo = (u32)(card->rxbd_ring_pbase);
+		host_spec->rxbd_addr_hi =
+				(u32)(((u64)card->rxbd_ring_pbase)>>32);
+		host_spec->rxbd_count = MWIFIEX_MAX_TXRX_BD;
+		host_spec->evtbd_addr_lo =
+				(u32)(card->evtbd_ring_pbase);
+		host_spec->evtbd_addr_hi =
+				(u32)(((u64)card->evtbd_ring_pbase)>>32);
+		host_spec->evtbd_count = MWIFIEX_MAX_EVT_BD;
+		if (card->sleep_cookie) {
+			buf_pa = MWIFIEX_SKB_PACB(card->sleep_cookie);
+			host_spec->sleep_cookie_addr_lo = (u32) *buf_pa;
+			host_spec->sleep_cookie_addr_hi =
+						(u32) (((u64)*buf_pa) >> 32);
+			dev_dbg(priv->adapter->dev, "sleep_cook_lo phy addr: "
+				 "0x%x\n", host_spec->sleep_cookie_addr_lo);
+		}
 	}
 
 	return 0;
@@ -1079,6 +1132,9 @@ int mwifiex_sta_prepare_cmd(struct mwifiex_private *priv, uint16_t cmd_no,
 				host_cmd_ds_set_bss_mode) + S_DS_GEN);
 		ret = 0;
 		break;
+	case HostCmd_CMD_PCIE_DESC_DETAILS:
+		ret = mwifiex_cmd_pcie_host_spec(priv, cmd_ptr, cmd_action);
+		break;
 	default:
 		dev_err(priv->adapter->dev,
 			"PREP_CMD: unknown cmd- %#x\n", cmd_no);
@@ -1095,6 +1151,7 @@ int mwifiex_sta_prepare_cmd(struct mwifiex_private *priv, uint16_t cmd_no,
  * working state.
  *
  * The following commands are issued sequentially -
+ *      - Set PCI-Express host buffer configuration (PCIE only)
  *      - Function init (for first interface only)
  *      - Read MAC address (for first interface only)
  *      - Reconfigure Tx buffer size (for first interface only)
@@ -1116,6 +1173,13 @@ int mwifiex_sta_init_cmd(struct mwifiex_private *priv, u8 first_sta)
 	struct mwifiex_ds_11n_tx_cfg tx_cfg;
 
 	if (first_sta) {
+		if (priv->adapter->iface_type == MWIFIEX_PCIE) {
+			ret = mwifiex_send_cmd_async(priv,
+					HostCmd_CMD_PCIE_DESC_DETAILS,
+					HostCmd_ACT_GEN_SET, 0, NULL);
+			if (ret)
+				return -1;
+		}
 
 		ret = mwifiex_send_cmd_async(priv, HostCmd_CMD_FUNC_INIT,
 					     HostCmd_ACT_GEN_SET, 0, NULL);

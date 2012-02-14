@@ -8,8 +8,6 @@
  * Public License ("GPL") version 2 as distributed in the 'COPYING'
  * file from the main directory of the linux kernel source.
  *
- * Send feedback to <socketcan-users@lists.berlios.de>
- *
  *
  * Your platform definition file should specify something like:
  *
@@ -1385,18 +1383,7 @@ static struct platform_driver at91_can_driver = {
 	.id_table = at91_can_id_table,
 };
 
-static int __init at91_can_module_init(void)
-{
-	return platform_driver_register(&at91_can_driver);
-}
-
-static void __exit at91_can_module_exit(void)
-{
-	platform_driver_unregister(&at91_can_driver);
-}
-
-module_init(at91_can_module_init);
-module_exit(at91_can_module_exit);
+module_platform_driver(at91_can_driver);
 
 MODULE_AUTHOR("Marc Kleine-Budde <mkl@pengutronix.de>");
 MODULE_LICENSE("GPL v2");

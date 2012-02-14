@@ -38,6 +38,7 @@
 #include <media/videobuf-dvb.h>
 #endif
 #include "tuner-xc2028.h"
+#include "xc5000.h"
 #include "em28xx-reg.h"
 
 /* Boards supported by driver */
@@ -120,6 +121,10 @@
 #define EM2874_BOARD_LEADERSHIP_ISDBT		  77
 #define EM28174_BOARD_PCTV_290E                   78
 #define EM2884_BOARD_TERRATEC_H5		  79
+#define EM28174_BOARD_PCTV_460E                   80
+#define EM2884_BOARD_HAUPPAUGE_WINTV_HVR_930C	  81
+#define EM2884_BOARD_CINERGY_HTC_STICK		  82
+#define EM2860_BOARD_HT_VIDBOX_NW03 		  83
 
 /* Limits minimum and default number of buffers */
 #define EM28XX_MIN_BUF 4
@@ -593,6 +598,8 @@ struct em28xx {
 	int max_pkt_size;	/* max packet size of isoc transaction */
 	int num_alt;		/* Number of alternative settings */
 	unsigned int *alt_max_pkt_size;	/* array of wMaxPacketSize */
+	int dvb_alt;				/* alternate for DVB */
+	unsigned int dvb_max_pkt_size;		/* wMaxPacketSize for DVB */
 	struct urb *urb[EM28XX_NUM_BUFS];	/* urb for isoc transfers */
 	char *transfer_buffer[EM28XX_NUM_BUFS];	/* transfer buffers for isoc
 						   transfer */
@@ -677,8 +684,6 @@ int em28xx_isoc_dvb_max_packetsize(struct em28xx *dev);
 int em28xx_set_mode(struct em28xx *dev, enum em28xx_mode set_mode);
 int em28xx_gpio_set(struct em28xx *dev, struct em28xx_reg_seq *gpio);
 void em28xx_wake_i2c(struct em28xx *dev);
-void em28xx_remove_from_devlist(struct em28xx *dev);
-void em28xx_add_into_devlist(struct em28xx *dev);
 int em28xx_register_extension(struct em28xx_ops *dev);
 void em28xx_unregister_extension(struct em28xx_ops *dev);
 void em28xx_init_extension(struct em28xx *dev);
@@ -826,7 +831,7 @@ static inline unsigned int norm_maxw(struct em28xx *dev)
 	if (dev->board.is_webcam)
 		return dev->sensor_xres;
 
-	if (dev->board.max_range_640_480 || dev->board.is_em2800)
+	if (dev->board.max_range_640_480)
 		return 640;
 
 	return 720;

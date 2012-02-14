@@ -400,9 +400,8 @@ static int pcifront_claim_resource(struct pci_dev *dev, void *data)
 			dev_info(&pdev->xdev->dev, "claiming resource %s/%d\n",
 				pci_name(dev), i);
 			if (pci_claim_resource(dev, i)) {
-				dev_err(&pdev->xdev->dev, "Could not claim "
-					"resource %s/%d! Device offline. Try "
-					"giving less than 4GB to domain.\n",
+				dev_err(&pdev->xdev->dev, "Could not claim resource %s/%d! "
+					"Device offline. Try using e820_host=1 in the guest config.\n",
 					pci_name(dev), i);
 			}
 		}
@@ -1127,14 +1126,11 @@ static const struct xenbus_device_id xenpci_ids[] = {
 	{""},
 };
 
-static struct xenbus_driver xenbus_pcifront_driver = {
-	.name			= "pcifront",
-	.owner			= THIS_MODULE,
-	.ids			= xenpci_ids,
+static DEFINE_XENBUS_DRIVER(xenpci, "pcifront",
 	.probe			= pcifront_xenbus_probe,
 	.remove			= pcifront_xenbus_remove,
 	.otherend_changed	= pcifront_backend_changed,
-};
+);
 
 static int __init pcifront_init(void)
 {
@@ -1143,12 +1139,12 @@ static int __init pcifront_init(void)
 
 	pci_frontend_registrar(1 /* enable */);
 
-	return xenbus_register_frontend(&xenbus_pcifront_driver);
+	return xenbus_register_frontend(&xenpci_driver);
 }
 
 static void __exit pcifront_cleanup(void)
 {
-	xenbus_unregister_driver(&xenbus_pcifront_driver);
+	xenbus_unregister_driver(&xenpci_driver);
 	pci_frontend_registrar(0 /* disable */);
 }
 module_init(pcifront_init);

@@ -21,6 +21,7 @@
  */
 
 #include <linux/types.h>
+#include <linux/gpio.h>
 #include <linux/init.h>
 #include <linux/mm.h>
 #include <linux/module.h>
@@ -38,7 +39,6 @@
 #include <asm/mach/irq.h>
 
 #include <mach/board.h>
-#include <mach/gpio.h>
 #include <mach/at91sam9_smc.h>
 
 #include "sam9_smc.h"
@@ -62,6 +62,8 @@ static void __init cam60_init_early(void)
  */
 static struct at91_usbh_data __initdata cam60_usbh_data = {
 	.ports		= 1,
+	.vbus_pin	= {-EINVAL, -EINVAL},
+	.overcurrent_pin= {-EINVAL, -EINVAL},
 };
 
 
@@ -115,7 +117,7 @@ static struct spi_board_info cam60_spi_devices[] __initdata = {
 /*
  * MACB Ethernet device
  */
-static struct __initdata at91_eth_data cam60_macb_data = {
+static struct __initdata macb_platform_data cam60_macb_data = {
 	.phy_irq_pin	= AT91_PIN_PB5,
 	.is_rmii	= 0,
 };
@@ -132,19 +134,14 @@ static struct mtd_partition __initdata cam60_nand_partition[] = {
 	},
 };
 
-static struct mtd_partition * __init nand_partitions(int size, int *num_partitions)
-{
-	*num_partitions = ARRAY_SIZE(cam60_nand_partition);
-	return cam60_nand_partition;
-}
-
 static struct atmel_nand_data __initdata cam60_nand_data = {
 	.ale		= 21,
 	.cle		= 22,
-	// .det_pin	= ... not there
+	.det_pin	= -EINVAL,
 	.rdy_pin	= AT91_PIN_PA9,
 	.enable_pin	= AT91_PIN_PA7,
-	.partition_info	= nand_partitions,
+	.parts		= cam60_nand_partition,
+	.num_parts	= ARRAY_SIZE(cam60_nand_partition),
 };
 
 static struct sam9_smc_config __initdata cam60_nand_smc_config = {
@@ -168,7 +165,7 @@ static struct sam9_smc_config __initdata cam60_nand_smc_config = {
 static void __init cam60_add_device_nand(void)
 {
 	/* configure chip-select 3 (NAND) */
-	sam9_smc_configure(3, &cam60_nand_smc_config);
+	sam9_smc_configure(0, 3, &cam60_nand_smc_config);
 
 	at91_add_device_nand(&cam60_nand_data);
 }

@@ -40,7 +40,6 @@
 #include <linux/interrupt.h>
 #include <linux/errno.h>
 #include <linux/timer.h>
-#include <linux/clk.h>
 #include <linux/device.h>
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
@@ -172,7 +171,8 @@ enum musb_g_ep0_state {
 #endif
 
 /* TUSB mapping: "flat" plus ep0 special cases */
-#if	defined(CONFIG_USB_MUSB_TUSB6010)
+#if defined(CONFIG_USB_MUSB_TUSB6010) || \
+	defined(CONFIG_USB_MUSB_TUSB6010_MODULE)
 #define musb_ep_select(_mbase, _epnum) \
 	musb_writeb((_mbase), MUSB_INDEX, (_epnum))
 #define	MUSB_EP_OFFSET			MUSB_TUSB_OFFSET
@@ -241,7 +241,8 @@ struct musb_hw_ep {
 	void __iomem		*fifo;
 	void __iomem		*regs;
 
-#ifdef CONFIG_USB_MUSB_TUSB6010
+#if defined(CONFIG_USB_MUSB_TUSB6010) || \
+	defined(CONFIG_USB_MUSB_TUSB6010_MODULE)
 	void __iomem		*conf;
 #endif
 
@@ -258,7 +259,8 @@ struct musb_hw_ep {
 	struct dma_channel	*tx_channel;
 	struct dma_channel	*rx_channel;
 
-#ifdef CONFIG_USB_MUSB_TUSB6010
+#if defined(CONFIG_USB_MUSB_TUSB6010) || \
+	defined(CONFIG_USB_MUSB_TUSB6010_MODULE)
 	/* TUSB has "asynchronous" and "synchronous" dma modes */
 	dma_addr_t		fifo_async;
 	dma_addr_t		fifo_sync;
@@ -308,6 +310,7 @@ struct musb_context_registers {
 	u8 index, testmode;
 
 	u8 devctl, busctl, misc;
+	u32 otg_interfsel;
 
 	struct musb_csr_regs index_regs[MUSB_C_NUM_EPS];
 };
@@ -324,6 +327,7 @@ struct musb {
 
 	irqreturn_t		(*isr)(int, void *);
 	struct work_struct	irq_work;
+	struct work_struct	otg_notifier_work;
 	u16			hwvers;
 
 /* this hub status bit is reserved by USB 2.0 and not seen by usbcore */
@@ -356,7 +360,8 @@ struct musb {
 	void __iomem		*ctrl_base;
 	void __iomem		*mregs;
 
-#ifdef CONFIG_USB_MUSB_TUSB6010
+#if defined(CONFIG_USB_MUSB_TUSB6010) || \
+	defined(CONFIG_USB_MUSB_TUSB6010_MODULE)
 	dma_addr_t		async;
 	dma_addr_t		sync;
 	void __iomem		*sync_va;
@@ -368,6 +373,7 @@ struct musb {
 	u16			int_tx;
 
 	struct otg_transceiver	*xceiv;
+	u8			xceiv_event;
 
 	int nIrq;
 	unsigned		irq_wake:1;

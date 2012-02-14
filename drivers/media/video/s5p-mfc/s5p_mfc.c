@@ -18,7 +18,6 @@
 #include <linux/platform_device.h>
 #include <linux/sched.h>
 #include <linux/slab.h>
-#include <linux/version.h>
 #include <linux/videodev2.h>
 #include <linux/workqueue.h>
 #include <media/videobuf2-core.h>
@@ -202,7 +201,7 @@ static void s5p_mfc_handle_frame_copy_time(struct s5p_mfc_ctx *ctx)
 	   appropraite flags */
 	src_buf = list_entry(ctx->src_queue.next, struct s5p_mfc_buf, list);
 	list_for_each_entry(dst_buf, &ctx->dst_queue, list) {
-		if (vb2_dma_contig_plane_paddr(dst_buf->b, 0) == dec_y_addr) {
+		if (vb2_dma_contig_plane_dma_addr(dst_buf->b, 0) == dec_y_addr) {
 			memcpy(&dst_buf->b->v4l2_buf.timecode,
 				&src_buf->b->v4l2_buf.timecode,
 				sizeof(struct v4l2_timecode));
@@ -248,7 +247,7 @@ static void s5p_mfc_handle_frame_new(struct s5p_mfc_ctx *ctx, unsigned int err)
 	 * check which videobuf does it correspond to */
 	list_for_each_entry(dst_buf, &ctx->dst_queue, list) {
 		/* Check if this is the buffer we're looking for */
-		if (vb2_dma_contig_plane_paddr(dst_buf->b, 0) == dspl_y_addr) {
+		if (vb2_dma_contig_plane_dma_addr(dst_buf->b, 0) == dspl_y_addr) {
 			list_del(&dst_buf->list);
 			ctx->dst_queue_cnt--;
 			dst_buf->b->v4l2_buf.sequence = ctx->sequence;
@@ -475,7 +474,7 @@ static void s5p_mfc_handle_seq_done(struct s5p_mfc_ctx *ctx,
 			ctx->mv_size = 0;
 		}
 		ctx->dpb_count = s5p_mfc_get_dpb_count();
-		if (ctx->img_width == 0 || ctx->img_width == 0)
+		if (ctx->img_width == 0 || ctx->img_height == 0)
 			ctx->state = MFCINST_ERROR;
 		else
 			ctx->state = MFCINST_HEAD_PARSED;
@@ -940,9 +939,8 @@ static int match_child(struct device *dev, void *data)
 	return !strcmp(dev_name(dev), (char *)data);
 }
 
-
 /* MFC probe function */
-static int __devinit s5p_mfc_probe(struct platform_device *pdev)
+static int s5p_mfc_probe(struct platform_device *pdev)
 {
 	struct s5p_mfc_dev *dev;
 	struct video_device *vfd;
@@ -1236,7 +1234,7 @@ static const struct dev_pm_ops s5p_mfc_pm_ops = {
 			   NULL)
 };
 
-static struct platform_driver s5p_mfc_pdrv = {
+static struct platform_driver s5p_mfc_driver = {
 	.probe	= s5p_mfc_probe,
 	.remove	= __devexit_p(s5p_mfc_remove),
 	.driver	= {
@@ -1246,27 +1244,7 @@ static struct platform_driver s5p_mfc_pdrv = {
 	},
 };
 
-static char banner[] __initdata =
-			"S5P MFC V4L2 Driver, (C) 2011 Samsung Electronics\n";
-
-static int __init s5p_mfc_init(void)
-{
-	int ret;
-
-	pr_info("%s", banner);
-	ret = platform_driver_register(&s5p_mfc_pdrv);
-	if (ret)
-		pr_err("Platform device registration failed.\n");
-	return ret;
-}
-
-static void __devexit s5p_mfc_exit(void)
-{
-	platform_driver_unregister(&s5p_mfc_pdrv);
-}
-
-module_init(s5p_mfc_init);
-module_exit(s5p_mfc_exit);
+module_platform_driver(s5p_mfc_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Kamil Debski <k.debski@samsung.com>");

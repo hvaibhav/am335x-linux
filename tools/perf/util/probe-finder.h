@@ -5,7 +5,6 @@
 #include "util.h"
 #include "probe-event.h"
 
-#define MAX_PATH_LEN		 256
 #define MAX_PROBE_BUFFER	1024
 #define MAX_PROBES		 128
 
@@ -57,7 +56,7 @@ struct probe_finder {
 	struct perf_probe_event	*pev;		/* Target probe event */
 
 	/* Callback when a probe point is found */
-	int (*callback)(Dwarf_Die *sp_die, struct probe_finder *pf);
+	int (*callback)(Dwarf_Die *sc_die, struct probe_finder *pf);
 
 	/* For function searching */
 	int			lno;		/* Line number */

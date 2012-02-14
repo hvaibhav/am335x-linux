@@ -453,7 +453,9 @@ static enum led_brightness kbd_led_get(struct led_classdev *led_cdev)
 
 static void asus_wmi_led_exit(struct asus_wmi *asus)
 {
-	if (asus->tpd_led.dev)
+	if (!IS_ERR_OR_NULL(asus->kbd_led.dev))
+		led_classdev_unregister(&asus->kbd_led);
+	if (!IS_ERR_OR_NULL(asus->tpd_led.dev))
 		led_classdev_unregister(&asus->tpd_led);
 	if (asus->led_workqueue)
 		destroy_workqueue(asus->led_workqueue);
@@ -990,7 +992,7 @@ static struct attribute *hwmon_attributes[] = {
 	NULL
 };
 
-static mode_t asus_hwmon_sysfs_is_visible(struct kobject *kobj,
+static umode_t asus_hwmon_sysfs_is_visible(struct kobject *kobj,
 					  struct attribute *attr, int idx)
 {
 	struct device *dev = container_of(kobj, struct device, kobj);
@@ -1355,7 +1357,7 @@ static struct attribute *platform_attributes[] = {
 	NULL
 };
 
-static mode_t asus_sysfs_is_visible(struct kobject *kobj,
+static umode_t asus_sysfs_is_visible(struct kobject *kobj,
 				    struct attribute *attr, int idx)
 {
 	struct device *dev = container_of(kobj, struct device, kobj);

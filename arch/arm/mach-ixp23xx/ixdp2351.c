@@ -326,11 +326,23 @@ static void __init ixdp2351_init(void)
 	ixp23xx_sys_init();
 }
 
+static void ixdp2351_restart(char mode, const char *cmd)
+{
+	/* First try machine specific support */
+
+	*IXDP2351_CPLD_RESET1_REG = IXDP2351_CPLD_RESET1_MAGIC;
+	(void) *IXDP2351_CPLD_RESET1_REG;
+	*IXDP2351_CPLD_RESET1_REG = IXDP2351_CPLD_RESET1_ENABLE;
+
+	ixp23xx_restart(mode, cmd);
+}
+
 MACHINE_START(IXDP2351, "Intel IXDP2351 Development Platform")
 	/* Maintainer: MontaVista Software, Inc. */
 	.map_io		= ixdp2351_map_io,
 	.init_irq	= ixdp2351_init_irq,
 	.timer		= &ixp23xx_timer,
-	.boot_params	= 0x00000100,
+	.atag_offset	= 0x100,
 	.init_machine	= ixdp2351_init,
+	.restart	= ixdp2351_restart,
 MACHINE_END

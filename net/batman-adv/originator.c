@@ -164,7 +164,7 @@ void originator_free(struct bat_priv *bat_priv)
 	struct hlist_head *head;
 	spinlock_t *list_lock; /* spinlock to protect write access */
 	struct orig_node *orig_node;
-	int i;
+	uint32_t i;
 
 	if (!hash)
 		return;
@@ -252,7 +252,7 @@ struct orig_node *get_orig_node(struct bat_priv *bat_priv, const uint8_t *addr)
 
 	hash_added = hash_add(bat_priv->orig_hash, compare_orig,
 			      choose_orig, orig_node, &orig_node->hash_entry);
-	if (hash_added < 0)
+	if (hash_added != 0)
 		goto free_bcast_own_sum;
 
 	return orig_node;
@@ -336,8 +336,7 @@ static bool purge_orig_node(struct bat_priv *bat_priv,
 	} else {
 		if (purge_orig_neighbors(bat_priv, orig_node,
 							&best_neigh_node)) {
-			update_routes(bat_priv, orig_node,
-				      best_neigh_node);
+			update_route(bat_priv, orig_node, best_neigh_node);
 		}
 	}
 
@@ -351,7 +350,7 @@ static void _purge_orig(struct bat_priv *bat_priv)
 	struct hlist_head *head;
 	spinlock_t *list_lock; /* spinlock to protect write access */
 	struct orig_node *orig_node;
-	int i;
+	uint32_t i;
 
 	if (!hash)
 		return;
@@ -414,7 +413,8 @@ int orig_seq_print_text(struct seq_file *seq, void *offset)
 	int batman_count = 0;
 	int last_seen_secs;
 	int last_seen_msecs;
-	int i, ret = 0;
+	uint32_t i;
+	int ret = 0;
 
 	primary_if = primary_if_get_selected(bat_priv);
 
@@ -493,10 +493,8 @@ static int orig_node_add_if(struct orig_node *orig_node, int max_if_num)
 
 	data_ptr = kmalloc(max_if_num * sizeof(unsigned long) * NUM_WORDS,
 			   GFP_ATOMIC);
-	if (!data_ptr) {
-		pr_err("Can't resize orig: out of memory\n");
+	if (!data_ptr)
 		return -1;
-	}
 
 	memcpy(data_ptr, orig_node->bcast_own,
 	       (max_if_num - 1) * sizeof(unsigned long) * NUM_WORDS);
@@ -504,10 +502,8 @@ static int orig_node_add_if(struct orig_node *orig_node, int max_if_num)
 	orig_node->bcast_own = data_ptr;
 
 	data_ptr = kmalloc(max_if_num * sizeof(uint8_t), GFP_ATOMIC);
-	if (!data_ptr) {
-		pr_err("Can't resize orig: out of memory\n");
+	if (!data_ptr)
 		return -1;
-	}
 
 	memcpy(data_ptr, orig_node->bcast_own_sum,
 	       (max_if_num - 1) * sizeof(uint8_t));
@@ -524,7 +520,8 @@ int orig_hash_add_if(struct hard_iface *hard_iface, int max_if_num)
 	struct hlist_node *node;
 	struct hlist_head *head;
 	struct orig_node *orig_node;
-	int i, ret;
+	uint32_t i;
+	int ret;
 
 	/* resize all orig nodes because orig_node->bcast_own(_sum) depend on
 	 * if_num */
@@ -562,10 +559,8 @@ static int orig_node_del_if(struct orig_node *orig_node,
 
 	chunk_size = sizeof(unsigned long) * NUM_WORDS;
 	data_ptr = kmalloc(max_if_num * chunk_size, GFP_ATOMIC);
-	if (!data_ptr) {
-		pr_err("Can't resize orig: out of memory\n");
+	if (!data_ptr)
 		return -1;
-	}
 
 	/* copy first part */
 	memcpy(data_ptr, orig_node->bcast_own, del_if_num * chunk_size);
@@ -583,10 +578,8 @@ free_bcast_own:
 		goto free_own_sum;
 
 	data_ptr = kmalloc(max_if_num * sizeof(uint8_t), GFP_ATOMIC);
-	if (!data_ptr) {
-		pr_err("Can't resize orig: out of memory\n");
+	if (!data_ptr)
 		return -1;
-	}
 
 	memcpy(data_ptr, orig_node->bcast_own_sum,
 	       del_if_num * sizeof(uint8_t));
@@ -610,7 +603,8 @@ int orig_hash_del_if(struct hard_iface *hard_iface, int max_if_num)
 	struct hlist_head *head;
 	struct hard_iface *hard_iface_tmp;
 	struct orig_node *orig_node;
-	int i, ret;
+	uint32_t i;
+	int ret;
 
 	/* resize all orig nodes because orig_node->bcast_own(_sum) depend on
 	 * if_num */

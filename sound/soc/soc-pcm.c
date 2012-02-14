@@ -19,6 +19,7 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/delay.h>
+#include <linux/pm_runtime.h>
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 #include <sound/core.h>
@@ -27,17 +28,13 @@
 #include <sound/soc.h>
 #include <sound/initval.h>
 
-static DEFINE_MUTEX(pcm_mutex);
-
-static int soc_pcm_apply_symmetry(struct snd_pcm_substream *substream)
+static int soc_pcm_apply_symmetry(struct snd_pcm_substream *substream,
+					struct snd_soc_dai *soc_dai)
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
-	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	int ret;
 
-	if (!codec_dai->driver->symmetric_rates &&
-	    !cpu_dai->driver->symmetric_rates &&
+	if (!soc_dai->driver->symmetric_rates &&
 	    !rtd->dai_link->symmetric_rates)
 		return 0;
 
@@ -45,19 +42,19 @@ static int soc_pcm_apply_symmetry(struct snd_pcm_substream *substream)
 	 * the second can need to get its constraints before the first has
 	 * picked a rate.  Complain and allow the application to carry on.
 	 */
-	if (!rtd->rate) {
-		dev_warn(&rtd->dev,
+	if (!soc_dai->rate) {
+		dev_warn(soc_dai->dev,
 			 "Not enforcing symmetric_rates due to race\n");
 		return 0;
 	}
 
-	dev_dbg(&rtd->dev, "Symmetry forces %dHz rate\n", rtd->rate);
+	dev_dbg(soc_dai->dev, "Symmetry forces %dHz rate\n", soc_dai->rate);
 
 	ret = snd_pcm_hw_constraint_minmax(substream->runtime,
 					   SNDRV_PCM_HW_PARAM_RATE,
-					   rtd->rate, rtd->rate);
+					   soc_dai->rate, soc_dai->rate);
 	if (ret < 0) {
-		dev_err(&rtd->dev,
+		dev_err(soc_dai->dev,
 			"Unable to apply rate symmetry constraint: %d\n", ret);
 		return ret;
 	}
@@ -80,6 +77,10 @@ static int soc_pcm_open(struct snd_pcm_substream *substream)
 	struct snd_soc_dai_driver *cpu_dai_drv = cpu_dai->driver;
 	struct snd_soc_dai_driver *codec_dai_drv = codec_dai->driver;
 	int ret = 0;
+
+	pm_runtime_get_sync(cpu_dai->dev);
+	pm_runtime_get_sync(codec_dai->dev);
+	pm_runtime_get_sync(platform->dev);
 
 	mutex_lock_nested(&rtd->pcm_mutex, rtd->pcm_subclass);
 
@@ -187,8 +188,14 @@ static int soc_pcm_open(struct snd_pcm_substream *substream)
 	}
 
 	/* Symmetry only applies if we've already got an active stream. */
-	if (cpu_dai->active || codec_dai->active) {
-		ret = soc_pcm_apply_symmetry(substream);
+	if (cpu_dai->active) {
+		ret = soc_pcm_apply_symmetry(substream, cpu_dai);
+		if (ret != 0)
+			goto config_err;
+	}
+
+	if (codec_dai->active) {
+		ret = soc_pcm_apply_symmetry(substream, codec_dai);
 		if (ret != 0)
 			goto config_err;
 	}
@@ -231,6 +238,11 @@ platform_err:
 		cpu_dai->driver->ops->shutdown(substream, cpu_dai);
 out:
 	mutex_unlock(&rtd->pcm_mutex);
+
+	pm_runtime_put(platform->dev);
+	pm_runtime_put(codec_dai->dev);
+	pm_runtime_put(cpu_dai->dev);
+
 	return ret;
 }
 
@@ -290,6 +302,13 @@ static int soc_pcm_close(struct snd_pcm_substream *substream)
 	codec_dai->active--;
 	codec->active--;
 
+	/* clear the corresponding DAIs rate when inactive */
+	if (!cpu_dai->active)
+		cpu_dai->rate = 0;
+
+	if (!codec_dai->active)
+		codec_dai->rate = 0;
+
 	/* Muting the DAC suppresses artifacts caused during digital
 	 * shutdown, for example from stopping clocks.
 	 */
@@ -310,10 +329,18 @@ static int soc_pcm_close(struct snd_pcm_substream *substream)
 	cpu_dai->runtime = NULL;
 
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
-		/* start delayed pop wq here for playback streams */
-		codec_dai->pop_wait = 1;
-		schedule_delayed_work(&rtd->delayed_work,
-			msecs_to_jiffies(rtd->pmdown_time));
+		if (codec->ignore_pmdown_time ||
+		    rtd->dai_link->ignore_pmdown_time) {
+			/* powered down playback stream now */
+			snd_soc_dapm_stream_event(rtd,
+				codec_dai->driver->playback.stream_name,
+				SND_SOC_DAPM_STREAM_STOP);
+		} else {
+			/* start delayed pop wq here for playback streams */
+			codec_dai->pop_wait = 1;
+			schedule_delayed_work(&rtd->delayed_work,
+				msecs_to_jiffies(rtd->pmdown_time));
+		}
 	} else {
 		/* capture streams can be powered down now */
 		snd_soc_dapm_stream_event(rtd,
@@ -322,6 +349,11 @@ static int soc_pcm_close(struct snd_pcm_substream *substream)
 	}
 
 	mutex_unlock(&rtd->pcm_mutex);
+
+	pm_runtime_put(platform->dev);
+	pm_runtime_put(codec_dai->dev);
+	pm_runtime_put(cpu_dai->dev);
+
 	return 0;
 }
 
@@ -446,7 +478,9 @@ static int soc_pcm_hw_params(struct snd_pcm_substream *substream,
 		}
 	}
 
-	rtd->rate = params_rate(params);
+	/* store the rate for each DAIs */
+	cpu_dai->rate = params_rate(params);
+	codec_dai->rate = params_rate(params);
 
 out:
 	mutex_unlock(&rtd->pcm_mutex);
@@ -564,17 +598,6 @@ static snd_pcm_uframes_t soc_pcm_pointer(struct snd_pcm_substream *substream)
 	return offset;
 }
 
-/* ASoC PCM operations */
-static struct snd_pcm_ops soc_pcm_ops = {
-	.open		= soc_pcm_open,
-	.close		= soc_pcm_close,
-	.hw_params	= soc_pcm_hw_params,
-	.hw_free	= soc_pcm_hw_free,
-	.prepare	= soc_pcm_prepare,
-	.trigger	= soc_pcm_trigger,
-	.pointer	= soc_pcm_pointer,
-};
-
 /* create a new pcm */
 int soc_new_pcm(struct snd_soc_pcm_runtime *rtd, int num)
 {
@@ -582,9 +605,18 @@ int soc_new_pcm(struct snd_soc_pcm_runtime *rtd, int num)
 	struct snd_soc_platform *platform = rtd->platform;
 	struct snd_soc_dai *codec_dai = rtd->codec_dai;
 	struct snd_soc_dai *cpu_dai = rtd->cpu_dai;
+	struct snd_pcm_ops *soc_pcm_ops = &rtd->ops;
 	struct snd_pcm *pcm;
 	char new_name[64];
 	int ret = 0, playback = 0, capture = 0;
+
+	soc_pcm_ops->open	= soc_pcm_open;
+	soc_pcm_ops->close	= soc_pcm_close;
+	soc_pcm_ops->hw_params	= soc_pcm_hw_params;
+	soc_pcm_ops->hw_free	= soc_pcm_hw_free;
+	soc_pcm_ops->prepare	= soc_pcm_prepare;
+	soc_pcm_ops->trigger	= soc_pcm_trigger;
+	soc_pcm_ops->pointer	= soc_pcm_pointer;
 
 	/* check client and interface hw capabilities */
 	snprintf(new_name, sizeof(new_name), "%s %s-%d",
@@ -609,20 +641,20 @@ int soc_new_pcm(struct snd_soc_pcm_runtime *rtd, int num)
 	rtd->pcm = pcm;
 	pcm->private_data = rtd;
 	if (platform->driver->ops) {
-		soc_pcm_ops.mmap = platform->driver->ops->mmap;
-		soc_pcm_ops.pointer = platform->driver->ops->pointer;
-		soc_pcm_ops.ioctl = platform->driver->ops->ioctl;
-		soc_pcm_ops.copy = platform->driver->ops->copy;
-		soc_pcm_ops.silence = platform->driver->ops->silence;
-		soc_pcm_ops.ack = platform->driver->ops->ack;
-		soc_pcm_ops.page = platform->driver->ops->page;
+		soc_pcm_ops->mmap = platform->driver->ops->mmap;
+		soc_pcm_ops->pointer = platform->driver->ops->pointer;
+		soc_pcm_ops->ioctl = platform->driver->ops->ioctl;
+		soc_pcm_ops->copy = platform->driver->ops->copy;
+		soc_pcm_ops->silence = platform->driver->ops->silence;
+		soc_pcm_ops->ack = platform->driver->ops->ack;
+		soc_pcm_ops->page = platform->driver->ops->page;
 	}
 
 	if (playback)
-		snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_PLAYBACK, &soc_pcm_ops);
+		snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_PLAYBACK, soc_pcm_ops);
 
 	if (capture)
-		snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_CAPTURE, &soc_pcm_ops);
+		snd_pcm_set_ops(pcm, SNDRV_PCM_STREAM_CAPTURE, soc_pcm_ops);
 
 	if (platform->driver->pcm_new) {
 		ret = platform->driver->pcm_new(rtd);

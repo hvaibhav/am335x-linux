@@ -4,6 +4,7 @@
  */
 
 #include <asm-generic/vmlinux.lds.h>
+#include <asm/cache.h>
 #include <asm/thread_info.h>
 #include <asm/memory.h>
 #include <asm/page.h>
@@ -13,6 +14,12 @@
 	*(.proc.info.init)						\
 	VMLINUX_SYMBOL(__proc_info_end) = .;
 
+#define IDMAP_TEXT							\
+	ALIGN_FUNCTION();						\
+	VMLINUX_SYMBOL(__idmap_text_start) = .;				\
+	*(.idmap.text)							\
+	VMLINUX_SYMBOL(__idmap_text_end) = .;
+
 #ifdef CONFIG_HOTPLUG_CPU
 #define ARM_CPU_DISCARD(x)
 #define ARM_CPU_KEEP(x)		x
@@ -21,10 +28,13 @@
 #define ARM_CPU_KEEP(x)
 #endif
 
-#if defined(CONFIG_SMP_ON_UP) && !defined(CONFIG_DEBUG_SPINLOCK)
+#if (defined(CONFIG_SMP_ON_UP) && !defined(CONFIG_DEBUG_SPINLOCK)) || \
+	defined(CONFIG_GENERIC_BUG)
 #define ARM_EXIT_KEEP(x)	x
+#define ARM_EXIT_DISCARD(x)
 #else
 #define ARM_EXIT_KEEP(x)
+#define ARM_EXIT_DISCARD(x)	x
 #endif
 
 OUTPUT_ARCH(arm)
@@ -39,6 +49,11 @@ jiffies = jiffies_64 + 4;
 SECTIONS
 {
 	/*
+	 * XXX: The linker does not define how output sections are
+	 * assigned to input sections when there are multiple statements
+	 * matching the same input section name.  There is no documented
+	 * order of matching.
+	 *
 	 * unwind exit sections must be discarded before the rest of the
 	 * unwind sections get included.
 	 */
@@ -47,6 +62,9 @@ SECTIONS
 		*(.ARM.extab.exit.text)
 		ARM_CPU_DISCARD(*(.ARM.exidx.cpuexit.text))
 		ARM_CPU_DISCARD(*(.ARM.extab.cpuexit.text))
+		ARM_EXIT_DISCARD(EXIT_TEXT)
+		ARM_EXIT_DISCARD(EXIT_DATA)
+		EXIT_CALL
 #ifndef CONFIG_HOTPLUG
 		*(.ARM.exidx.devexit.text)
 		*(.ARM.extab.devexit.text)
@@ -58,6 +76,8 @@ SECTIONS
 #ifndef CONFIG_SMP_ON_UP
 		*(.alt.smp.init)
 #endif
+		*(.discard)
+		*(.discard.*)
 	}
 
 #ifdef CONFIG_XIP_KERNEL
@@ -79,6 +99,7 @@ SECTIONS
 			SCHED_TEXT
 			LOCK_TEXT
 			KPROBES_TEXT
+			IDMAP_TEXT
 #ifdef CONFIG_MMU
 			*(.fixup)
 #endif
@@ -161,7 +182,7 @@ SECTIONS
 	}
 #endif
 
-	PERCPU_SECTION(32)
+	PERCPU_SECTION(L1_CACHE_BYTES)
 
 #ifdef CONFIG_XIP_KERNEL
 	__data_loc = ALIGN(4);		/* location in binary */
@@ -192,13 +213,13 @@ SECTIONS
 #endif
 
 		NOSAVE_DATA
-		CACHELINE_ALIGNED_DATA(32)
-		READ_MOSTLY_DATA(32)
+		CACHELINE_ALIGNED_DATA(L1_CACHE_BYTES)
+		READ_MOSTLY_DATA(L1_CACHE_BYTES)
 
 		/*
 		 * The exception fixup table (might need resorting at runtime)
 		 */
-		. = ALIGN(32);
+		. = ALIGN(4);
 		__start___ex_table = .;
 #ifdef CONFIG_MMU
 		*(__ex_table)
@@ -279,9 +300,6 @@ SECTIONS
 
 	STABS_DEBUG
 	.comment 0 : { *(.comment) }
-
-	/* Default discards */
-	DISCARDS
 }
 
 /*

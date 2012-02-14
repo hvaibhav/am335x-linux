@@ -351,7 +351,7 @@ static int bgpio_setup_direction(struct bgpio_chip *bgc,
 	return 0;
 }
 
-int __devexit bgpio_remove(struct bgpio_chip *bgc)
+int bgpio_remove(struct bgpio_chip *bgc)
 {
 	int err = gpiochip_remove(&bgc->gc);
 
@@ -361,15 +361,10 @@ int __devexit bgpio_remove(struct bgpio_chip *bgc)
 }
 EXPORT_SYMBOL_GPL(bgpio_remove);
 
-int __devinit bgpio_init(struct bgpio_chip *bgc,
-			 struct device *dev,
-			 unsigned long sz,
-			 void __iomem *dat,
-			 void __iomem *set,
-			 void __iomem *clr,
-			 void __iomem *dirout,
-			 void __iomem *dirin,
-			 bool big_endian)
+int bgpio_init(struct bgpio_chip *bgc, struct device *dev,
+	       unsigned long sz, void __iomem *dat, void __iomem *set,
+	       void __iomem *clr, void __iomem *dirout, void __iomem *dirin,
+	       bool big_endian)
 {
 	int ret;
 
@@ -529,17 +524,7 @@ static struct platform_driver bgpio_driver = {
 	.remove = __devexit_p(bgpio_pdev_remove),
 };
 
-static int __init bgpio_platform_init(void)
-{
-	return platform_driver_register(&bgpio_driver);
-}
-module_init(bgpio_platform_init);
-
-static void __exit bgpio_platform_exit(void)
-{
-	platform_driver_unregister(&bgpio_driver);
-}
-module_exit(bgpio_platform_exit);
+module_platform_driver(bgpio_driver);
 
 #endif /* CONFIG_GPIO_GENERIC_PLATFORM */
 

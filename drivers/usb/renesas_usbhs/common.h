@@ -33,6 +33,7 @@ struct usbhs_priv;
 #define SYSCFG		0x0000
 #define BUSWAIT		0x0002
 #define DVSTCTR		0x0008
+#define TESTMODE	0x000C
 #define CFIFO		0x0014
 #define CFIFOSEL	0x0020
 #define CFIFOCTR	0x0022
@@ -90,6 +91,17 @@ struct usbhs_priv;
 #define PIPE9TRN	0x00BA
 #define PIPEATRE	0x00BC
 #define PIPEATRN	0x00BE
+#define DEVADD0		0x00D0 /* Device address n configuration */
+#define DEVADD1		0x00D2
+#define DEVADD2		0x00D4
+#define DEVADD3		0x00D6
+#define DEVADD4		0x00D8
+#define DEVADD5		0x00DA
+#define DEVADD6		0x00DC
+#define DEVADD7		0x00DE
+#define DEVADD8		0x00E0
+#define DEVADD9		0x00E2
+#define DEVADDA		0x00E4
 
 /* SYSCFG */
 #define SCKE	(1 << 10)	/* USB Module Clock Enable */
@@ -102,6 +114,8 @@ struct usbhs_priv;
 /* DVSTCTR */
 #define EXTLP	(1 << 10)	/* Controls the EXTLP pin output state */
 #define PWEN	(1 << 9)	/* Controls the PWEN pin output state */
+#define USBRST	(1 << 6)	/* Bus Reset Output */
+#define UACT	(1 << 4)	/* USB Bus Enable */
 #define RHST	(0x7)		/* Reset Handshake */
 #define  RHST_LOW_SPEED  1	/* Low-speed connection */
 #define  RHST_FULL_SPEED 2	/* Full-speed connection */
@@ -159,6 +173,15 @@ struct usbhs_priv;
 #define  NODATA_STATUS_STAGE	5	/* Control write NoData status stage */
 #define  SEQUENCE_ERROR		6	/* Control transfer sequence error */
 
+/* INTSTS1 */
+#define OVRCR	(1 << 15) /* OVRCR Interrupt Status */
+#define BCHG	(1 << 14) /* USB Bus Change Interrupt Status */
+#define DTCH	(1 << 12) /* USB Disconnection Detect Interrupt Status */
+#define ATTCH	(1 << 11) /* ATTCH Interrupt Status */
+#define EOFERR	(1 << 6)  /* EOF Error Detect Interrupt Status */
+#define SIGN	(1 << 5)  /* Setup Transaction Error Interrupt Status */
+#define SACK	(1 << 4)  /* Setup Transaction ACK Response Interrupt Status */
+
 /* PIPECFG */
 /* DCPCFG */
 #define TYPE_NONE	(0 << 14)	/* Transfer Type */
@@ -183,9 +206,11 @@ struct usbhs_priv;
 /* PIPEnCTR */
 /* DCPCTR */
 #define BSTS		(1 << 15)	/* Buffer Status */
+#define SUREQ		(1 << 14)	/* Sending SETUP Token */
 #define CSSTS		(1 << 12)	/* CSSTS Status */
-#define SQCLR		(1 << 8)	/* Toggle Bit Clear */
 #define	ACLRM		(1 << 9)	/* Buffer Auto-Clear Mode */
+#define SQCLR		(1 << 8)	/* Toggle Bit Clear */
+#define SQSET		(1 << 7)	/* Toggle Bit Set */
 #define PBUSY		(1 << 5)	/* Pipe Busy */
 #define PID_MASK	(0x3)		/* Response PID */
 #define  PID_NAK	0
@@ -202,6 +227,14 @@ struct usbhs_priv;
 /* FRMNUM */
 #define FRNM_MASK	(0x7FF)
 
+/* DEVADDn */
+#define UPPHUB(x)	(((x) & 0xF) << 11)	/* HUB Register */
+#define HUBPORT(x)	(((x) & 0x7) << 8)	/* HUB Port for Target Device */
+#define USBSPD(x)	(((x) & 0x3) << 6)	/* Device Transfer Rate */
+#define USBSPD_SPEED_LOW	0x1
+#define USBSPD_SPEED_FULL	0x2
+#define USBSPD_SPEED_HIGH	0x3
+
 /*
  *		struct
  */
@@ -210,8 +243,8 @@ struct usbhs_priv {
 	void __iomem *base;
 	unsigned int irq;
 
-	struct renesas_usbhs_platform_callback	*pfunc;
-	struct renesas_usbhs_driver_param	*dparam;
+	struct renesas_usbhs_platform_callback	pfunc;
+	struct renesas_usbhs_driver_param	dparam;
 
 	struct delayed_work notify_hotplug_work;
 	struct platform_device *pdev;
@@ -243,19 +276,29 @@ u16 usbhs_read(struct usbhs_priv *priv, u32 reg);
 void usbhs_write(struct usbhs_priv *priv, u32 reg, u16 data);
 void usbhs_bset(struct usbhs_priv *priv, u32 reg, u16 mask, u16 data);
 
-int usbhsc_drvcllbck_notify_hotplug(struct platform_device *pdev);
-
 #define usbhs_lock(p, f) spin_lock_irqsave(usbhs_priv_to_lock(p), f)
 #define usbhs_unlock(p, f) spin_unlock_irqrestore(usbhs_priv_to_lock(p), f)
 
 /*
  * sysconfig
  */
-void usbhs_sys_clock_ctrl(struct usbhs_priv *priv, int enable);
-void usbhs_sys_hispeed_ctrl(struct usbhs_priv *priv, int enable);
-void usbhs_sys_usb_ctrl(struct usbhs_priv *priv, int enable);
 void usbhs_sys_host_ctrl(struct usbhs_priv *priv, int enable);
 void usbhs_sys_function_ctrl(struct usbhs_priv *priv, int enable);
+void usbhs_sys_set_test_mode(struct usbhs_priv *priv, u16 mode);
+
+/*
+ * usb request
+ */
+void usbhs_usbreq_get_val(struct usbhs_priv *priv, struct usb_ctrlrequest *req);
+void usbhs_usbreq_set_val(struct usbhs_priv *priv, struct usb_ctrlrequest *req);
+
+/*
+ * bus
+ */
+void usbhs_bus_send_sof_enable(struct usbhs_priv *priv);
+void usbhs_bus_send_reset(struct usbhs_priv *priv);
+int usbhs_bus_get_speed(struct usbhs_priv *priv);
+int usbhs_vbus_ctrl(struct usbhs_priv *priv, int enable);
 
 /*
  * frame
@@ -263,10 +306,16 @@ void usbhs_sys_function_ctrl(struct usbhs_priv *priv, int enable);
 int usbhs_frame_get_num(struct usbhs_priv *priv);
 
 /*
+ * device config
+ */
+int usbhs_set_device_config(struct usbhs_priv *priv, int devnum, u16 upphub,
+			   u16 hubport, u16 speed);
+
+/*
  * data
  */
 struct usbhs_priv *usbhs_pdev_to_priv(struct platform_device *pdev);
-#define usbhs_get_dparam(priv, param)	(priv->dparam->param)
+#define usbhs_get_dparam(priv, param)	(priv->dparam.param)
 #define usbhs_priv_to_pdev(priv)	(priv->pdev)
 #define usbhs_priv_to_dev(priv)		(&priv->pdev->dev)
 #define usbhs_priv_to_lock(priv)	(&priv->lock)

@@ -295,7 +295,6 @@ static struct {
 	u32 wss_data;
 	struct regulator *vdda_dac_reg;
 
-	struct clk	*tv_clk;
 	struct clk	*tv_dac_clk;
 } venc;
 
@@ -402,7 +401,7 @@ static void venc_runtime_put(void)
 
 	DSSDBG("venc_runtime_put\n");
 
-	r = pm_runtime_put(&venc.pdev->dev);
+	r = pm_runtime_put_sync(&venc.pdev->dev);
 	WARN_ON(r < 0);
 }
 
@@ -418,9 +417,10 @@ static const struct venc_config *venc_timings_to_config(
 	BUG();
 }
 
-static void venc_power_on(struct omap_dss_device *dssdev)
+static int venc_power_on(struct omap_dss_device *dssdev)
 {
 	u32 l;
+	int r;
 
 	venc_reset();
 	venc_write_config(venc_timings_to_config(&dssdev->panel.timings));
@@ -448,7 +448,22 @@ static void venc_power_on(struct omap_dss_device *dssdev)
 	if (dssdev->platform_enable)
 		dssdev->platform_enable(dssdev);
 
-	dssdev->manager->enable(dssdev->manager);
+	r = dss_mgr_enable(dssdev->manager);
+	if (r)
+		goto err;
+
+	return 0;
+
+err:
+	venc_write_reg(VENC_OUTPUT_CONTROL, 0);
+	dss_set_dac_pwrdn_bgz(0);
+
+	if (dssdev->platform_disable)
+		dssdev->platform_disable(dssdev);
+
+	regulator_disable(venc.vdda_dac_reg);
+
+	return r;
 }
 
 static void venc_power_off(struct omap_dss_device *dssdev)
@@ -456,7 +471,7 @@ static void venc_power_off(struct omap_dss_device *dssdev)
 	venc_write_reg(VENC_OUTPUT_CONTROL, 0);
 	dss_set_dac_pwrdn_bgz(0);
 
-	dssdev->manager->disable(dssdev->manager);
+	dss_mgr_disable(dssdev->manager);
 
 	if (dssdev->platform_disable)
 		dssdev->platform_disable(dssdev);
@@ -464,9 +479,11 @@ static void venc_power_off(struct omap_dss_device *dssdev)
 	regulator_disable(venc.vdda_dac_reg);
 }
 
-
-
-
+unsigned long venc_get_pixel_clock(void)
+{
+	/* VENC Pixel Clock in Mhz */
+	return 13500000;
+}
 
 /* driver */
 static int venc_panel_probe(struct omap_dss_device *dssdev)
@@ -503,7 +520,9 @@ static int venc_panel_enable(struct omap_dss_device *dssdev)
 	if (r)
 		goto err1;
 
-	venc_power_on(dssdev);
+	r = venc_power_on(dssdev);
+	if (r)
+		goto err2;
 
 	venc.wss_data = 0;
 
@@ -511,6 +530,8 @@ static int venc_panel_enable(struct omap_dss_device *dssdev)
 
 	mutex_unlock(&venc.venc_lock);
 	return 0;
+err2:
+	venc_runtime_put();
 err1:
 	omap_dss_stop_device(dssdev);
 err0:
@@ -732,22 +753,10 @@ static int venc_get_clocks(struct platform_device *pdev)
 {
 	struct clk *clk;
 
-	clk = clk_get(&pdev->dev, "fck");
-	if (IS_ERR(clk)) {
-		DSSERR("can't get fck\n");
-		return PTR_ERR(clk);
-	}
-
-	venc.tv_clk = clk;
-
 	if (dss_has_feature(FEAT_VENC_REQUIRES_TV_DAC_CLK)) {
-		if (cpu_is_omap34xx() || cpu_is_omap3630())
-			clk = clk_get(&pdev->dev, "dss_96m_fck");
-		else
-			clk = clk_get(&pdev->dev, "tv_dac_clk");
+		clk = clk_get(&pdev->dev, "tv_dac_clk");
 		if (IS_ERR(clk)) {
 			DSSERR("can't get tv_dac_clk\n");
-			clk_put(venc.tv_clk);
 			return PTR_ERR(clk);
 		}
 	} else {
@@ -761,8 +770,6 @@ static int venc_get_clocks(struct platform_device *pdev)
 
 static void venc_put_clocks(void)
 {
-	if (venc.tv_clk)
-		clk_put(venc.tv_clk);
 	if (venc.tv_dac_clk)
 		clk_put(venc.tv_dac_clk);
 }
@@ -838,7 +845,6 @@ static int venc_runtime_suspend(struct device *dev)
 {
 	if (venc.tv_dac_clk)
 		clk_disable(venc.tv_dac_clk);
-	clk_disable(venc.tv_clk);
 
 	dispc_runtime_put();
 	dss_runtime_put();
@@ -858,7 +864,6 @@ static int venc_runtime_resume(struct device *dev)
 	if (r < 0)
 		goto err_get_dispc;
 
-	clk_enable(venc.tv_clk);
 	if (venc.tv_dac_clk)
 		clk_enable(venc.tv_dac_clk);
 

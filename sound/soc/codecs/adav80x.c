@@ -523,7 +523,8 @@ static int adav80x_hw_params(struct snd_pcm_substream *substream,
 }
 
 static int adav80x_set_sysclk(struct snd_soc_codec *codec,
-		int clk_id, unsigned int freq, int dir)
+			      int clk_id, int source,
+			      unsigned int freq, int dir)
 {
 	struct adav80x *adav80x = snd_soc_codec_get_drvdata(codec);
 
@@ -797,7 +798,7 @@ static int adav80x_probe(struct snd_soc_codec *codec)
 	return adav80x_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
 }
 
-static int adav80x_suspend(struct snd_soc_codec *codec, pm_message_t state)
+static int adav80x_suspend(struct snd_soc_codec *codec)
 {
 	return adav80x_set_bias_level(codec, SND_SOC_BIAS_OFF);
 }

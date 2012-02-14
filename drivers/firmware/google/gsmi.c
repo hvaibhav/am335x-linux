@@ -27,6 +27,7 @@
 #include <linux/kdebug.h>
 #include <linux/reboot.h>
 #include <linux/efi.h>
+#include <linux/module.h>
 
 #define GSMI_SHUTDOWN_CLEAN	0	/* Clean Shutdown */
 /* TODO(mikew@google.com): Tie in HARDLOCKUP_DETECTOR with NMIWDT */
@@ -344,7 +345,8 @@ static efi_status_t gsmi_get_variable(efi_char16_t *name,
 		memcpy(&param, gsmi_dev.param_buf->start, sizeof(param));
 
 		/* The size reported is the min of all of our buffers */
-		*data_size = min(*data_size, gsmi_dev.data_buf->length);
+		*data_size = min_t(unsigned long, *data_size,
+						gsmi_dev.data_buf->length);
 		*data_size = min_t(unsigned long, *data_size, param.data_len);
 
 		/* Copy data back to return buffer. */
@@ -420,7 +422,7 @@ static efi_status_t gsmi_get_next_variable(unsigned long *name_size,
 
 static efi_status_t gsmi_set_variable(efi_char16_t *name,
 				      efi_guid_t *vendor,
-				      unsigned long attr,
+				      u32 attr,
 				      unsigned long data_size,
 				      void *data)
 {

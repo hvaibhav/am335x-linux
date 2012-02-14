@@ -47,8 +47,10 @@
 #include <linux/ctype.h>
 #include <linux/err.h>
 #include <linux/dmaengine.h>
+#include <linux/dma-mapping.h>
 #include <linux/scatterlist.h>
 #include <linux/slab.h>
+#include <linux/gpio.h>
 
 #ifdef CONFIG_SUPERH
 #include <asm/sh_bios.h>
@@ -72,6 +74,7 @@ struct sci_port {
 	struct clk		*fclk;
 
 	char			*irqstr[SCIx_NR_IRQS];
+	char			*gpiostr[SCIx_NR_FNS];
 
 	struct dma_chan			*chan_tx;
 	struct dma_chan			*chan_rx;
@@ -95,6 +98,12 @@ struct sci_port {
 #endif
 
 	struct notifier_block		freq_transition;
+
+#ifdef CONFIG_SERIAL_SH_SCI_CONSOLE
+	unsigned short saved_smr;
+	unsigned short saved_fcr;
+	unsigned char saved_brr;
+#endif
 };
 
 /* Function prototypes */
@@ -197,6 +206,25 @@ static struct plat_sci_reg sci_regmap[SCIx_NR_REGTYPES][SCIx_NR_REGS] = {
 		[SCRFDR]	= sci_reg_invalid,
 		[SCSPTR]	= sci_reg_invalid,
 		[SCLSR]		= sci_reg_invalid,
+	},
+
+	/*
+	 * Common SH-2(A) SCIF definitions for ports with FIFO data
+	 * count registers.
+	 */
+	[SCIx_SH2_SCIF_FIFODATA_REGTYPE] = {
+		[SCSMR]		= { 0x00, 16 },
+		[SCBRR]		= { 0x04,  8 },
+		[SCSCR]		= { 0x08, 16 },
+		[SCxTDR]	= { 0x0c,  8 },
+		[SCxSR]		= { 0x10, 16 },
+		[SCxRDR]	= { 0x14,  8 },
+		[SCFCR]		= { 0x18, 16 },
+		[SCFDR]		= { 0x1c, 16 },
+		[SCTFDR]	= sci_reg_invalid,
+		[SCRFDR]	= sci_reg_invalid,
+		[SCSPTR]	= { 0x20, 16 },
+		[SCLSR]		= { 0x24, 16 },
 	},
 
 	/*
@@ -448,8 +476,15 @@ static void sci_init_pins(struct uart_port *port, unsigned int cflag)
 	if (!reg->size)
 		return;
 
-	if (!(cflag & CRTSCTS))
-		sci_out(port, SCSPTR, 0x0080); /* Set RTS = 1 */
+	if ((s->cfg->capabilities & SCIx_HAVE_RTSCTS) &&
+	    ((!(cflag & CRTSCTS)))) {
+		unsigned short status;
+
+		status = sci_in(port, SCSPTR);
+		status &= ~SCSPTR_CTSIO;
+		status |= SCSPTR_RTSIO;
+		sci_out(port, SCSPTR, status); /* Set RTS = 1 */
+	}
 }
 
 static int sci_txfill(struct uart_port *port)
@@ -595,6 +630,7 @@ static void sci_receive_chars(struct uart_port *port)
 		} else {
 			for (i = 0; i < count; i++) {
 				char c = sci_in(port, SCxRDR);
+
 				status = sci_in(port, SCxSR);
 #if defined(CONFIG_CPU_SH3)
 				/* Skip "chars" during break */
@@ -623,9 +659,11 @@ static void sci_receive_chars(struct uart_port *port)
 				/* Store data and status */
 				if (status & SCxSR_FER(port)) {
 					flag = TTY_FRAME;
+					port->icount.frame++;
 					dev_notice(port->dev, "frame error\n");
 				} else if (status & SCxSR_PER(port)) {
 					flag = TTY_PARITY;
+					port->icount.parity++;
 					dev_notice(port->dev, "parity error\n");
 				} else
 					flag = TTY_NORMAL;
@@ -697,6 +735,8 @@ static int sci_handle_errors(struct uart_port *port)
 	 */
 	if (s->cfg->overrun_bit != SCIx_NOT_SUPPORTED) {
 		if (status & (1 << s->cfg->overrun_bit)) {
+			port->icount.overrun++;
+
 			/* overrun error */
 			if (tty_insert_flip_char(tty, 0, TTY_OVERRUN))
 				copied++;
@@ -711,6 +751,8 @@ static int sci_handle_errors(struct uart_port *port)
 			struct sci_port *sci_port = to_sci_port(port);
 
 			if (!sci_port->break_flag) {
+				port->icount.brk++;
+
 				sci_port->break_flag = 1;
 				sci_schedule_break_timer(sci_port);
 
@@ -726,6 +768,8 @@ static int sci_handle_errors(struct uart_port *port)
 
 		} else {
 			/* frame error */
+			port->icount.frame++;
+
 			if (tty_insert_flip_char(tty, 0, TTY_FRAME))
 				copied++;
 
@@ -735,6 +779,8 @@ static int sci_handle_errors(struct uart_port *port)
 
 	if (status & SCxSR_PER(port)) {
 		/* parity error */
+		port->icount.parity++;
+
 		if (tty_insert_flip_char(tty, 0, TTY_PARITY))
 			copied++;
 
@@ -761,6 +807,8 @@ static int sci_handle_fifo_overrun(struct uart_port *port)
 	if ((sci_in(port, SCLSR) & (1 << s->cfg->overrun_bit))) {
 		sci_out(port, SCLSR, 0);
 
+		port->icount.overrun++;
+
 		tty_insert_flip_char(tty, 0, TTY_OVERRUN);
 		tty_flip_buffer_push(tty);
 
@@ -786,6 +834,9 @@ static int sci_handle_breaks(struct uart_port *port)
 		/* Debounce break */
 		s->break_flag = 1;
 #endif
+
+		port->icount.brk++;
+
 		/* Notify of BREAK */
 		if (tty_insert_flip_char(tty, 0, TTY_BREAK))
 			copied++;
@@ -1056,6 +1107,67 @@ static void sci_free_irq(struct sci_port *port)
 	}
 }
 
+static const char *sci_gpio_names[SCIx_NR_FNS] = {
+	"sck", "rxd", "txd", "cts", "rts",
+};
+
+static const char *sci_gpio_str(unsigned int index)
+{
+	return sci_gpio_names[index];
+}
+
+static void __devinit sci_init_gpios(struct sci_port *port)
+{
+	struct uart_port *up = &port->port;
+	int i;
+
+	if (!port->cfg)
+		return;
+
+	for (i = 0; i < SCIx_NR_FNS; i++) {
+		const char *desc;
+		int ret;
+
+		if (!port->cfg->gpios[i])
+			continue;
+
+		desc = sci_gpio_str(i);
+
+		port->gpiostr[i] = kasprintf(GFP_KERNEL, "%s:%s",
+					     dev_name(up->dev), desc);
+
+		/*
+		 * If we've failed the allocation, we can still continue
+		 * on with a NULL string.
+		 */
+		if (!port->gpiostr[i])
+			dev_notice(up->dev, "%s string allocation failure\n",
+				   desc);
+
+		ret = gpio_request(port->cfg->gpios[i], port->gpiostr[i]);
+		if (unlikely(ret != 0)) {
+			dev_notice(up->dev, "failed %s gpio request\n", desc);
+
+			/*
+			 * If we can't get the GPIO for whatever reason,
+			 * no point in keeping the verbose string around.
+			 */
+			kfree(port->gpiostr[i]);
+		}
+	}
+}
+
+static void sci_free_gpios(struct sci_port *port)
+{
+	int i;
+
+	for (i = 0; i < SCIx_NR_FNS; i++)
+		if (port->cfg->gpios[i]) {
+			gpio_free(port->cfg->gpios[i]);
+			kfree(port->gpiostr[i]);
+		}
+}
+
 static unsigned int sci_tx_empty(struct uart_port *port)
 {
 	unsigned short status = sci_in(port, SCxSR);
@@ -1064,19 +1176,39 @@ static unsigned int sci_tx_empty(struct uart_port *port)
 	return (status & SCxSR_TEND(port)) && !in_tx_fifo ? TIOCSER_TEMT : 0;
 }
 
+/*
+ * Modem control is a bit of a mixed bag for SCI(F) ports. Generally
+ * CTS/RTS is supported in hardware by at least one port and controlled
+ * via SCSPTR (SCxPCR for SCIFA/B parts), or external pins (presently
+ * handled via the ->init_pins() op, which is a bit of a one-way street,
+ * lacking any ability to defer pin control -- this will later be
+ * converted over to the GPIO framework).
+ *
+ * Other modes (such as loopback) are supported generically on certain
+ * port types, but not others. For these it's sufficient to test for the
+ * existence of the support register and simply ignore the port type.
+ */
 static void sci_set_mctrl(struct uart_port *port, unsigned int mctrl)
 {
-	/* This routine is used for seting signals of: DTR, DCD, CTS/RTS */
-	/* We use SCIF's hardware for CTS/RTS, so don't need any for that. */
-	/* If you have signals for DTR and DCD, please implement here. */
+	if (mctrl & TIOCM_LOOP) {
+		struct plat_sci_reg *reg;
+
+		/*
+		 * Standard loopback mode for SCFCR ports.
+		 */
+		reg = sci_getreg(port, SCFCR);
+		if (reg->size)
+			sci_out(port, SCFCR, sci_in(port, SCFCR) | 1);
+	}
 }
 
 static unsigned int sci_get_mctrl(struct uart_port *port)
 {
-	/* This routine is used for getting signals of: DTR, DCD, DSR, RI,
-	   and CTS/RTS */
-
-	return TIOCM_DTR | TIOCM_RTS | TIOCM_DSR;
+	/*
+	 * CTS/RTS is handled in hardware when supported, while nothing
+	 * else is wired up. Keep it simple and simply assert DSR/CAR.
+	 */
+	return TIOCM_DSR | TIOCM_CAR;
 }
 
 #ifdef CONFIG_SERIAL_SH_SCI_DMA
@@ -1207,7 +1339,7 @@ static void sci_submit_rx(struct sci_port *s)
 		struct dma_async_tx_descriptor *desc;
 
 		desc = chan->device->device_prep_slave_sg(chan,
-			sg, 1, DMA_FROM_DEVICE, DMA_PREP_INTERRUPT);
+			sg, 1, DMA_DEV_TO_MEM, DMA_PREP_INTERRUPT);
 
 		if (desc) {
 			s->desc_rx[i] = desc;
@@ -1322,7 +1454,7 @@ static void work_fn_tx(struct work_struct *work)
 	BUG_ON(!sg_dma_len(sg));
 
 	desc = chan->device->device_prep_slave_sg(chan,
-			sg, s->sg_len_tx, DMA_TO_DEVICE,
+			sg, s->sg_len_tx, DMA_MEM_TO_DEV,
 			DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
 	if (!desc) {
 		/* switch to PIO */
@@ -1423,12 +1555,17 @@ static void sci_stop_rx(struct uart_port *port)
 
 static void sci_enable_ms(struct uart_port *port)
 {
-	/* Nothing here yet .. */
+	/*
+	 * Not supported by hardware, always a nop.
+	 */
 }
 
 static void sci_break_ctl(struct uart_port *port, int break_state)
 {
-	/* Nothing here yet .. */
+	/*
+	 * Not supported by hardware. Most parts couple break and rx
+	 * interrupts together, with break detection always enabled.
+	 */
 }
 
 #ifdef CONFIG_SERIAL_SH_SCI_DMA
@@ -1439,12 +1576,8 @@ static bool filter(struct dma_chan *chan, void *slave)
 	dev_dbg(chan->device->dev, "%s: slave ID %d\n", __func__,
 		param->slave_id);
 
-	if (param->dma_dev == chan->device->dev) {
-		chan->private = param;
-		return true;
-	} else {
-		return false;
-	}
+	chan->private = param;
+	return true;
 }
 
 static void rx_timer_fn(unsigned long arg)
@@ -1470,10 +1603,10 @@ static void sci_request_dma(struct uart_port *port)
 	dma_cap_mask_t mask;
 	int nent;
 
-	dev_dbg(port->dev, "%s: port %d DMA %p\n", __func__,
-		port->line, s->cfg->dma_dev);
+	dev_dbg(port->dev, "%s: port %d\n", __func__,
+		port->line);
 
-	if (!s->cfg->dma_dev)
+	if (s->cfg->dma_slave_tx <= 0 || s->cfg->dma_slave_rx <= 0)
 		return;
 
 	dma_cap_zero(mask);
@@ -1483,7 +1616,6 @@ static void sci_request_dma(struct uart_port *port)
 
 	/* Slave ID, e.g., SHDMA_SLAVE_SCIF0_TX */
 	param->slave_id = s->cfg->dma_slave_tx;
-	param->dma_dev = s->cfg->dma_dev;
 
 	s->cookie_tx = -EINVAL;
 	chan = dma_request_channel(mask, filter, param);
@@ -1512,7 +1644,6 @@ static void sci_request_dma(struct uart_port *port)
 
 	/* Slave ID, e.g., SHDMA_SLAVE_SCIF0_RX */
 	param->slave_id = s->cfg->dma_slave_rx;
-	param->dma_dev = s->cfg->dma_dev;
 
 	chan = dma_request_channel(mask, filter, param);
 	dev_dbg(port->dev, "%s: RX: got channel %p\n", __func__, chan);
@@ -1556,9 +1687,6 @@ static void sci_request_dma(struct uart_port *port)
 static void sci_free_dma(struct uart_port *port)
 {
 	struct sci_port *s = to_sci_port(port);
-
-	if (!s->cfg->dma_dev)
-		return;
 
 	if (s->chan_tx)
 		sci_tx_dma_release(s, false);
@@ -1633,13 +1761,29 @@ static unsigned int sci_scbrr_calc(unsigned int algo_id, unsigned int bps,
 	return ((freq + 16 * bps) / (32 * bps) - 1);
 }
 
+static void sci_reset(struct uart_port *port)
+{
+	struct plat_sci_reg *reg;
+	unsigned int status;
+
+	do {
+		status = sci_in(port, SCxSR);
+	} while (!(status & SCxSR_TEND(port)));
+
+	sci_out(port, SCSCR, 0x00);	/* TE=0, RE=0, CKE1=0 */
+
+	reg = sci_getreg(port, SCFCR);
+	if (reg->size)
+		sci_out(port, SCFCR, SCFCR_RFRST | SCFCR_TFRST);
+}
+
 static void sci_set_termios(struct uart_port *port, struct ktermios *termios,
 			    struct ktermios *old)
 {
 	struct sci_port *s = to_sci_port(port);
-	unsigned int status, baud, smr_val, max_baud;
+	struct plat_sci_reg *reg;
+	unsigned int baud, smr_val, max_baud;
 	int t = -1;
-	u16 scfcr = 0;
 
 	/*
 	 * earlyprintk comes here early on with port->uartclk set to zero.
@@ -1657,14 +1801,7 @@ static void sci_set_termios(struct uart_port *port, struct ktermios *termios,
 
 	sci_port_enable(s);
 
-	do {
-		status = sci_in(port, SCxSR);
-	} while (!(status & SCxSR_TEND(port)));
-
-	sci_out(port, SCSCR, 0x00);	/* TE=0, RE=0, CKE1=0 */
-
-	if (port->type != PORT_SCI)
-		sci_out(port, SCFCR, scfcr | SCFCR_RFRST | SCFCR_TFRST);
+	sci_reset(port);
 
 	smr_val = sci_in(port, SCSMR) & 3;
 
@@ -1696,7 +1833,27 @@ static void sci_set_termios(struct uart_port *port, struct ktermios *termios,
 	}
 
 	sci_init_pins(port, termios->c_cflag);
-	sci_out(port, SCFCR, scfcr | ((termios->c_cflag & CRTSCTS) ? SCFCR_MCE : 0));
+
+	reg = sci_getreg(port, SCFCR);
+	if (reg->size) {
+		unsigned short ctrl = sci_in(port, SCFCR);
+
+		if (s->cfg->capabilities & SCIx_HAVE_RTSCTS) {
+			if (termios->c_cflag & CRTSCTS)
+				ctrl |= SCFCR_MCE;
+			else
+				ctrl &= ~SCFCR_MCE;
+		}
+
+		/*
+		 * As we've done a sci_reset() above, ensure we don't
+		 * interfere with the FIFOs while toggling MCE. As the
+		 * reset values could still be set, simply mask them out.
+		 */
+		ctrl &= ~(SCFCR_RFRST | SCFCR_TFRST);
+
+		sci_out(port, SCFCR, ctrl);
+	}
 
 	sci_out(port, SCSCR, s->cfg->scscr);
 
@@ -1868,6 +2025,8 @@ static int __devinit sci_init_single(struct platform_device *dev,
 	struct uart_port *port = &sci_port->port;
 	int ret;
 
+	sci_port->cfg	= p;
+
 	port->ops	= &sci_uart_ops;
 	port->iotype	= UPIO_MEM;
 	port->line	= index;
@@ -1913,6 +2072,9 @@ static int __devinit sci_init_single(struct platform_device *dev,
 
 		port->dev = &dev->dev;
 
+		sci_init_gpios(sci_port);
+
+		pm_runtime_irq_safe(&dev->dev);
 		pm_runtime_enable(&dev->dev);
 	}
 
@@ -1946,8 +2108,6 @@ static int __devinit sci_init_single(struct platform_device *dev,
 		p->error_mask |= (1 << p->overrun_bit);
 	}
 
-	sci_port->cfg		= p;
-
 	port->mapbase		= p->mapbase;
 	port->type		= p->type;
 	port->flags		= p->flags;
@@ -1961,14 +2121,14 @@ static int __devinit sci_init_single(struct platform_device *dev,
 	 * For the muxed case there's nothing more to do.
 	 */
 	port->irq		= p->irqs[SCIx_RXI_IRQ];
-	port->irqflags		= IRQF_DISABLED;
+	port->irqflags		= 0;
 
 	port->serial_in		= sci_serial_in;
 	port->serial_out	= sci_serial_out;
 
-	if (p->dma_dev)
-		dev_dbg(port->dev, "DMA device %p, tx %d, rx %d\n",
-			p->dma_dev, p->dma_slave_tx, p->dma_slave_rx);
+	if (p->dma_slave_tx > 0 && p->dma_slave_rx > 0)
+		dev_dbg(port->dev, "DMA tx %d, rx %d\n",
+			p->dma_slave_tx, p->dma_slave_rx);
 
 	return 0;
 }
@@ -2036,7 +2196,8 @@ static int __devinit serial_console_setup(struct console *co, char *options)
 	if (options)
 		uart_parse_options(options, &baud, &parity, &bits, &flow);
 
-	/* TODO: disable clock */
+	sci_port_disable(sci_port);
+
 	return uart_set_options(port, co, baud, parity, bits, flow);
 }
 
@@ -2079,6 +2240,46 @@ static int __devinit sci_probe_earlyprintk(struct platform_device *pdev)
 	return 0;
 }
 
+#define uart_console(port)	((port)->cons->index == (port)->line)
+
+static int sci_runtime_suspend(struct device *dev)
+{
+	struct sci_port *sci_port = dev_get_drvdata(dev);
+	struct uart_port *port = &sci_port->port;
+
+	if (uart_console(port)) {
+		struct plat_sci_reg *reg;
+
+		sci_port->saved_smr = sci_in(port, SCSMR);
+		sci_port->saved_brr = sci_in(port, SCBRR);
+
+		reg = sci_getreg(port, SCFCR);
+		if (reg->size)
+			sci_port->saved_fcr = sci_in(port, SCFCR);
+		else
+			sci_port->saved_fcr = 0;
+	}
+	return 0;
+}
+
+static int sci_runtime_resume(struct device *dev)
+{
+	struct sci_port *sci_port = dev_get_drvdata(dev);
+	struct uart_port *port = &sci_port->port;
+
+	if (uart_console(port)) {
+		sci_reset(port);
+		sci_out(port, SCSMR, sci_port->saved_smr);
+		sci_out(port, SCBRR, sci_port->saved_brr);
+
+		if (sci_port->saved_fcr)
+			sci_out(port, SCFCR, sci_port->saved_fcr);
+
+		sci_out(port, SCSCR, sci_port->cfg->scscr);
+	}
+	return 0;
+}
+
 #define SCI_CONSOLE	(&serial_console)
 
 #else
@@ -2088,6 +2289,8 @@ static inline int __devinit sci_probe_earlyprintk(struct platform_device *pdev)
 }
 
 #define SCI_CONSOLE	NULL
+#define sci_runtime_suspend	NULL
+#define sci_runtime_resume	NULL
 
 #endif /* CONFIG_SERIAL_SH_SCI_CONSOLE */
 
@@ -2110,6 +2313,8 @@ static int sci_remove(struct platform_device *dev)
 
 	cpufreq_unregister_notifier(&port->freq_transition,
 				    CPUFREQ_TRANSITION_NOTIFIER);
+
+	sci_free_gpios(port);
 
 	uart_remove_one_port(&sci_uart_driver, &port->port);
 
@@ -2203,6 +2408,8 @@ static int sci_resume(struct device *dev)
 }
 
 static const struct dev_pm_ops sci_dev_pm_ops = {
+	.runtime_suspend = sci_runtime_suspend,
+	.runtime_resume = sci_runtime_resume,
 	.suspend	= sci_suspend,
 	.resume		= sci_resume,
 };

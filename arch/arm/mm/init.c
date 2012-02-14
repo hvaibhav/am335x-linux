@@ -13,15 +13,16 @@
 #include <linux/init.h>
 #include <linux/bootmem.h>
 #include <linux/mman.h>
+#include <linux/export.h>
 #include <linux/nodemask.h>
 #include <linux/initrd.h>
 #include <linux/of_fdt.h>
 #include <linux/highmem.h>
 #include <linux/gfp.h>
 #include <linux/memblock.h>
-#include <linux/sort.h>
 
 #include <asm/mach-types.h>
+#include <asm/memblock.h>
 #include <asm/prom.h>
 #include <asm/sections.h>
 #include <asm/setup.h>
@@ -31,6 +32,7 @@
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
+#include <asm/memblock.h>
 
 #include "mm.h"
 
@@ -133,30 +135,18 @@ void show_mem(unsigned int filter)
 }
 
 static void __init find_limits(unsigned long *min, unsigned long *max_low,
-	unsigned long *max_high)
+			       unsigned long *max_high)
 {
 	struct meminfo *mi = &meminfo;
 	int i;
 
-	*min = -1UL;
-	*max_low = *max_high = 0;
-
-	for_each_bank (i, mi) {
-		struct membank *bank = &mi->bank[i];
-		unsigned long start, end;
-
-		start = bank_pfn_start(bank);
-		end = bank_pfn_end(bank);
-
-		if (*min > start)
-			*min = start;
-		if (*max_high < end)
-			*max_high = end;
-		if (bank->highmem)
-			continue;
-		if (*max_low < end)
-			*max_low = end;
-	}
+	/* This assumes the meminfo array is properly sorted */
+	*min = bank_pfn_start(&mi->bank[0]);
+	for_each_bank (i, mi)
+		if (mi->bank[i].highmem)
+				break;
+	*max_low = bank_pfn_end(&mi->bank[i - 1]);
+	*max_high = bank_pfn_end(&mi->bank[mi->nr_banks - 1]);
 }
 
 static void __init arm_bootmem_init(unsigned long start_pfn,
@@ -298,7 +288,7 @@ static void __init arm_bootmem_free(unsigned long min, unsigned long max_low,
 #ifdef CONFIG_HAVE_ARCH_PFN_VALID
 int pfn_valid(unsigned long pfn)
 {
-	return memblock_is_memory(pfn << PAGE_SHIFT);
+	return memblock_is_memory(__pfn_to_phys(pfn));
 }
 EXPORT_SYMBOL(pfn_valid);
 #endif
@@ -318,20 +308,25 @@ static void arm_memory_present(void)
 }
 #endif
 
-static int __init meminfo_cmp(const void *_a, const void *_b)
+static bool arm_memblock_steal_permitted = true;
+
+phys_addr_t __init arm_memblock_steal(phys_addr_t size, phys_addr_t align)
 {
-	const struct membank *a = _a, *b = _b;
-	long cmp = bank_pfn_start(a) - bank_pfn_start(b);
-	return cmp < 0 ? -1 : cmp > 0 ? 1 : 0;
+	phys_addr_t phys;
+
+	BUG_ON(!arm_memblock_steal_permitted);
+
+	phys = memblock_alloc(size, align);
+	memblock_free(phys, size);
+	memblock_remove(phys, size);
+
+	return phys;
 }
 
 void __init arm_memblock_init(struct meminfo *mi, struct machine_desc *mdesc)
 {
 	int i;
 
-	sort(&meminfo.bank, meminfo.nr_banks, sizeof(meminfo.bank[0]), meminfo_cmp, NULL);
-
-	memblock_init();
 	for (i = 0; i < mi->nr_banks; i++)
 		memblock_add(mi->bank[i].start, mi->bank[i].size);
 
@@ -370,7 +365,8 @@ void __init arm_memblock_init(struct meminfo *mi, struct machine_desc *mdesc)
 	if (mdesc->reserve)
 		mdesc->reserve();
 
-	memblock_analyze();
+	arm_memblock_steal_permitted = false;
+	memblock_allow_resize();
 	memblock_dump_all();
 }
 
@@ -401,8 +397,6 @@ void __init bootmem_init(void)
 	 * for memmap_init_zone(), otherwise all PFNs are invalid.
 	 */
 	arm_bootmem_free(min, max_low, max_high);
-
-	high_memory = __va(((phys_addr_t)max_low << PAGE_SHIFT) - 1) + 1;
 
 	/*
 	 * This doesn't seem to be used by the Linux memory manager any
@@ -441,7 +435,7 @@ static inline int free_area(unsigned long pfn, unsigned long end, char *s)
 static inline void poison_init_mem(void *s, size_t count)
 {
 	u32 *p = (u32 *)s;
-	while ((count = count - 4))
+	for (; count != 0; count -= 4)
 		*p++ = 0xe7fddef0;
 }
 
@@ -496,6 +490,13 @@ static void __init free_unused_memmap(struct meminfo *mi)
 		 */
 		bank_start = min(bank_start,
 				 ALIGN(prev_bank_end, PAGES_PER_SECTION));
+#else
+		/*
+		 * Align down here since the VM subsystem insists that the
+		 * memmap entries are valid from the bank start aligned to
+		 * MAX_ORDER_NR_PAGES.
+		 */
+		bank_start = round_down(bank_start, MAX_ORDER_NR_PAGES);
 #endif
 		/*
 		 * If we had a previous bank, and there is a space
@@ -653,9 +654,6 @@ void __init mem_init(void)
 			"    ITCM    : 0x%08lx - 0x%08lx   (%4ld kB)\n"
 #endif
 			"    fixmap  : 0x%08lx - 0x%08lx   (%4ld kB)\n"
-#ifdef CONFIG_MMU
-			"    DMA     : 0x%08lx - 0x%08lx   (%4ld MB)\n"
-#endif
 			"    vmalloc : 0x%08lx - 0x%08lx   (%4ld MB)\n"
 			"    lowmem  : 0x%08lx - 0x%08lx   (%4ld MB)\n"
 #ifdef CONFIG_HIGHMEM
@@ -674,9 +672,6 @@ void __init mem_init(void)
 			MLK(ITCM_OFFSET, (unsigned long) itcm_end),
 #endif
 			MLK(FIXADDR_START, FIXADDR_TOP),
-#ifdef CONFIG_MMU
-			MLM(CONSISTENT_BASE, CONSISTENT_END),
-#endif
 			MLM(VMALLOC_START, VMALLOC_END),
 			MLM(PAGE_OFFSET, (unsigned long)high_memory),
 #ifdef CONFIG_HIGHMEM
@@ -699,9 +694,6 @@ void __init mem_init(void)
 	 * be detected at build time already.
 	 */
 #ifdef CONFIG_MMU
-	BUILD_BUG_ON(VMALLOC_END			> CONSISTENT_BASE);
-	BUG_ON(VMALLOC_END				> CONSISTENT_BASE);
-
 	BUILD_BUG_ON(TASK_SIZE				> MODULES_VADDR);
 	BUG_ON(TASK_SIZE 				> MODULES_VADDR);
 #endif

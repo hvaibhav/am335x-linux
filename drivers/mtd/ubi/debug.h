@@ -43,7 +43,10 @@
 	pr_debug("UBI DBG " type ": " fmt "\n", ##__VA_ARGS__)
 
 /* Just a debugging messages not related to any specific UBI subsystem */
-#define dbg_msg(fmt, ...) ubi_dbg_msg("msg", fmt, ##__VA_ARGS__)
+#define dbg_msg(fmt, ...)                                    \
+	printk(KERN_DEBUG "UBI DBG (pid %d): %s: " fmt "\n", \
+	       current->pid, __func__, ##__VA_ARGS__)
+
 /* General debugging messages */
 #define dbg_gen(fmt, ...) ubi_dbg_msg("gen", fmt, ##__VA_ARGS__)
 /* Messages from the eraseblock association sub-system */
@@ -181,7 +184,7 @@ static inline int ubi_dbg_is_erase_failure(const struct ubi_device *ubi)
 
 #define ubi_dbg_msg(fmt, ...) do {                                           \
 	if (0)                                                               \
-		pr_debug(fmt "\n", ##__VA_ARGS__);                           \
+		printk(KERN_DEBUG fmt "\n", ##__VA_ARGS__);                  \
 } while (0)
 
 #define dbg_msg(fmt, ...)  ubi_dbg_msg(fmt, ##__VA_ARGS__)

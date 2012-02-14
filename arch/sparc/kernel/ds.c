@@ -1181,13 +1181,11 @@ static int __devinit ds_probe(struct vio_dev *vdev,
 
 	dp->rcv_buf_len = 4096;
 
-	dp->ds_states = kzalloc(sizeof(ds_states_template),
-				GFP_KERNEL);
+	dp->ds_states = kmemdup(ds_states_template,
+				sizeof(ds_states_template), GFP_KERNEL);
 	if (!dp->ds_states)
 		goto out_free_rcv_buf;
 
-	memcpy(dp->ds_states, ds_states_template,
-	       sizeof(ds_states_template));
 	dp->num_ds_states = ARRAY_SIZE(ds_states_template);
 
 	for (i = 0; i < dp->num_ds_states; i++)
@@ -1256,13 +1254,14 @@ static int __init ds_init(void)
 {
 	unsigned long hv_ret, major, minor;
 
-	hv_ret = sun4v_get_version(HV_GRP_REBOOT_DATA, &major, &minor);
-	if (hv_ret == HV_EOK) {
-		pr_info("SUN4V: Reboot data supported (maj=%lu,min=%lu).\n",
-			major, minor);
-		reboot_data_supported = 1;
+	if (tlb_type == hypervisor) {
+		hv_ret = sun4v_get_version(HV_GRP_REBOOT_DATA, &major, &minor);
+		if (hv_ret == HV_EOK) {
+			pr_info("SUN4V: Reboot data supported (maj=%lu,min=%lu).\n",
+				major, minor);
+			reboot_data_supported = 1;
+		}
 	}
-
 	kthread_run(ds_thread, NULL, "kldomd");
 
 	return vio_register_driver(&ds_driver);

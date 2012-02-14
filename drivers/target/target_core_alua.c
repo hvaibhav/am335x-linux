@@ -24,21 +24,20 @@
  *
  ******************************************************************************/
 
-#include <linux/version.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/configfs.h>
+#include <linux/export.h>
 #include <scsi/scsi.h>
 #include <scsi/scsi_cmnd.h>
 
 #include <target/target_core_base.h>
-#include <target/target_core_device.h>
-#include <target/target_core_transport.h>
-#include <target/target_core_fabric_ops.h>
+#include <target/target_core_backend.h>
+#include <target/target_core_fabric.h>
 #include <target/target_core_configfs.h>
 
+#include "target_core_internal.h"
 #include "target_core_alua.h"
-#include "target_core_hba.h"
 #include "target_core_ua.h"
 
 static int core_alua_check_transition(int state, int *primary);
@@ -59,8 +58,9 @@ struct t10_alua_lu_gp *default_lu_gp;
  *
  * See spc4r17 section 6.27
  */
-int core_emulate_report_target_port_groups(struct se_cmd *cmd)
+int target_emulate_report_target_port_groups(struct se_task *task)
 {
+	struct se_cmd *cmd = task->task_se_cmd;
 	struct se_subsystem_dev *su_dev = cmd->se_dev->se_sub_dev;
 	struct se_port *port;
 	struct t10_alua_tg_pt_gp *tg_pt_gp;
@@ -68,12 +68,32 @@ int core_emulate_report_target_port_groups(struct se_cmd *cmd)
 	unsigned char *buf;
 	u32 rd_len = 0, off = 4; /* Skip over RESERVED area to first
 				    Target port group descriptor */
+	/*
+	 * Need at least 4 bytes of response data or else we can't
+	 * even fit the return data length.
+	 */
+	if (cmd->data_length < 4) {
+		pr_warn("REPORT TARGET PORT GROUPS allocation length %u"
+			" too small\n", cmd->data_length);
+		return -EINVAL;
+	}
 
-	buf = transport_kmap_first_data_page(cmd);
+	buf = transport_kmap_data_sg(cmd);
 
 	spin_lock(&su_dev->t10_alua.tg_pt_gps_lock);
 	list_for_each_entry(tg_pt_gp, &su_dev->t10_alua.tg_pt_gps_list,
 			tg_pt_gp_list) {
+		/*
+		 * Check if the Target port group and Target port descriptor list
+		 * based on tg_pt_gp_members count will fit into the response payload.
+		 * Otherwise, bump rd_len to let the initiator know we have exceeded
+		 * the allocation length and the response is truncated.
+		 */
+		if ((off + 8 + (tg_pt_gp->tg_pt_gp_members * 4)) >
+		     cmd->data_length) {
+			rd_len += 8 + (tg_pt_gp->tg_pt_gp_members * 4);
+			continue;
+		}
 		/*
 		 * PREF: Preferred target port bit, determine if this
 		 * bit should be set for port group.
@@ -143,8 +163,10 @@ int core_emulate_report_target_port_groups(struct se_cmd *cmd)
 	buf[2] = ((rd_len >> 8) & 0xff);
 	buf[3] = (rd_len & 0xff);
 
-	transport_kunmap_first_data_page(cmd);
+	transport_kunmap_data_sg(cmd);
 
+	task->task_scsi_status = GOOD;
+	transport_complete_task(task, 1);
 	return 0;
 }
 
@@ -153,8 +175,9 @@ int core_emulate_report_target_port_groups(struct se_cmd *cmd)
  *
  * See spc4r17 section 6.35
  */
-int core_emulate_set_target_port_groups(struct se_cmd *cmd)
+int target_emulate_set_target_port_groups(struct se_task *task)
 {
+	struct se_cmd *cmd = task->task_se_cmd;
 	struct se_device *dev = cmd->se_dev;
 	struct se_subsystem_dev *su_dev = dev->se_sub_dev;
 	struct se_port *port, *l_port = cmd->se_lun->lun_sep;
@@ -167,10 +190,11 @@ int core_emulate_set_target_port_groups(struct se_cmd *cmd)
 	int alua_access_state, primary = 0, rc;
 	u16 tg_pt_id, rtpi;
 
-	if (!l_port)
-		return PYX_TRANSPORT_LU_COMM_FAILURE;
-
-	buf = transport_kmap_first_data_page(cmd);
+	if (!l_port) {
+		cmd->scsi_sense_reason = TCM_LOGICAL_UNIT_COMMUNICATION_FAILURE;
+		return -EINVAL;
+	}
+	buf = transport_kmap_data_sg(cmd);
 
 	/*
 	 * Determine if explict ALUA via SET_TARGET_PORT_GROUPS is allowed
@@ -179,7 +203,8 @@ int core_emulate_set_target_port_groups(struct se_cmd *cmd)
 	l_tg_pt_gp_mem = l_port->sep_alua_tg_pt_gp_mem;
 	if (!l_tg_pt_gp_mem) {
 		pr_err("Unable to access l_port->sep_alua_tg_pt_gp_mem\n");
-		rc = PYX_TRANSPORT_UNKNOWN_SAM_OPCODE;
+		cmd->scsi_sense_reason = TCM_UNSUPPORTED_SCSI_OPCODE;
+		rc = -EINVAL;
 		goto out;
 	}
 	spin_lock(&l_tg_pt_gp_mem->tg_pt_gp_mem_lock);
@@ -187,7 +212,8 @@ int core_emulate_set_target_port_groups(struct se_cmd *cmd)
 	if (!l_tg_pt_gp) {
 		spin_unlock(&l_tg_pt_gp_mem->tg_pt_gp_mem_lock);
 		pr_err("Unable to access *l_tg_pt_gp_mem->tg_pt_gp\n");
-		rc = PYX_TRANSPORT_UNKNOWN_SAM_OPCODE;
+		cmd->scsi_sense_reason = TCM_UNSUPPORTED_SCSI_OPCODE;
+		rc = -EINVAL;
 		goto out;
 	}
 	rc = (l_tg_pt_gp->tg_pt_gp_alua_access_type & TPGS_EXPLICT_ALUA);
@@ -196,7 +222,8 @@ int core_emulate_set_target_port_groups(struct se_cmd *cmd)
 	if (!rc) {
 		pr_debug("Unable to process SET_TARGET_PORT_GROUPS"
 				" while TPGS_EXPLICT_ALUA is disabled\n");
-		rc = PYX_TRANSPORT_UNKNOWN_SAM_OPCODE;
+		cmd->scsi_sense_reason = TCM_UNSUPPORTED_SCSI_OPCODE;
+		rc = -EINVAL;
 		goto out;
 	}
 
@@ -221,7 +248,8 @@ int core_emulate_set_target_port_groups(struct se_cmd *cmd)
 			 * REQUEST, and the additional sense code set to INVALID
 			 * FIELD IN PARAMETER LIST.
 			 */
-			rc = PYX_TRANSPORT_INVALID_PARAMETER_LIST;
+			cmd->scsi_sense_reason = TCM_INVALID_PARAMETER_LIST;
+			rc = -EINVAL;
 			goto out;
 		}
 		rc = -1;
@@ -274,7 +302,8 @@ int core_emulate_set_target_port_groups(struct se_cmd *cmd)
 			 * throw an exception with ASCQ: INVALID_PARAMETER_LIST
 			 */
 			if (rc != 0) {
-				rc = PYX_TRANSPORT_INVALID_PARAMETER_LIST;
+				cmd->scsi_sense_reason = TCM_INVALID_PARAMETER_LIST;
+				rc = -EINVAL;
 				goto out;
 			}
 		} else {
@@ -311,7 +340,8 @@ int core_emulate_set_target_port_groups(struct se_cmd *cmd)
 			 * INVALID_PARAMETER_LIST
 			 */
 			if (rc != 0) {
-				rc = PYX_TRANSPORT_INVALID_PARAMETER_LIST;
+				cmd->scsi_sense_reason = TCM_INVALID_PARAMETER_LIST;
+				rc = -EINVAL;
 				goto out;
 			}
 		}
@@ -321,8 +351,9 @@ int core_emulate_set_target_port_groups(struct se_cmd *cmd)
 	}
 
 out:
-	transport_kunmap_first_data_page(cmd);
-
+	transport_kunmap_data_sg(cmd);
+	task->task_scsi_status = GOOD;
+	transport_complete_task(task, 1);
 	return 0;
 }
 
@@ -1159,7 +1190,6 @@ void core_alua_free_lu_gp(struct t10_alua_lu_gp *lu_gp)
 	 * struct t10_alua_lu_gp.
 	 */
 	spin_lock(&lu_gps_lock);
-	atomic_set(&lu_gp->lu_gp_shutdown, 1);
 	list_del(&lu_gp->lu_gp_node);
 	alua_lu_gps_count--;
 	spin_unlock(&lu_gps_lock);
@@ -1413,7 +1443,6 @@ struct t10_alua_tg_pt_gp_member *core_alua_allocate_tg_pt_gp_mem(
 
 	tg_pt_gp_mem->tg_pt = port;
 	port->sep_alua_tg_pt_gp_mem = tg_pt_gp_mem;
-	atomic_set(&port->sep_tg_pt_gp_active, 1);
 
 	return tg_pt_gp_mem;
 }

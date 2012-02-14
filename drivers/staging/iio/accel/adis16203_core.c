@@ -13,13 +13,11 @@
 #include <linux/spi/spi.h>
 #include <linux/slab.h>
 #include <linux/sysfs.h>
+#include <linux/module.h>
 
 #include "../iio.h"
 #include "../sysfs.h"
-#include "accel.h"
-#include "inclinometer.h"
-#include "../ring_generic.h"
-#include "../adc/adc.h"
+#include "../buffer.h"
 
 #include "adis16203.h"
 
@@ -311,13 +309,17 @@ static int adis16203_read_raw(struct iio_dev *indio_dev,
 		mutex_lock(&indio_dev->mlock);
 		addr = adis16203_addresses[chan->address][0];
 		ret = adis16203_spi_read_reg_16(indio_dev, addr, &val16);
-		if (ret)
+		if (ret) {
+			mutex_unlock(&indio_dev->mlock);
 			return ret;
+		}
 
 		if (val16 & ADIS16203_ERROR_ACTIVE) {
 			ret = adis16203_check_status(indio_dev);
-			if (ret)
+			if (ret) {
+				mutex_unlock(&indio_dev->mlock);
 				return ret;
+			}
 		}
 		val16 = val16 & ((1 << chan->scan_type.realbits) - 1);
 		if (chan->scan_type.sign == 's')
@@ -327,10 +329,9 @@ static int adis16203_read_raw(struct iio_dev *indio_dev,
 		*val = val16;
 		mutex_unlock(&indio_dev->mlock);
 		return IIO_VAL_INT;
-	case (1 << IIO_CHAN_INFO_SCALE_SEPARATE):
-	case (1 << IIO_CHAN_INFO_SCALE_SHARED):
+	case IIO_CHAN_INFO_SCALE:
 		switch (chan->type) {
-		case IIO_IN:
+		case IIO_VOLTAGE:
 			*val = 0;
 			if (chan->channel == 0)
 				*val2 = 1220;
@@ -348,10 +349,10 @@ static int adis16203_read_raw(struct iio_dev *indio_dev,
 		default:
 			return -EINVAL;
 		}
-	case (1 << IIO_CHAN_INFO_OFFSET_SEPARATE):
+	case IIO_CHAN_INFO_OFFSET:
 		*val = 25;
 		return IIO_VAL_INT;
-	case (1 << IIO_CHAN_INFO_CALIBBIAS_SEPARATE):
+	case IIO_CHAN_INFO_CALIBBIAS:
 		bits = 14;
 		mutex_lock(&indio_dev->mlock);
 		addr = adis16203_addresses[chan->address][1];
@@ -371,27 +372,27 @@ static int adis16203_read_raw(struct iio_dev *indio_dev,
 }
 
 static struct iio_chan_spec adis16203_channels[] = {
-	IIO_CHAN(IIO_IN, 0, 1, 0, "supply", 0, 0,
-		 (1 << IIO_CHAN_INFO_SCALE_SEPARATE),
+	IIO_CHAN(IIO_VOLTAGE, 0, 1, 0, "supply", 0, 0,
+		 IIO_CHAN_INFO_SCALE_SEPARATE_BIT,
 		 in_supply, ADIS16203_SCAN_SUPPLY,
 		 IIO_ST('u', 12, 16, 0), 0),
-	IIO_CHAN(IIO_IN, 0, 1, 0, NULL, 1, 0,
-		 (1 << IIO_CHAN_INFO_SCALE_SEPARATE),
+	IIO_CHAN(IIO_VOLTAGE, 0, 1, 0, NULL, 1, 0,
+		 IIO_CHAN_INFO_SCALE_SEPARATE_BIT,
 		 in_aux, ADIS16203_SCAN_AUX_ADC,
 		 IIO_ST('u', 12, 16, 0), 0),
 	IIO_CHAN(IIO_INCLI, 1, 0, 0, NULL, 0, IIO_MOD_X,
-		 (1 << IIO_CHAN_INFO_SCALE_SHARED) |
-		 (1 << IIO_CHAN_INFO_CALIBBIAS_SEPARATE),
+		 IIO_CHAN_INFO_SCALE_SHARED_BIT |
+		 IIO_CHAN_INFO_CALIBBIAS_SEPARATE_BIT,
 		 incli_x, ADIS16203_SCAN_INCLI_X,
 		 IIO_ST('s', 14, 16, 0), 0),
 	/* Fixme: Not what it appears to be - see data sheet */
 	IIO_CHAN(IIO_INCLI, 1, 0, 0, NULL, 0, IIO_MOD_Y,
-		 (1 << IIO_CHAN_INFO_SCALE_SHARED),
+		 IIO_CHAN_INFO_SCALE_SHARED_BIT,
 		 incli_y, ADIS16203_SCAN_INCLI_Y,
 		 IIO_ST('s', 14, 16, 0), 0),
 	IIO_CHAN(IIO_TEMP, 0, 1, 0, NULL, 0, 0,
-		 (1 << IIO_CHAN_INFO_SCALE_SEPARATE) |
-		 (1 << IIO_CHAN_INFO_OFFSET_SEPARATE),
+		 IIO_CHAN_INFO_SCALE_SEPARATE_BIT |
+		 IIO_CHAN_INFO_OFFSET_SEPARATE_BIT,
 		 temp, ADIS16203_SCAN_TEMP,
 		 IIO_ST('u', 12, 16, 0), 0),
 	IIO_CHAN_SOFT_TIMESTAMP(5),
@@ -417,7 +418,7 @@ static const struct iio_info adis16203_info = {
 
 static int __devinit adis16203_probe(struct spi_device *spi)
 {
-	int ret, regdone = 0;
+	int ret;
 	struct iio_dev *indio_dev;
 	struct adis16203_state *st;
 
@@ -444,14 +445,9 @@ static int __devinit adis16203_probe(struct spi_device *spi)
 	if (ret)
 		goto error_free_dev;
 
-	ret = iio_device_register(indio_dev);
-	if (ret)
-		goto error_unreg_ring_funcs;
-	regdone = 1;
-
-	ret = iio_ring_buffer_register_ex(indio_dev->ring, 0,
-					  adis16203_channels,
-					  ARRAY_SIZE(adis16203_channels));
+	ret = iio_buffer_register(indio_dev,
+				  adis16203_channels,
+				  ARRAY_SIZE(adis16203_channels));
 	if (ret) {
 		printk(KERN_ERR "failed to initialize the ring\n");
 		goto error_unreg_ring_funcs;
@@ -467,19 +463,21 @@ static int __devinit adis16203_probe(struct spi_device *spi)
 	ret = adis16203_initial_setup(indio_dev);
 	if (ret)
 		goto error_remove_trigger;
+
+	ret = iio_device_register(indio_dev);
+	if (ret)
+		goto error_remove_trigger;
+
 	return 0;
 
 error_remove_trigger:
 	adis16203_remove_trigger(indio_dev);
 error_uninitialize_ring:
-	iio_ring_buffer_unregister(indio_dev->ring);
+	iio_buffer_unregister(indio_dev);
 error_unreg_ring_funcs:
 	adis16203_unconfigure_ring(indio_dev);
 error_free_dev:
-	if (regdone)
-		iio_device_unregister(indio_dev);
-	else
-		iio_free_device(indio_dev);
+	iio_free_device(indio_dev);
 error_ret:
 	return ret;
 }
@@ -488,10 +486,11 @@ static int adis16203_remove(struct spi_device *spi)
 {
 	struct iio_dev *indio_dev = spi_get_drvdata(spi);
 
-	adis16203_remove_trigger(indio_dev);
-	iio_ring_buffer_unregister(indio_dev->ring);
 	iio_device_unregister(indio_dev);
+	adis16203_remove_trigger(indio_dev);
+	iio_buffer_unregister(indio_dev);
 	adis16203_unconfigure_ring(indio_dev);
+	iio_free_device(indio_dev);
 
 	return 0;
 }
@@ -504,19 +503,9 @@ static struct spi_driver adis16203_driver = {
 	.probe = adis16203_probe,
 	.remove = __devexit_p(adis16203_remove),
 };
-
-static __init int adis16203_init(void)
-{
-	return spi_register_driver(&adis16203_driver);
-}
-module_init(adis16203_init);
-
-static __exit void adis16203_exit(void)
-{
-	spi_unregister_driver(&adis16203_driver);
-}
-module_exit(adis16203_exit);
+module_spi_driver(adis16203_driver);
 
 MODULE_AUTHOR("Barry Song <21cnbao@gmail.com>");
 MODULE_DESCRIPTION("Analog Devices ADIS16203 Programmable Digital Vibration Sensor driver");
 MODULE_LICENSE("GPL v2");
+MODULE_ALIAS("spi:adis16203");

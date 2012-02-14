@@ -28,7 +28,7 @@
 #include <linux/platform_device.h>
 
 #include <mach/board.h>
-#include <mach/gpio.h>
+#include <asm/gpio.h>
 #include <mach/at91sam9_smc.h>
 
 #define DRV_NAME "at91_ide"
@@ -314,7 +314,7 @@ static int __init at91_ide_probe(struct platform_device *pdev)
 	apply_timings(board->chipselect, 0, ide_timing_find_mode(XFER_PIO_0), 0);
 
 	/* with GPIO interrupt we have to do quirks in handler */
-	if (board->irq_pin >= PIN_BASE)
+	if (gpio_is_valid(board->irq_pin))
 		host->irq_handler = at91_irq_handler;
 
 	host->ports[0]->select_data = board->chipselect;

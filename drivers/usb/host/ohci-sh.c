@@ -29,7 +29,6 @@ static int ohci_sh_start(struct usb_hcd *hcd)
 	ohci_hcd_init(ohci);
 	ohci_init(ohci);
 	ohci_run(ohci);
-	hcd->state = HC_STATE_RUNNING;
 	return 0;
 }
 
@@ -109,7 +108,7 @@ static int ohci_hcd_sh_probe(struct platform_device *pdev)
 	hcd->regs = (void __iomem *)res->start;
 	hcd->rsrc_start = res->start;
 	hcd->rsrc_len = resource_size(res);
-	ret = usb_add_hcd(hcd, irq, IRQF_DISABLED | IRQF_SHARED);
+	ret = usb_add_hcd(hcd, irq, IRQF_SHARED);
 	if (ret != 0) {
 		err("Failed to add hcd");
 		usb_put_hcd(hcd);

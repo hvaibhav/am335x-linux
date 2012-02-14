@@ -55,6 +55,7 @@ ENTRY(cpu_arm946_proc_fin)
  * Params  : r0 = address to jump to
  * Notes   : This sets up everything for a reset
  */
+	.pushsection	.idmap.text, "ax"
 ENTRY(cpu_arm946_reset)
 	mov	ip, #0
 	mcr	p15, 0, ip, c7, c5, 0		@ flush I cache
@@ -65,6 +66,8 @@ ENTRY(cpu_arm946_reset)
 	bic	ip, ip, #0x00001000		@ i-cache
 	mcr	p15, 0, ip, c1, c0, 0		@ ctrl register
 	mov	pc, r0
+ENDPROC(cpu_arm946_reset)
+	.popsection
 
 /*
  * cpu_arm946_do_idle()
@@ -410,6 +413,7 @@ __arm946_proc_info:
 	.long	0x41009460
 	.long	0xff00fff0
 	.long	0
+	.long	0
 	b	__arm946_setup
 	.long	cpu_arch_name
 	.long	cpu_elf_name
@@ -418,6 +422,6 @@ __arm946_proc_info:
 	.long	arm946_processor_functions
 	.long	0
 	.long	0
-	.long	arm940_cache_fns
+	.long	arm946_cache_fns
 	.size	__arm946_proc_info, . - __arm946_proc_info
 

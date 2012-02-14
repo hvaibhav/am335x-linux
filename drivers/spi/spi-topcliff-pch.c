@@ -1,7 +1,7 @@
 /*
  * SPI bus driver for the Topcliff PCH used by Intel SoCs
  *
- * Copyright (C) 2010 OKI SEMICONDUCTOR Co., LTD.
+ * Copyright (C) 2011 LAPIS Semiconductor Co., Ltd.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -50,6 +50,8 @@
 #define PCH_RX_THOLD		7
 #define PCH_RX_THOLD_MAX	15
 
+#define PCH_TX_THOLD		2
+
 #define PCH_MAX_BAUDRATE	5000000
 #define PCH_MAX_FIFO_DEPTH	16
 
@@ -58,6 +60,7 @@
 #define PCH_SLEEP_TIME		10
 
 #define SSN_LOW			0x02U
+#define SSN_HIGH		0x03U
 #define SSN_NO_CONTROL		0x00U
 #define PCH_MAX_CS		0xFF
 #define PCI_DEVICE_ID_GE_SPI	0x8816
@@ -92,16 +95,18 @@
 #define PCH_CLOCK_HZ		50000000
 #define PCH_MAX_SPBR		1023
 
-/* Definition for ML7213 by OKI SEMICONDUCTOR */
+/* Definition for ML7213/ML7223/ML7831 by LAPIS Semiconductor */
 #define PCI_VENDOR_ID_ROHM		0x10DB
 #define PCI_DEVICE_ID_ML7213_SPI	0x802c
 #define PCI_DEVICE_ID_ML7223_SPI	0x800F
+#define PCI_DEVICE_ID_ML7831_SPI	0x8816
 
 /*
  * Set the number of SPI instance max
  * Intel EG20T PCH :		1ch
- * OKI SEMICONDUCTOR ML7213 IOH :	2ch
- * OKI SEMICONDUCTOR ML7223 IOH :	1ch
+ * LAPIS Semiconductor ML7213 IOH :	2ch
+ * LAPIS Semiconductor ML7223 IOH :	1ch
+ * LAPIS Semiconductor ML7831 IOH :	1ch
 */
 #define PCH_SPI_MAX_DEV			2
 
@@ -215,6 +220,7 @@ static struct pci_device_id pch_spi_pcidev_id[] = {
 	{ PCI_VDEVICE(INTEL, PCI_DEVICE_ID_GE_SPI),    1, },
 	{ PCI_VDEVICE(ROHM, PCI_DEVICE_ID_ML7213_SPI), 2, },
 	{ PCI_VDEVICE(ROHM, PCI_DEVICE_ID_ML7223_SPI), 1, },
+	{ PCI_VDEVICE(ROHM, PCI_DEVICE_ID_ML7831_SPI), 1, },
 	{ }
 };
 
@@ -316,16 +322,19 @@ static void pch_spi_handler_sub(struct pch_spi_data *data, u32 reg_spsr_val,
 
 	/* if transfer complete interrupt */
 	if (reg_spsr_val & SPSR_FI_BIT) {
-		if (tx_index < bpw_len)
+		if ((tx_index == bpw_len) && (rx_index == tx_index)) {
+			/* disable interrupts */
+			pch_spi_setclr_reg(data->master, PCH_SPCR, 0, PCH_ALL);
+
+			/* transfer is completed;
+			   inform pch_spi_process_messages */
+			data->transfer_complete = true;
+			data->transfer_active = false;
+			wake_up(&data->wait);
+		} else {
 			dev_err(&data->master->dev,
 				"%s : Transfer is not completed", __func__);
-		/* disable interrupts */
-		pch_spi_setclr_reg(data->master, PCH_SPCR, 0, PCH_ALL);
-
-		/* transfer is completed;inform pch_spi_process_messages */
-		data->transfer_complete = true;
-		data->transfer_active = false;
-		wake_up(&data->wait);
+		}
 	}
 }
 
@@ -348,16 +357,26 @@ static irqreturn_t pch_spi_handler(int irq, void *dev_id)
 			"%s returning due to suspend\n", __func__);
 		return IRQ_NONE;
 	}
-	if (data->use_dma)
-		return IRQ_NONE;
 
 	io_remap_addr = data->io_remap_addr;
 	spsr = io_remap_addr + PCH_SPSR;
 
 	reg_spsr_val = ioread32(spsr);
 
-	if (reg_spsr_val & SPSR_ORF_BIT)
-		dev_err(&board_dat->pdev->dev, "%s Over run error", __func__);
+	if (reg_spsr_val & SPSR_ORF_BIT) {
+		dev_err(&board_dat->pdev->dev, "%s Over run error\n", __func__);
+		if (data->current_msg->complete != 0) {
+			data->transfer_complete = true;
+			data->current_msg->status = -EIO;
+			data->current_msg->complete(data->current_msg->context);
+			data->bcurrent_msg_processing = false;
+			data->current_msg = NULL;
+			data->cur_trans = NULL;
+		}
+	}
+
+	if (data->use_dma)
+		return IRQ_NONE;
 
 	/* Check if the interrupt is for SPI device */
 	if (reg_spsr_val & (SPSR_FI_BIT | SPSR_RFI_BIT)) {
@@ -756,10 +775,6 @@ static void pch_spi_set_ir(struct pch_spi_data *data)
 
 	wait_event_interruptible(data->wait, data->transfer_complete);
 
-	pch_spi_writereg(data->master, PCH_SSNXCR, SSN_NO_CONTROL);
-	dev_dbg(&data->master->dev,
-		"%s:no more control over SSN-writing 0 to SSNXCR.", __func__);
-
 	/* clear all interrupts */
 	pch_spi_writereg(data->master, PCH_SPSR,
 			 pch_spi_readreg(data->master, PCH_SPSR));
@@ -815,10 +830,11 @@ static void pch_spi_copy_rx_data_for_dma(struct pch_spi_data *data, int bpw)
 	}
 }
 
-static void pch_spi_start_transfer(struct pch_spi_data *data)
+static int pch_spi_start_transfer(struct pch_spi_data *data)
 {
 	struct pch_spi_dma_ctrl *dma;
 	unsigned long flags;
+	int rtn;
 
 	dma = &data->dma;
 
@@ -833,19 +849,23 @@ static void pch_spi_start_transfer(struct pch_spi_data *data)
 				 initiating the transfer. */
 	dev_dbg(&data->master->dev,
 		"%s:waiting for transfer to get over\n", __func__);
-	wait_event_interruptible(data->wait, data->transfer_complete);
+	rtn = wait_event_interruptible_timeout(data->wait,
+					       data->transfer_complete,
+					       msecs_to_jiffies(2 * HZ));
 
 	dma_sync_sg_for_cpu(&data->master->dev, dma->sg_rx_p, dma->nent,
 			    DMA_FROM_DEVICE);
+
+	dma_sync_sg_for_cpu(&data->master->dev, dma->sg_tx_p, dma->nent,
+			    DMA_FROM_DEVICE);
+	memset(data->dma.tx_buf_virt, 0, PAGE_SIZE);
+
 	async_tx_ack(dma->desc_rx);
 	async_tx_ack(dma->desc_tx);
 	kfree(dma->sg_tx_p);
 	kfree(dma->sg_rx_p);
 
 	spin_lock_irqsave(&data->lock, flags);
-	pch_spi_writereg(data->master, PCH_SSNXCR, SSN_NO_CONTROL);
-	dev_dbg(&data->master->dev,
-		"%s:no more control over SSN-writing 0 to SSNXCR.", __func__);
 
 	/* clear fifo threshold, disable interrupts, disable SPI transfer */
 	pch_spi_setclr_reg(data->master, PCH_SPCR, 0,
@@ -858,6 +878,8 @@ static void pch_spi_start_transfer(struct pch_spi_data *data)
 	pch_spi_clear_fifo(data->master);
 
 	spin_unlock_irqrestore(&data->lock, flags);
+
+	return rtn;
 }
 
 static void pch_dma_rx_complete(void *arg)
@@ -1023,8 +1045,7 @@ static void pch_spi_handle_dma(struct pch_spi_data *data, int *bpw)
 	/* set receive fifo threshold and transmit fifo threshold */
 	pch_spi_setclr_reg(data->master, PCH_SPCR,
 			   ((size - 1) << SPCR_RFIC_FIELD) |
-			   ((PCH_MAX_FIFO_DEPTH - PCH_DMA_TRANS_SIZE) <<
-			    SPCR_TFIC_FIELD),
+			   (PCH_TX_THOLD << SPCR_TFIC_FIELD),
 			   MASK_RFIC_SPCR_BITS | MASK_TFIC_SPCR_BITS);
 
 	spin_unlock_irqrestore(&data->lock, flags);
@@ -1035,13 +1056,20 @@ static void pch_spi_handle_dma(struct pch_spi_data *data, int *bpw)
 	/* offset, length setting */
 	sg = dma->sg_rx_p;
 	for (i = 0; i < num; i++, sg++) {
-		if (i == 0) {
-			sg->offset = 0;
+		if (i == (num - 2)) {
+			sg->offset = size * i;
+			sg->offset = sg->offset * (*bpw / 8);
 			sg_set_page(sg, virt_to_page(dma->rx_buf_virt), rem,
 				    sg->offset);
 			sg_dma_len(sg) = rem;
+		} else if (i == (num - 1)) {
+			sg->offset = size * (i - 1) + rem;
+			sg->offset = sg->offset * (*bpw / 8);
+			sg_set_page(sg, virt_to_page(dma->rx_buf_virt), size,
+				    sg->offset);
+			sg_dma_len(sg) = size;
 		} else {
-			sg->offset = rem + size * (i - 1);
+			sg->offset = size * i;
 			sg->offset = sg->offset * (*bpw / 8);
 			sg_set_page(sg, virt_to_page(dma->rx_buf_virt), size,
 				    sg->offset);
@@ -1051,7 +1079,7 @@ static void pch_spi_handle_dma(struct pch_spi_data *data, int *bpw)
 	}
 	sg = dma->sg_rx_p;
 	desc_rx = dma->chan_rx->device->device_prep_slave_sg(dma->chan_rx, sg,
-					num, DMA_FROM_DEVICE,
+					num, DMA_DEV_TO_MEM,
 					DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
 	if (!desc_rx) {
 		dev_err(&data->master->dev, "%s:device_prep_slave_sg Failed\n",
@@ -1065,6 +1093,16 @@ static void pch_spi_handle_dma(struct pch_spi_data *data, int *bpw)
 	dma->desc_rx = desc_rx;
 
 	/* TX */
+	if (data->bpw_len > PCH_DMA_TRANS_SIZE) {
+		num = data->bpw_len / PCH_DMA_TRANS_SIZE;
+		size = PCH_DMA_TRANS_SIZE;
+		rem = 16;
+	} else {
+		num = 1;
+		size = data->bpw_len;
+		rem = data->bpw_len;
+	}
+
 	dma->sg_tx_p = kzalloc(sizeof(struct scatterlist)*num, GFP_ATOMIC);
 	sg_init_table(dma->sg_tx_p, num); /* Initialize SG table */
 	/* offset, length setting */
@@ -1086,7 +1124,7 @@ static void pch_spi_handle_dma(struct pch_spi_data *data, int *bpw)
 	}
 	sg = dma->sg_tx_p;
 	desc_tx = dma->chan_tx->device->device_prep_slave_sg(dma->chan_tx,
-					sg, num, DMA_TO_DEVICE,
+					sg, num, DMA_MEM_TO_DEV,
 					DMA_PREP_INTERRUPT | DMA_CTRL_ACK);
 	if (!desc_tx) {
 		dev_err(&data->master->dev, "%s:device_prep_slave_sg Failed\n",
@@ -1162,6 +1200,7 @@ static void pch_spi_process_messages(struct work_struct *pwork)
 	if (data->use_dma)
 		pch_spi_request_dma(data,
 				    data->current_msg->spi->bits_per_word);
+	pch_spi_writereg(data->master, PCH_SSNXCR, SSN_NO_CONTROL);
 	do {
 		/* If we are already processing a message get the next
 		transfer structure from the message otherwise retrieve
@@ -1184,7 +1223,8 @@ static void pch_spi_process_messages(struct work_struct *pwork)
 
 		if (data->use_dma) {
 			pch_spi_handle_dma(data, &bpw);
-			pch_spi_start_transfer(data);
+			if (!pch_spi_start_transfer(data))
+				goto out;
 			pch_spi_copy_rx_data_for_dma(data, bpw);
 		} else {
 			pch_spi_set_tx(data, &bpw);
@@ -1222,6 +1262,8 @@ static void pch_spi_process_messages(struct work_struct *pwork)
 
 	} while (data->cur_trans != NULL);
 
+out:
+	pch_spi_writereg(data->master, PCH_SSNXCR, SSN_HIGH);
 	if (data->use_dma)
 		pch_spi_release_dma(data);
 }
@@ -1678,7 +1720,7 @@ static int pch_spi_resume(struct pci_dev *pdev)
 
 #endif
 
-static struct pci_driver pch_spi_pcidev = {
+static struct pci_driver pch_spi_pcidev_driver = {
 	.name = "pch_spi",
 	.id_table = pch_spi_pcidev_id,
 	.probe = pch_spi_probe,
@@ -1694,7 +1736,7 @@ static int __init pch_spi_init(void)
 	if (ret)
 		return ret;
 
-	ret = pci_register_driver(&pch_spi_pcidev);
+	ret = pci_register_driver(&pch_spi_pcidev_driver);
 	if (ret)
 		return ret;
 
@@ -1704,7 +1746,7 @@ module_init(pch_spi_init);
 
 static void __exit pch_spi_exit(void)
 {
-	pci_unregister_driver(&pch_spi_pcidev);
+	pci_unregister_driver(&pch_spi_pcidev_driver);
 	platform_driver_unregister(&pch_spi_pd_driver);
 }
 module_exit(pch_spi_exit);
@@ -1714,4 +1756,4 @@ MODULE_PARM_DESC(use_dma,
 		 "to use DMA for data transfers pass 1 else 0; default 1");
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Intel EG20T PCH/OKI SEMICONDUCTOR ML7xxx IOH SPI Driver");
+MODULE_DESCRIPTION("Intel EG20T PCH/LAPIS Semiconductor ML7xxx IOH SPI Driver");

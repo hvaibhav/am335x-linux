@@ -27,7 +27,7 @@
  */
 
 #include <linux/mm.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/rculist.h>
@@ -137,7 +137,9 @@ static int pid_before(int base, int a, int b)
 }
 
 /*
- * We might be racing with someone else trying to set pid_ns->last_pid.
+ * We might be racing with someone else trying to set pid_ns->last_pid
+ * at the pid allocation time (there's also a sysctl for this, but racing
+ * with this one is OK, see comment in kernel/pid_namespace.c about it).
  * We want the winner to have the "later" value, because if the
  * "earlier" value prevails, then a pid may get reused immediately.
  *
@@ -418,7 +420,9 @@ EXPORT_SYMBOL(pid_task);
  */
 struct task_struct *find_task_by_pid_ns(pid_t nr, struct pid_namespace *ns)
 {
-	rcu_lockdep_assert(rcu_read_lock_held());
+	rcu_lockdep_assert(rcu_read_lock_held(),
+			   "find_task_by_pid_ns() needs rcu_read_lock()"
+			   " protection");
 	return pid_task(find_pid_ns(nr, ns), PIDTYPE_PID);
 }
 

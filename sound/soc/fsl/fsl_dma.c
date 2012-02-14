@@ -297,7 +297,6 @@ static irqreturn_t fsl_dma_isr(int irq, void *dev_id)
 static int fsl_dma_new(struct snd_soc_pcm_runtime *rtd)
 {
 	struct snd_card *card = rtd->card->snd_card;
-	struct snd_soc_dai *dai = rtd->cpu_dai;
 	struct snd_pcm *pcm = rtd->pcm;
 	static u64 fsl_dma_dmamask = DMA_BIT_MASK(36);
 	int ret;
@@ -879,10 +878,12 @@ static struct device_node *find_ssi_node(struct device_node *dma_channel_np)
 		 * assume that device_node pointers are a valid comparison.
 		 */
 		np = of_parse_phandle(ssi_np, "fsl,playback-dma", 0);
+		of_node_put(np);
 		if (np == dma_channel_np)
 			return ssi_np;
 
 		np = of_parse_phandle(ssi_np, "fsl,capture-dma", 0);
+		of_node_put(np);
 		if (np == dma_channel_np)
 			return ssi_np;
 	}
@@ -991,20 +992,7 @@ static struct platform_driver fsl_soc_dma_driver = {
 	.remove = __devexit_p(fsl_soc_dma_remove),
 };
 
-static int __init fsl_soc_dma_init(void)
-{
-	pr_info("Freescale Elo DMA ASoC PCM Driver\n");
-
-	return platform_driver_register(&fsl_soc_dma_driver);
-}
-
-static void __exit fsl_soc_dma_exit(void)
-{
-	platform_driver_unregister(&fsl_soc_dma_driver);
-}
-
-module_init(fsl_soc_dma_init);
-module_exit(fsl_soc_dma_exit);
+module_platform_driver(fsl_soc_dma_driver);
 
 MODULE_AUTHOR("Timur Tabi <timur@freescale.com>");
 MODULE_DESCRIPTION("Freescale Elo DMA ASoC PCM Driver");

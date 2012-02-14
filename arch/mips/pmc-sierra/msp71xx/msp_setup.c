@@ -14,6 +14,7 @@
 #include <asm/cacheflush.h>
 #include <asm/r4kcache.h>
 #include <asm/reboot.h>
+#include <asm/smp-ops.h>
 #include <asm/time.h>
 
 #include <msp_prom.h>
@@ -208,7 +209,7 @@ void __init prom_init(void)
 	default:
 		/* we don't recognize the machine */
 		mips_machtype  = MACH_UNKNOWN;
-		panic("***Bogosity factor five***, exiting\n");
+		panic("***Bogosity factor five***, exiting");
 		break;
 	}
 

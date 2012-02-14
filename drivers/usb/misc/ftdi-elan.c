@@ -53,7 +53,7 @@ MODULE_AUTHOR("Tony Olech");
 MODULE_DESCRIPTION("FTDI ELAN driver");
 MODULE_LICENSE("GPL");
 #define INT_MODULE_PARM(n, v) static int n = v;module_param(n, int, 0444)
-static int distrust_firmware = 1;
+static bool distrust_firmware = 1;
 module_param(distrust_firmware, bool, 0);
 MODULE_PARM_DESC(distrust_firmware, "true to distrust firmware power/overcurren"
         "t setup");
@@ -2777,7 +2777,7 @@ static int ftdi_elan_probe(struct usb_interface *interface,
                 endpoint = &iface_desc->endpoint[i].desc;
                 if (!ftdi->bulk_in_endpointAddr &&
 		    usb_endpoint_is_bulk_in(endpoint)) {
-                        buffer_size = le16_to_cpu(endpoint->wMaxPacketSize);
+                        buffer_size = usb_endpoint_maxp(endpoint);
                         ftdi->bulk_in_size = buffer_size;
                         ftdi->bulk_in_endpointAddr = endpoint->bEndpointAddress;
                         ftdi->bulk_in_buffer = kmalloc(buffer_size, GFP_KERNEL);

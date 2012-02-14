@@ -90,7 +90,7 @@ static const char longname[] = "Prodikeys PC-MIDI Keyboard";
 
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;
 static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;
-static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;
+static bool enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;
 
 module_param_array(index, int, NULL, 0444);
 module_param_array(id, charp, NULL, 0444);
@@ -816,7 +816,7 @@ static int pk_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	if (pm == NULL) {
 		hid_err(hdev, "can't alloc descriptor\n");
 		ret = -ENOMEM;
-		goto err_free;
+		goto err_free_pk;
 	}
 
 	pm->pk = pk;
@@ -849,10 +849,10 @@ static int pk_probe(struct hid_device *hdev, const struct hid_device_id *id)
 err_stop:
 	hid_hw_stop(hdev);
 err_free:
-	if (pm != NULL)
-		kfree(pm);
-
+	kfree(pm);
+err_free_pk:
 	kfree(pk);
+
 	return ret;
 }
 

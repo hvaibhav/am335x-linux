@@ -1329,7 +1329,7 @@ static int sata_dwc_port_start(struct ata_port *ap)
 			dev_err(ap->dev, "%s: dma_alloc_coherent failed\n",
 				 __func__);
 			err = -ENOMEM;
-			goto CLEANUP;
+			goto CLEANUP_ALLOC;
 		}
 	}
 
@@ -1349,15 +1349,13 @@ static int sata_dwc_port_start(struct ata_port *ap)
 	/* Clear any error bits before libata starts issuing commands */
 	clear_serror();
 	ap->private_data = hsdevp;
+	dev_dbg(ap->dev, "%s: done\n", __func__);
+	return 0;
 
+CLEANUP_ALLOC:
+	kfree(hsdevp);
 CLEANUP:
-	if (err) {
-		sata_dwc_port_stop(ap);
-		dev_dbg(ap->dev, "%s: fail\n", __func__);
-	} else {
-		dev_dbg(ap->dev, "%s: done\n", __func__);
-	}
-
+	dev_dbg(ap->dev, "%s: fail. ap->id = %d\n", __func__, ap->print_id);
 	return err;
 }
 
@@ -1779,18 +1777,7 @@ static struct platform_driver sata_dwc_driver = {
 	.remove = sata_dwc_remove,
 };
 
-static int __init sata_dwc_init(void)
-{
-	return platform_driver_register(&sata_dwc_driver);
-}
-
-static void __exit sata_dwc_exit(void)
-{
-	platform_driver_unregister(&sata_dwc_driver);
-}
-
-module_init(sata_dwc_init);
-module_exit(sata_dwc_exit);
+module_platform_driver(sata_dwc_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Mark Miesfeld <mmiesfeld@amcc.com>");

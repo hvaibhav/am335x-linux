@@ -11,14 +11,18 @@
 #include <linux/lockdep.h>
 #include <linux/kobject_ns.h>
 #include <linux/fs.h>
+#include <linux/rbtree.h>
 
 struct sysfs_open_dirent;
 
 /* type-specific structures for sysfs_dirent->s_* union members */
 struct sysfs_elem_dir {
 	struct kobject		*kobj;
-	/* children list starts here and goes through sd->s_sibling */
-	struct sysfs_dirent	*children;
+
+	unsigned long		subdirs;
+
+	struct rb_root		inode_tree;
+	struct rb_root		name_tree;
 };
 
 struct sysfs_elem_symlink {
@@ -56,8 +60,15 @@ struct sysfs_dirent {
 	struct lockdep_map	dep_map;
 #endif
 	struct sysfs_dirent	*s_parent;
-	struct sysfs_dirent	*s_sibling;
 	const char		*s_name;
+
+	struct rb_node		inode_node;
+	struct rb_node		name_node;
+
+	union {
+		struct completion	*completion;
+		struct sysfs_dirent	*removed_list;
+	} u;
 
 	const void		*s_ns; /* namespace tag */
 	union {
@@ -68,7 +79,7 @@ struct sysfs_dirent {
 	};
 
 	unsigned int		s_flags;
-	unsigned short		s_mode;
+	umode_t 		s_mode;
 	ino_t			s_ino;
 	struct sysfs_inode_attrs *s_iattr;
 };
@@ -218,7 +229,7 @@ int sysfs_add_file(struct sysfs_dirent *dir_sd,
 		   const struct attribute *attr, int type);
 
 int sysfs_add_file_mode(struct sysfs_dirent *dir_sd,
-			const struct attribute *attr, int type, mode_t amode);
+			const struct attribute *attr, int type, umode_t amode);
 /*
  * bin.c
  */

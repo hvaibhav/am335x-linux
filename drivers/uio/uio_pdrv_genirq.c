@@ -18,6 +18,7 @@
 #include <linux/uio_driver.h>
 #include <linux/spinlock.h>
 #include <linux/bitops.h>
+#include <linux/module.h>
 #include <linux/interrupt.h>
 #include <linux/stringify.h>
 #include <linux/pm_runtime.h>
@@ -253,7 +254,7 @@ static const struct dev_pm_ops uio_pdrv_genirq_dev_pm_ops = {
 };
 
 #ifdef CONFIG_OF
-static const struct of_device_id __devinitconst uio_of_genirq_match[] = {
+static const struct of_device_id uio_of_genirq_match[] = {
 	{ /* empty for now */ },
 };
 MODULE_DEVICE_TABLE(of, uio_of_genirq_match);
@@ -272,18 +273,7 @@ static struct platform_driver uio_pdrv_genirq = {
 	},
 };
 
-static int __init uio_pdrv_genirq_init(void)
-{
-	return platform_driver_register(&uio_pdrv_genirq);
-}
-
-static void __exit uio_pdrv_genirq_exit(void)
-{
-	platform_driver_unregister(&uio_pdrv_genirq);
-}
-
-module_init(uio_pdrv_genirq_init);
-module_exit(uio_pdrv_genirq_exit);
+module_platform_driver(uio_pdrv_genirq);
 
 MODULE_AUTHOR("Magnus Damm");
 MODULE_DESCRIPTION("Userspace I/O platform driver with generic IRQ handling");

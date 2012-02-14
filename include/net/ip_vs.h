@@ -21,7 +21,7 @@
 #include <linux/netfilter.h>		/* for union nf_inet_addr */
 #include <linux/ip.h>
 #include <linux/ipv6.h>			/* for struct ipv6hdr */
-#include <net/ipv6.h>			/* for ipv6_addr_copy */
+#include <net/ipv6.h>
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 #include <net/netfilter/nf_conntrack.h>
 #endif
@@ -119,8 +119,8 @@ ip_vs_fill_iphdr(int af, const void *nh, struct ip_vs_iphdr *iphdr)
 		const struct ipv6hdr *iph = nh;
 		iphdr->len = sizeof(struct ipv6hdr);
 		iphdr->protocol = iph->nexthdr;
-		ipv6_addr_copy(&iphdr->saddr.in6, &iph->saddr);
-		ipv6_addr_copy(&iphdr->daddr.in6, &iph->daddr);
+		iphdr->saddr.in6 = iph->saddr;
+		iphdr->daddr.in6 = iph->daddr;
 	} else
 #endif
 	{
@@ -137,7 +137,7 @@ static inline void ip_vs_addr_copy(int af, union nf_inet_addr *dst,
 {
 #ifdef CONFIG_IP_VS_IPV6
 	if (af == AF_INET6)
-		ipv6_addr_copy(&dst->in6, &src->in6);
+		dst->in6 = src->in6;
 	else
 #endif
 	dst->ip = src->ip;
@@ -425,9 +425,9 @@ struct ip_vs_protocol {
 
 	const char *(*state_name)(int state);
 
-	int (*state_transition)(struct ip_vs_conn *cp, int direction,
-				const struct sk_buff *skb,
-				struct ip_vs_proto_data *pd);
+	void (*state_transition)(struct ip_vs_conn *cp, int direction,
+				 const struct sk_buff *skb,
+				 struct ip_vs_proto_data *pd);
 
 	int (*register_app)(struct net *net, struct ip_vs_app *inc);
 
@@ -900,6 +900,7 @@ struct netns_ipvs {
 	volatile int		sync_state;
 	volatile int		master_syncid;
 	volatile int		backup_syncid;
+	struct mutex		sync_mutex;
 	/* multicast interface name */
 	char			master_mcast_ifn[IP_VS_IFNAME_MAXLEN];
 	char			backup_mcast_ifn[IP_VS_IFNAME_MAXLEN];
@@ -1125,17 +1126,16 @@ int unregister_ip_vs_pe(struct ip_vs_pe *pe);
 struct ip_vs_pe *ip_vs_pe_getbyname(const char *name);
 struct ip_vs_pe *__ip_vs_pe_getbyname(const char *pe_name);
 
-static inline void ip_vs_pe_get(const struct ip_vs_pe *pe)
-{
-	if (pe && pe->module)
+/*
+ * Use a #define to avoid all of module.h just for these trivial ops
+ */
+#define ip_vs_pe_get(pe)			\
+	if (pe && pe->module)			\
 		__module_get(pe->module);
-}
 
-static inline void ip_vs_pe_put(const struct ip_vs_pe *pe)
-{
-	if (pe && pe->module)
+#define ip_vs_pe_put(pe)			\
+	if (pe && pe->module)			\
 		module_put(pe->module);
-}
 
 /*
  *	IPVS protocol functions (from ip_vs_proto.c)
@@ -1207,7 +1207,7 @@ extern void ip_vs_control_cleanup(void);
 extern struct ip_vs_dest *
 ip_vs_find_dest(struct net *net, int af, const union nf_inet_addr *daddr,
 		__be16 dport, const union nf_inet_addr *vaddr, __be16 vport,
-		__u16 protocol, __u32 fwmark);
+		__u16 protocol, __u32 fwmark, __u32 flags);
 extern struct ip_vs_dest *ip_vs_try_bind_dest(struct ip_vs_conn *cp);
 
 
@@ -1377,7 +1377,7 @@ static inline int ip_vs_conntrack_enabled(struct netns_ipvs *ipvs)
 
 extern void ip_vs_update_conntrack(struct sk_buff *skb, struct ip_vs_conn *cp,
 				   int outin);
-extern int ip_vs_confirm_conntrack(struct sk_buff *skb, struct ip_vs_conn *cp);
+extern int ip_vs_confirm_conntrack(struct sk_buff *skb);
 extern void ip_vs_nfct_expect_related(struct sk_buff *skb, struct nf_conn *ct,
 				      struct ip_vs_conn *cp, u_int8_t proto,
 				      const __be16 port, int from_rs);
@@ -1395,8 +1395,7 @@ static inline void ip_vs_update_conntrack(struct sk_buff *skb,
 {
 }
 
-static inline int ip_vs_confirm_conntrack(struct sk_buff *skb,
-					  struct ip_vs_conn *cp)
+static inline int ip_vs_confirm_conntrack(struct sk_buff *skb)
 {
 	return NF_ACCEPT;
 }

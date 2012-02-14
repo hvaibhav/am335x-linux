@@ -74,6 +74,8 @@
  * 2	0x04	reduced filtering	firmware does less filtering on
  *					position data, driver should watch
  *					for noise.
+ * 2	0x08	image sensor		image sensor tracks 5 fingers, but only
+ *					reports 2.
  * 2	0x20	report min		query 0x0f gives min coord reported
  */
 #define SYN_CAP_CLICKPAD(ex0c)		((ex0c) & 0x100000) /* 1-button ClickPad */
@@ -82,6 +84,7 @@
 #define SYN_CAP_MIN_DIMENSIONS(ex0c)	((ex0c) & 0x002000)
 #define SYN_CAP_ADV_GESTURE(ex0c)	((ex0c) & 0x080000)
 #define SYN_CAP_REDUCED_FILTERING(ex0c)	((ex0c) & 0x000400)
+#define SYN_CAP_IMAGE_SENSOR(ex0c)	((ex0c) & 0x000800)
 
 /* synaptics modes query bits */
 #define SYN_MODE_ABSOLUTE(m)		((m) & (1 << 7))
@@ -97,6 +100,7 @@
 #define SYN_ID_MINOR(i)			(((i) >> 16) & 0xff)
 #define SYN_ID_FULL(i)			((SYN_ID_MAJOR(i) << 8) | SYN_ID_MINOR(i))
 #define SYN_ID_IS_SYNAPTICS(i)		((((i) >> 8) & 0xff) == 0x47)
+#define SYN_ID_DISGEST_SUPPORTED(i)	(SYN_ID_MAJOR(i) >= 4)
 
 /* synaptics special commands */
 #define SYN_PS_SET_MODE2		0x14
@@ -112,9 +116,18 @@
 #define SYN_REDUCED_FILTER_FUZZ		8
 
 /*
+ * A structure to describe which internal touchpad finger slots are being
+ * reported in raw packets.
+ */
+struct synaptics_mt_state {
+	int count;			/* num fingers being tracked */
+	int sgm;			/* which slot is reported by sgm pkt */
+	int agm;			/* which slot is reported by agm pkt*/
+};
+
+/*
  * A structure to describe the state of the touchpad hardware (buttons and pad)
  */
-
 struct synaptics_hw_state {
 	int x;
 	int y;
@@ -127,6 +140,9 @@ struct synaptics_hw_state {
 	unsigned int down:1;
 	unsigned char ext_buttons;
 	signed char scroll;
+
+	/* As reported in last AGM-CONTACT packets */
+	struct synaptics_mt_state mt_state;
 };
 
 struct synaptics_data {
@@ -144,14 +160,26 @@ struct synaptics_data {
 	unsigned char mode;			/* current mode byte */
 	int scroll;
 
+	bool absolute_mode;			/* run in Absolute mode */
+	bool disable_gesture;			/* disable gestures */
+
 	struct serio *pt_port;			/* Pass-through serio port */
 
-	struct synaptics_hw_state mt;		/* current gesture packet */
+	struct synaptics_mt_state mt_state;	/* Current mt finger state */
+	bool mt_state_lost;			/* mt_state may be incorrect */
+
+	/*
+	 * Last received Advanced Gesture Mode (AGM) packet. An AGM packet
+	 * contains position data for a second contact, at half resolution.
+	 */
+	struct synaptics_hw_state agm;
+	bool agm_pending;			/* new AGM packet received */
 };
 
 void synaptics_module_init(void);
 int synaptics_detect(struct psmouse *psmouse, bool set_properties);
 int synaptics_init(struct psmouse *psmouse);
+int synaptics_init_relative(struct psmouse *psmouse);
 void synaptics_reset(struct psmouse *psmouse);
 bool synaptics_supported(void);
 

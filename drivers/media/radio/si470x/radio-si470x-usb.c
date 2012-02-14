@@ -395,7 +395,6 @@ int si470x_disconnect_check(struct si470x_device *radio)
 static void si470x_int_in_callback(struct urb *urb)
 {
 	struct si470x_device *radio = urb->context;
-	unsigned char buf[RDS_REPORT_SIZE];
 	int retval;
 	unsigned char regnr;
 	unsigned char blocknum;
@@ -423,7 +422,6 @@ static void si470x_int_in_callback(struct urb *urb)
 
 	if (urb->actual_length > 0) {
 		/* Update RDS registers with URB data */
-		buf[0] = RDS_REPORT;
 		for (regnr = 0; regnr < RDS_REGISTER_NUM; regnr++)
 			radio->registers[STATUSRSSI + regnr] =
 			    get_unaligned_be16(&radio->int_in_buffer[
@@ -863,33 +861,7 @@ static struct usb_driver si470x_usb_driver = {
 	.supports_autosuspend	= 1,
 };
 
-
-
-/**************************************************************************
- * Module Interface
- **************************************************************************/
-
-/*
- * si470x_module_init - module init
- */
-static int __init si470x_module_init(void)
-{
-	printk(KERN_INFO DRIVER_DESC ", Version " DRIVER_VERSION "\n");
-	return usb_register(&si470x_usb_driver);
-}
-
-
-/*
- * si470x_module_exit - module exit
- */
-static void __exit si470x_module_exit(void)
-{
-	usb_deregister(&si470x_usb_driver);
-}
-
-
-module_init(si470x_module_init);
-module_exit(si470x_module_exit);
+module_usb_driver(si470x_usb_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR(DRIVER_AUTHOR);

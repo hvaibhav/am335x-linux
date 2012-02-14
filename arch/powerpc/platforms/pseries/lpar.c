@@ -25,6 +25,7 @@
 #include <linux/kernel.h>
 #include <linux/dma-mapping.h>
 #include <linux/console.h>
+#include <linux/export.h>
 #include <asm/processor.h>
 #include <asm/mmu.h>
 #include <asm/page.h>
@@ -67,9 +68,8 @@ void vpa_init(int cpu)
 	ret = register_vpa(hwcpu, addr);
 
 	if (ret) {
-		printk(KERN_ERR "WARNING: vpa_init: VPA registration for "
-				"cpu %d (hw %d) of area %lx returns %ld\n",
-				cpu, hwcpu, addr, ret);
+		pr_err("WARNING: VPA registration for cpu %d (hw %d) of area "
+		       "%lx failed with %ld\n", cpu, hwcpu, addr, ret);
 		return;
 	}
 	/*
@@ -80,10 +80,9 @@ void vpa_init(int cpu)
 	if (firmware_has_feature(FW_FEATURE_SPLPAR)) {
 		ret = register_slb_shadow(hwcpu, addr);
 		if (ret)
-			printk(KERN_ERR
-			       "WARNING: vpa_init: SLB shadow buffer "
-			       "registration for cpu %d (hw %d) of area %lx "
-			       "returns %ld\n", cpu, hwcpu, addr, ret);
+			pr_err("WARNING: SLB shadow buffer registration for "
+			       "cpu %d (hw %d) of area %lx failed with %ld\n",
+			       cpu, hwcpu, addr, ret);
 	}
 
 	/*
@@ -100,8 +99,9 @@ void vpa_init(int cpu)
 		dtl->enqueue_to_dispatch_time = DISPATCH_LOG_BYTES;
 		ret = register_dtl(hwcpu, __pa(dtl));
 		if (ret)
-			pr_warn("DTL registration failed for cpu %d (%ld)\n",
-				cpu, ret);
+			pr_err("WARNING: DTL registration of cpu %d (hw %d) "
+			       "failed with %ld\n", smp_processor_id(),
+			       hwcpu, ret);
 		lppaca_of(cpu).dtl_enable_mask = 2;
 	}
 }
@@ -204,7 +204,7 @@ static void pSeries_lpar_hptab_clear(void)
 		unsigned long ptel;
 	} ptes[4];
 	long lpar_rc;
-	int i, j;
+	unsigned long i, j;
 
 	/* Read in batches of 4,
 	 * invalidate only valid entries not in the VRMA
@@ -546,6 +546,13 @@ void __trace_hcall_entry(unsigned long opcode, unsigned long *args)
 	unsigned long flags;
 	unsigned int *depth;
 
+	/*
+	 * We cannot call tracepoints inside RCU idle regions which
+	 * means we must not trace H_CEDE.
+	 */
+	if (opcode == H_CEDE)
+		return;
+
 	local_irq_save(flags);
 
 	depth = &__get_cpu_var(hcall_trace_depth);
@@ -554,6 +561,7 @@ void __trace_hcall_entry(unsigned long opcode, unsigned long *args)
 		goto out;
 
 	(*depth)++;
+	preempt_disable();
 	trace_hcall_entry(opcode, args);
 	(*depth)--;
 
@@ -567,6 +575,9 @@ void __trace_hcall_exit(long opcode, unsigned long retval,
 	unsigned long flags;
 	unsigned int *depth;
 
+	if (opcode == H_CEDE)
+		return;
+
 	local_irq_save(flags);
 
 	depth = &__get_cpu_var(hcall_trace_depth);
@@ -576,6 +587,7 @@ void __trace_hcall_exit(long opcode, unsigned long retval,
 
 	(*depth)++;
 	trace_hcall_exit(opcode, retval, retbuf);
+	preempt_enable();
 	(*depth)--;
 
 out:

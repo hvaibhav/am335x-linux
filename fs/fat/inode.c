@@ -379,7 +379,7 @@ static int fat_fill_inode(struct inode *inode, struct msdos_dir_entry *de)
 			return error;
 		MSDOS_I(inode)->mmu_private = inode->i_size;
 
-		inode->i_nlink = fat_subdirs(inode);
+		set_nlink(inode, fat_subdirs(inode));
 	} else { /* not a directory */
 		inode->i_generation |= 1;
 		inode->i_mode = fat_make_mode(sbi, de->attr,
@@ -518,7 +518,6 @@ static struct inode *fat_alloc_inode(struct super_block *sb)
 static void fat_i_callback(struct rcu_head *head)
 {
 	struct inode *inode = container_of(head, struct inode, i_rcu);
-	INIT_LIST_HEAD(&inode->i_dentry);
 	kmem_cache_free(fat_inode_cachep, MSDOS_I(inode));
 }
 
@@ -672,7 +671,7 @@ int fat_sync_inode(struct inode *inode)
 
 EXPORT_SYMBOL_GPL(fat_sync_inode);
 
-static int fat_show_options(struct seq_file *m, struct vfsmount *mnt);
+static int fat_show_options(struct seq_file *m, struct dentry *root);
 static const struct super_operations fat_sops = {
 	.alloc_inode	= fat_alloc_inode,
 	.destroy_inode	= fat_destroy_inode,
@@ -811,9 +810,9 @@ static const struct export_operations fat_export_ops = {
 	.get_parent	= fat_get_parent,
 };
 
-static int fat_show_options(struct seq_file *m, struct vfsmount *mnt)
+static int fat_show_options(struct seq_file *m, struct dentry *root)
 {
-	struct msdos_sb_info *sbi = MSDOS_SB(mnt->mnt_sb);
+	struct msdos_sb_info *sbi = MSDOS_SB(root->d_sb);
 	struct fat_mount_options *opts = &sbi->options;
 	int isvfat = opts->isvfat;
 
@@ -898,7 +897,7 @@ enum {
 	Opt_charset, Opt_shortname_lower, Opt_shortname_win95,
 	Opt_shortname_winnt, Opt_shortname_mixed, Opt_utf8_no, Opt_utf8_yes,
 	Opt_uni_xl_no, Opt_uni_xl_yes, Opt_nonumtail_no, Opt_nonumtail_yes,
-	Opt_obsolate, Opt_flush, Opt_tz_utc, Opt_rodir, Opt_err_cont,
+	Opt_obsolete, Opt_flush, Opt_tz_utc, Opt_rodir, Opt_err_cont,
 	Opt_err_panic, Opt_err_ro, Opt_discard, Opt_err,
 };
 
@@ -928,17 +927,17 @@ static const match_table_t fat_tokens = {
 	{Opt_err_panic, "errors=panic"},
 	{Opt_err_ro, "errors=remount-ro"},
 	{Opt_discard, "discard"},
-	{Opt_obsolate, "conv=binary"},
-	{Opt_obsolate, "conv=text"},
-	{Opt_obsolate, "conv=auto"},
-	{Opt_obsolate, "conv=b"},
-	{Opt_obsolate, "conv=t"},
-	{Opt_obsolate, "conv=a"},
-	{Opt_obsolate, "fat=%u"},
-	{Opt_obsolate, "blocksize=%u"},
-	{Opt_obsolate, "cvf_format=%20s"},
-	{Opt_obsolate, "cvf_options=%100s"},
-	{Opt_obsolate, "posix"},
+	{Opt_obsolete, "conv=binary"},
+	{Opt_obsolete, "conv=text"},
+	{Opt_obsolete, "conv=auto"},
+	{Opt_obsolete, "conv=b"},
+	{Opt_obsolete, "conv=t"},
+	{Opt_obsolete, "conv=a"},
+	{Opt_obsolete, "fat=%u"},
+	{Opt_obsolete, "blocksize=%u"},
+	{Opt_obsolete, "cvf_format=%20s"},
+	{Opt_obsolete, "cvf_options=%100s"},
+	{Opt_obsolete, "posix"},
 	{Opt_err, NULL},
 };
 static const match_table_t msdos_tokens = {
@@ -1170,7 +1169,7 @@ static int parse_options(struct super_block *sb, char *options, int is_vfat,
 			break;
 
 		/* obsolete mount options */
-		case Opt_obsolate:
+		case Opt_obsolete:
 			fat_msg(sb, KERN_INFO, "\"%s\" option is obsolete, "
 			       "not supported now", p);
 			break;
@@ -1188,9 +1187,9 @@ static int parse_options(struct super_block *sb, char *options, int is_vfat,
 out:
 	/* UTF-8 doesn't provide FAT semantics */
 	if (!strcmp(opts->iocharset, "utf8")) {
-		fat_msg(sb, KERN_ERR, "utf8 is not a recommended IO charset"
+		fat_msg(sb, KERN_WARNING, "utf8 is not a recommended IO charset"
 		       " for FAT filesystems, filesystem will be "
-		       "case sensitive!\n");
+		       "case sensitive!");
 	}
 
 	/* If user doesn't specify allow_utime, it's initialized from dmask. */
@@ -1233,7 +1232,7 @@ static int fat_read_root(struct inode *inode)
 	fat_save_attrs(inode, ATTR_DIR);
 	inode->i_mtime.tv_sec = inode->i_atime.tv_sec = inode->i_ctime.tv_sec = 0;
 	inode->i_mtime.tv_nsec = inode->i_atime.tv_nsec = inode->i_ctime.tv_nsec = 0;
-	inode->i_nlink = fat_subdirs(inode)+2;
+	set_nlink(inode, fat_subdirs(inode)+2);
 
 	return 0;
 }
@@ -1367,6 +1366,7 @@ int fat_fill_super(struct super_block *sb, void *data, int silent, int isvfat,
 	sbi->free_clusters = -1;	/* Don't know yet */
 	sbi->free_clus_valid = 0;
 	sbi->prev_free = FAT_START_ENT;
+	sb->s_maxbytes = 0xffffffff;
 
 	if (!sbi->fat_length && b->fat32_length) {
 		struct fat_boot_fsinfo *fsinfo;
@@ -1376,8 +1376,6 @@ int fat_fill_super(struct super_block *sb, void *data, int silent, int isvfat,
 		sbi->fat_bits = 32;
 		sbi->fat_length = le32_to_cpu(b->fat32_length);
 		sbi->root_cluster = le32_to_cpu(b->root_cluster);
-
-		sb->s_maxbytes = 0xffffffff;
 
 		/* MC - if info_sector is 0, don't multiply by 0 */
 		sbi->fsinfo_sector = le16_to_cpu(b->info_sector);

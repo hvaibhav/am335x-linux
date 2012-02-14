@@ -313,11 +313,12 @@ __setup("force_ep80219", force_ep80219_setup);
 
 MACHINE_START(IQ31244, "Intel IQ31244")
 	/* Maintainer: Intel Corp. */
-	.boot_params	= 0xa0000100,
+	.atag_offset	= 0x100,
 	.map_io		= iq31244_map_io,
 	.init_irq	= iop32x_init_irq,
 	.timer		= &iq31244_timer,
 	.init_machine	= iq31244_init_machine,
+	.restart	= iop3xx_restart,
 MACHINE_END
 
 /* There should have been an ep80219 machine identifier from the beginning.
@@ -327,9 +328,10 @@ MACHINE_END
  */
 MACHINE_START(EP80219, "Intel EP80219")
 	/* Maintainer: Intel Corp. */
-	.boot_params	= 0xa0000100,
+	.atag_offset	= 0x100,
 	.map_io		= iq31244_map_io,
 	.init_irq	= iop32x_init_irq,
 	.timer		= &iq31244_timer,
 	.init_machine	= iq31244_init_machine,
+	.restart	= iop3xx_restart,
 MACHINE_END

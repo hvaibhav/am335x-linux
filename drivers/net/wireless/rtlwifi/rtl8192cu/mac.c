@@ -84,6 +84,7 @@ void rtl92c_read_chip_version(struct ieee80211_hw *hw)
 		}
 	}
 	rtlhal->version  = (enum version_8192c)chip_version;
+	pr_info("rtl8192cu: Chip version 0x%x\n", chip_version);
 	switch (rtlhal->version) {
 	case VERSION_NORMAL_TSMC_CHIP_92C_1T2R:
 		RT_TRACE(rtlpriv, COMP_INIT, DBG_TRACE,
@@ -892,8 +893,8 @@ static void _rtl92c_query_rxphystatus(struct ieee80211_hw *hw,
 		pstats->rxpower = rx_pwr_all;
 		pstats->recvsignalpower = rx_pwr_all;
 		if (GET_RX_DESC_RX_MCS(pdesc) &&
-		    GET_RX_DESC_RX_MCS(pdesc) >= DESC92C_RATEMCS8 &&
-		    GET_RX_DESC_RX_MCS(pdesc) <= DESC92C_RATEMCS15)
+		    GET_RX_DESC_RX_MCS(pdesc) >= DESC92_RATEMCS8 &&
+		    GET_RX_DESC_RX_MCS(pdesc) <= DESC92_RATEMCS15)
 			max_spatial_stream = 2;
 		else
 			max_spatial_stream = 1;

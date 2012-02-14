@@ -51,7 +51,7 @@ static int delivered;
  * sense.
  */
 
-static int alloc_bufs_at_read;
+static bool alloc_bufs_at_read;
 module_param(alloc_bufs_at_read, bool, 0444);
 MODULE_PARM_DESC(alloc_bufs_at_read,
 		"Non-zero value causes DMA buffers to be allocated when the "
@@ -73,11 +73,11 @@ MODULE_PARM_DESC(dma_buf_size,
 		"parameters require larger buffers, an attempt to reallocate "
 		"will be made.");
 #else /* MCAM_MODE_VMALLOC */
-static const int alloc_bufs_at_read = 0;
+static const bool alloc_bufs_at_read = 0;
 static const int n_dma_bufs = 3;  /* Used by S/G_PARM */
 #endif /* MCAM_MODE_VMALLOC */
 
-static int flip;
+static bool flip;
 module_param(flip, bool, 0444);
 MODULE_PARM_DESC(flip,
 		"If set, the sensor will be instructed to flip the image "
@@ -450,7 +450,7 @@ static void mcam_set_contig_buffer(struct mcam_camera *cam, int frame)
 		buf = cam->vb_bufs[frame ^ 0x1];
 		cam->vb_bufs[frame] = buf;
 		mcam_reg_write(cam, frame == 0 ? REG_Y0BAR : REG_Y1BAR,
-				vb2_dma_contig_plane_paddr(&buf->vb_buf, 0));
+				vb2_dma_contig_plane_dma_addr(&buf->vb_buf, 0));
 		set_bit(CF_SINGLE_BUFFER, &cam->flags);
 		singles++;
 		return;
@@ -461,7 +461,7 @@ static void mcam_set_contig_buffer(struct mcam_camera *cam, int frame)
 	buf = list_first_entry(&cam->buffers, struct mcam_vb_buffer, queue);
 	list_del_init(&buf->queue);
 	mcam_reg_write(cam, frame == 0 ? REG_Y0BAR : REG_Y1BAR,
-			vb2_dma_contig_plane_paddr(&buf->vb_buf, 0));
+			vb2_dma_contig_plane_dma_addr(&buf->vb_buf, 0));
 	cam->vb_bufs[frame] = buf;
 	clear_bit(CF_SINGLE_BUFFER, &cam->flags);
 }
@@ -522,6 +522,15 @@ static void mcam_sg_next_buffer(struct mcam_camera *cam)
  */
 static void mcam_ctlr_dma_sg(struct mcam_camera *cam)
 {
+	/*
+	 * The list-empty condition can hit us at resume time
+	 * if the buffer list was empty when the system was suspended.
+	 */
+	if (list_empty(&cam->buffers)) {
+		set_bit(CF_SG_RESTART, &cam->flags);
+		return;
+	}
+
 	mcam_reg_clear_bit(cam, REG_CTRL1, C1_DESC_3WORD);
 	mcam_sg_next_buffer(cam);
 	mcam_reg_set_bit(cam, REG_CTRL1, C1_DESC_ENA);
@@ -566,6 +575,7 @@ static void mcam_dma_sg_done(struct mcam_camera *cam, int frame)
 	} else {
 		set_bit(CF_SG_RESTART, &cam->flags);
 		singles++;
+		cam->vb_bufs[0] = NULL;
 	}
 	/*
 	 * Now we can give the completed frame back to user space.
@@ -661,10 +671,10 @@ static int mcam_ctlr_configure(struct mcam_camera *cam)
 	unsigned long flags;
 
 	spin_lock_irqsave(&cam->dev_lock, flags);
+	clear_bit(CF_SG_RESTART, &cam->flags);
 	cam->dma_setup(cam);
 	mcam_ctlr_image(cam);
 	mcam_set_config_needed(cam, 0);
-	clear_bit(CF_SG_RESTART, &cam->flags);
 	spin_unlock_irqrestore(&cam->dev_lock, flags);
 	return 0;
 }
@@ -873,7 +883,8 @@ static int mcam_read_setup(struct mcam_camera *cam)
 	mcam_reset_buffers(cam);
 	mcam_ctlr_irq_enable(cam);
 	cam->state = S_STREAMING;
-	mcam_ctlr_start(cam);
+	if (!test_bit(CF_SG_RESTART, &cam->flags))
+		mcam_ctlr_start(cam);
 	spin_unlock_irqrestore(&cam->dev_lock, flags);
 	return 0;
 }
@@ -883,8 +894,9 @@ static int mcam_read_setup(struct mcam_camera *cam)
  * Videobuf2 interface code.
  */
 
-static int mcam_vb_queue_setup(struct vb2_queue *vq, unsigned int *nbufs,
-		unsigned int *num_planes, unsigned long sizes[],
+static int mcam_vb_queue_setup(struct vb2_queue *vq,
+		const struct v4l2_format *fmt, unsigned int *nbufs,
+		unsigned int *num_planes, unsigned int sizes[],
 		void *alloc_ctxs[])
 {
 	struct mcam_camera *cam = vb2_get_drv_priv(vq);
@@ -940,12 +952,14 @@ static void mcam_vb_wait_finish(struct vb2_queue *vq)
 /*
  * These need to be called with the mutex held from vb2
  */
-static int mcam_vb_start_streaming(struct vb2_queue *vq)
+static int mcam_vb_start_streaming(struct vb2_queue *vq, unsigned int count)
 {
 	struct mcam_camera *cam = vb2_get_drv_priv(vq);
 
-	if (cam->state != S_IDLE)
+	if (cam->state != S_IDLE) {
+		INIT_LIST_HEAD(&cam->buffers);
 		return -EINVAL;
+	}
 	cam->sequence = 0;
 	/*
 	 * Videobuf2 sneakily hoards all the buffers and won't
@@ -1815,11 +1829,15 @@ void mccic_shutdown(struct mcam_camera *cam)
 
 void mccic_suspend(struct mcam_camera *cam)
 {
-	enum mcam_state cstate = cam->state;
+	mutex_lock(&cam->s_mutex);
+	if (cam->users > 0) {
+		enum mcam_state cstate = cam->state;
 
-	mcam_ctlr_stop_dma(cam);
-	mcam_ctlr_power_down(cam);
-	cam->state = cstate;
+		mcam_ctlr_stop_dma(cam);
+		mcam_ctlr_power_down(cam);
+		cam->state = cstate;
+	}
+	mutex_unlock(&cam->s_mutex);
 }
 
 int mccic_resume(struct mcam_camera *cam)
@@ -1836,8 +1854,15 @@ int mccic_resume(struct mcam_camera *cam)
 	mutex_unlock(&cam->s_mutex);
 
 	set_bit(CF_CONFIG_NEEDED, &cam->flags);
-	if (cam->state == S_STREAMING)
+	if (cam->state == S_STREAMING) {
+		/*
+		 * If there was a buffer in the DMA engine at suspend
+		 * time, put it back on the queue or we'll forget about it.
+		 */
+		if (cam->buffer_mode == B_DMA_sg && cam->vb_bufs[0])
+			list_add(&cam->vb_bufs[0]->queue, &cam->buffers);
 		ret = mcam_read_setup(cam);
+	}
 	return ret;
 }
 #endif /* CONFIG_PM */

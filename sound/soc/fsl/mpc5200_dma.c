@@ -369,7 +369,7 @@ static struct snd_soc_platform_driver mpc5200_audio_dma_platform = {
 	.pcm_free	= &psc_dma_free,
 };
 
-static int mpc5200_hpcd_probe(struct of_device *op)
+static int mpc5200_hpcd_probe(struct platform_device *op)
 {
 	phys_addr_t fifo;
 	struct psc_dma *psc_dma;
@@ -487,7 +487,7 @@ out_unmap:
 	return ret;
 }
 
-static int mpc5200_hpcd_remove(struct of_device *op)
+static int mpc5200_hpcd_remove(struct platform_device *op)
 {
 	struct psc_dma *psc_dma = dev_get_drvdata(&op->dev);
 
@@ -519,24 +519,14 @@ MODULE_DEVICE_TABLE(of, mpc5200_hpcd_match);
 static struct platform_driver mpc5200_hpcd_of_driver = {
 	.probe		= mpc5200_hpcd_probe,
 	.remove		= mpc5200_hpcd_remove,
-	.dev = {
+	.driver = {
 		.owner		= THIS_MODULE,
 		.name		= "mpc5200-pcm-audio",
 		.of_match_table    = mpc5200_hpcd_match,
 	}
 };
 
-static int __init mpc5200_hpcd_init(void)
-{
-	return platform_driver_register(&mpc5200_hpcd_of_driver);
-}
-module_init(mpc5200_hpcd_init);
-
-static void __exit mpc5200_hpcd_exit(void)
-{
-	platform_driver_unregister(&mpc5200_hpcd_of_driver);
-}
-module_exit(mpc5200_hpcd_exit);
+module_platform_driver(mpc5200_hpcd_of_driver);
 
 MODULE_AUTHOR("Grant Likely <grant.likely@secretlab.ca>");
 MODULE_DESCRIPTION("Freescale MPC5200 PSC in DMA mode ASoC Driver");

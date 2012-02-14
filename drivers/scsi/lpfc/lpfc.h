@@ -247,18 +247,6 @@ struct lpfc_stats {
 	uint32_t fcpLocalErr;
 };
 
-enum sysfs_mbox_state {
-	SMBOX_IDLE,
-	SMBOX_WRITING,
-	SMBOX_READING
-};
-
-struct lpfc_sysfs_mbox {
-	enum sysfs_mbox_state state;
-	size_t                offset;
-	struct lpfcMboxq *    mbox;
-};
-
 struct lpfc_hba;
 
 
@@ -783,8 +771,6 @@ struct lpfc_hba {
 	uint64_t bg_apptag_err_cnt;
 	uint64_t bg_reftag_err_cnt;
 
-	struct lpfc_sysfs_mbox sysfs_mbox;
-
 	/* fastpath list. */
 	spinlock_t scsi_buf_list_lock;
 	struct list_head lpfc_scsi_buf_list;
@@ -846,8 +832,24 @@ struct lpfc_hba {
 	struct dentry *debug_hbqinfo;
 	struct dentry *debug_dumpHostSlim;
 	struct dentry *debug_dumpHBASlim;
-	struct dentry *debug_dumpData;   /* BlockGuard BPL*/
-	struct dentry *debug_dumpDif;    /* BlockGuard BPL*/
+	struct dentry *debug_dumpData;   /* BlockGuard BPL */
+	struct dentry *debug_dumpDif;    /* BlockGuard BPL */
+	struct dentry *debug_InjErrLBA;  /* LBA to inject errors at */
+	struct dentry *debug_writeGuard; /* inject write guard_tag errors */
+	struct dentry *debug_writeApp;   /* inject write app_tag errors */
+	struct dentry *debug_writeRef;   /* inject write ref_tag errors */
+	struct dentry *debug_readApp;    /* inject read app_tag errors */
+	struct dentry *debug_readRef;    /* inject read ref_tag errors */
+
+	/* T10 DIF error injection */
+	uint32_t lpfc_injerr_wgrd_cnt;
+	uint32_t lpfc_injerr_wapp_cnt;
+	uint32_t lpfc_injerr_wref_cnt;
+	uint32_t lpfc_injerr_rapp_cnt;
+	uint32_t lpfc_injerr_rref_cnt;
+	sector_t lpfc_injerr_lba;
+#define LPFC_INJERR_LBA_OFF	(sector_t)0xffffffffffffffff
+
 	struct dentry *debug_slow_ring_trc;
 	struct lpfc_debugfs_trc *slow_ring_trc;
 	atomic_t slow_ring_trc_cnt;

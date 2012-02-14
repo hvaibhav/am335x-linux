@@ -273,6 +273,17 @@ EXPORT_SYMBOL_GPL(rtnl_unregister_all);
 
 static LIST_HEAD(link_ops);
 
+static const struct rtnl_link_ops *rtnl_link_ops_get(const char *kind)
+{
+	const struct rtnl_link_ops *ops;
+
+	list_for_each_entry(ops, &link_ops, list) {
+		if (!strcmp(ops->kind, kind))
+			return ops;
+	}
+	return NULL;
+}
+
 /**
  * __rtnl_link_register - Register rtnl_link_ops with rtnetlink.
  * @ops: struct rtnl_link_ops * to register
@@ -285,6 +296,9 @@ static LIST_HEAD(link_ops);
  */
 int __rtnl_link_register(struct rtnl_link_ops *ops)
 {
+	if (rtnl_link_ops_get(ops->kind))
+		return -EEXIST;
+
 	if (!ops->dellink)
 		ops->dellink = unregister_netdevice_queue;
 
@@ -350,17 +364,6 @@ void rtnl_link_unregister(struct rtnl_link_ops *ops)
 	rtnl_unlock();
 }
 EXPORT_SYMBOL_GPL(rtnl_link_unregister);
-
-static const struct rtnl_link_ops *rtnl_link_ops_get(const char *kind)
-{
-	const struct rtnl_link_ops *ops;
-
-	list_for_each_entry(ops, &link_ops, list) {
-		if (!strcmp(ops->kind, kind))
-			return ops;
-	}
-	return NULL;
-}
 
 static size_t rtnl_link_get_size(const struct net_device *dev)
 {
@@ -731,7 +734,8 @@ static inline int rtnl_vfinfo_size(const struct net_device *dev)
 		size += num_vfs *
 			(nla_total_size(sizeof(struct ifla_vf_mac)) +
 			 nla_total_size(sizeof(struct ifla_vf_vlan)) +
-			 nla_total_size(sizeof(struct ifla_vf_tx_rate)));
+			 nla_total_size(sizeof(struct ifla_vf_tx_rate)) +
+			 nla_total_size(sizeof(struct ifla_vf_spoofchk)));
 		return size;
 	} else
 		return 0;
@@ -954,13 +958,27 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
 			struct ifla_vf_mac vf_mac;
 			struct ifla_vf_vlan vf_vlan;
 			struct ifla_vf_tx_rate vf_tx_rate;
+			struct ifla_vf_spoofchk vf_spoofchk;
+
+			/*
+			 * Not all SR-IOV capable drivers support the
+			 * spoofcheck query.  Preset to -1 so the user
+			 * space tool can detect that the driver didn't
+			 * report anything.
+			 */
+			ivi.spoofchk = -1;
 			if (dev->netdev_ops->ndo_get_vf_config(dev, i, &ivi))
 				break;
-			vf_mac.vf = vf_vlan.vf = vf_tx_rate.vf = ivi.vf;
+			vf_mac.vf =
+				vf_vlan.vf =
+				vf_tx_rate.vf =
+				vf_spoofchk.vf = ivi.vf;
+
 			memcpy(vf_mac.mac, ivi.mac, sizeof(ivi.mac));
 			vf_vlan.vlan = ivi.vlan;
 			vf_vlan.qos = ivi.qos;
 			vf_tx_rate.rate = ivi.tx_rate;
+			vf_spoofchk.setting = ivi.spoofchk;
 			vf = nla_nest_start(skb, IFLA_VF_INFO);
 			if (!vf) {
 				nla_nest_cancel(skb, vfinfo);
@@ -968,7 +986,10 @@ static int rtnl_fill_ifinfo(struct sk_buff *skb, struct net_device *dev,
 			}
 			NLA_PUT(skb, IFLA_VF_MAC, sizeof(vf_mac), &vf_mac);
 			NLA_PUT(skb, IFLA_VF_VLAN, sizeof(vf_vlan), &vf_vlan);
-			NLA_PUT(skb, IFLA_VF_TX_RATE, sizeof(vf_tx_rate), &vf_tx_rate);
+			NLA_PUT(skb, IFLA_VF_TX_RATE, sizeof(vf_tx_rate),
+				&vf_tx_rate);
+			NLA_PUT(skb, IFLA_VF_SPOOFCHK, sizeof(vf_spoofchk),
+				&vf_spoofchk);
 			nla_nest_end(skb, vf);
 		}
 		nla_nest_end(skb, vfinfo);
@@ -1200,6 +1221,15 @@ static int do_setvfinfo(struct net_device *dev, struct nlattr *attr)
 			if (ops->ndo_set_vf_tx_rate)
 				err = ops->ndo_set_vf_tx_rate(dev, ivt->vf,
 							      ivt->rate);
+			break;
+		}
+		case IFLA_VF_SPOOFCHK: {
+			struct ifla_vf_spoofchk *ivs;
+			ivs = nla_data(vf);
+			err = -EOPNOTSUPP;
+			if (ops->ndo_set_vf_spoofchk)
+				err = ops->ndo_set_vf_spoofchk(dev, ivs->vf,
+							       ivs->setting);
 			break;
 		}
 		default:
@@ -1479,6 +1509,9 @@ errout:
 
 	if (send_addr_notify)
 		call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
+	min_ifinfo_dump_size = max_t(u16, if_nlmsg_size(dev),
+				     min_ifinfo_dump_size);
+
 	return err;
 }
 
@@ -1604,7 +1637,6 @@ struct net_device *rtnl_create_link(struct net *src_net, struct net *net,
 	dev_net_set(dev, net);
 	dev->rtnl_link_ops = ops;
 	dev->rtnl_link_state = RTNL_LINK_INITIALIZING;
-	dev->real_num_tx_queues = real_num_queues;
 
 	if (tb[IFLA_MTU])
 		dev->mtu = nla_get_u32(tb[IFLA_MTU]);
@@ -1931,7 +1963,7 @@ static int rtnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	sz_idx = type>>2;
 	kind = type&3;
 
-	if (kind != 2 && security_netlink_recv(skb, CAP_NET_ADMIN))
+	if (kind != 2 && !capable(CAP_NET_ADMIN))
 		return -EPERM;
 
 	if (kind == 2 && nlh->nlmsg_flags&NLM_F_DUMP) {

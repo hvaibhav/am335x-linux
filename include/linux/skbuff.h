@@ -29,6 +29,8 @@
 #include <linux/rcupdate.h>
 #include <linux/dmaengine.h>
 #include <linux/hrtimer.h>
+#include <linux/dma-mapping.h>
+#include <linux/netdev_features.h>
 
 /* Don't change this without changing skb_csum_unnecessary! */
 #define CHECKSUM_NONE 0
@@ -44,6 +46,11 @@
 	SKB_WITH_OVERHEAD((PAGE_SIZE << (ORDER)) - (X))
 #define SKB_MAX_HEAD(X)		(SKB_MAX_ORDER((X), 0))
 #define SKB_MAX_ALLOC		(SKB_MAX_ORDER(0, 2))
+
+/* return minimum truesize of one skb containing X bytes of data */
+#define SKB_TRUESIZE(X) ((X) +						\
+			 SKB_DATA_ALIGN(sizeof(struct sk_buff)) +	\
+			 SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
 
 /* A. Checksumming of received packets by device.
  *
@@ -81,7 +88,6 @@
  *	at device setup time.
  *	NETIF_F_HW_CSUM	- it is clever device, it is able to checksum
  *			  everything.
- *	NETIF_F_NO_CSUM - loopback or reliable single hop media.
  *	NETIF_F_IP_CSUM - device is dumb. It is able to csum only
  *			  TCP/UDP over IPv4. Sigh. Vendors like this
  *			  way by an unknown reason. Though, see comment above
@@ -122,19 +128,25 @@ struct sk_buff_head {
 
 struct sk_buff;
 
-/* To allow 64K frame to be packed as single skb without frag_list. Since
- * GRO uses frags we allocate at least 16 regardless of page size.
+/* To allow 64K frame to be packed as single skb without frag_list we
+ * require 64K/PAGE_SIZE pages plus 1 additional page to allow for
+ * buffers which do not start on a page boundary.
+ *
+ * Since GRO uses frags we allocate at least 16 regardless of page
+ * size.
  */
-#if (65536/PAGE_SIZE + 2) < 16
+#if (65536/PAGE_SIZE + 1) < 16
 #define MAX_SKB_FRAGS 16UL
 #else
-#define MAX_SKB_FRAGS (65536/PAGE_SIZE + 2)
+#define MAX_SKB_FRAGS (65536/PAGE_SIZE + 1)
 #endif
 
 typedef struct skb_frag_struct skb_frag_t;
 
 struct skb_frag_struct {
-	struct page *page;
+	struct {
+		struct page *p;
+	} page;
 #if (BITS_PER_LONG > 32) || (PAGE_SIZE >= 65536)
 	__u32 page_offset;
 	__u32 size;
@@ -143,6 +155,26 @@ struct skb_frag_struct {
 	__u16 size;
 #endif
 };
+
+static inline unsigned int skb_frag_size(const skb_frag_t *frag)
+{
+	return frag->size;
+}
+
+static inline void skb_frag_size_set(skb_frag_t *frag, unsigned int size)
+{
+	frag->size = size;
+}
+
+static inline void skb_frag_size_add(skb_frag_t *frag, int delta)
+{
+	frag->size += delta;
+}
+
+static inline void skb_frag_size_sub(skb_frag_t *frag, int delta)
+{
+	frag->size -= delta;
+}
 
 #define HAVE_HW_TIME_STAMP
 
@@ -190,6 +222,9 @@ enum {
 
 	/* device driver supports TX zero-copy buffers */
 	SKBTX_DEV_ZEROCOPY = 1 << 4,
+
+	/* generate wifi status information (where possible) */
+	SKBTX_WIFI_STATUS = 1 << 5,
 };
 
 /*
@@ -207,15 +242,15 @@ struct ubuf_info {
  * the end of the header data, ie. at skb->end.
  */
 struct skb_shared_info {
-	unsigned short	nr_frags;
+	unsigned char	nr_frags;
+	__u8		tx_flags;
 	unsigned short	gso_size;
 	/* Warning: this field is not always filled in (UFO)! */
 	unsigned short	gso_segs;
 	unsigned short  gso_type;
-	__be32          ip6_frag_id;
-	__u8		tx_flags;
 	struct sk_buff	*frag_list;
 	struct skb_shared_hwtstamps hwtstamps;
+	__be32          ip6_frag_id;
 
 	/*
 	 * Warning : all fields before dataref are cleared in __alloc_skb()
@@ -322,6 +357,10 @@ typedef unsigned char *sk_buff_data_t;
  *	@queue_mapping: Queue mapping for multiqueue devices
  *	@ndisc_nodetype: router type (from link layer)
  *	@ooo_okay: allow the mapping of a socket to a queue to be changed
+ *	@l4_rxhash: indicate rxhash is a canonical 4-tuple hash over transport
+ *		ports.
+ *	@wifi_acked_valid: wifi_acked was set
+ *	@wifi_acked: whether frame was acked on wifi or not
  *	@dma_cookie: a cookie to one of several possible DMA operations
  *		done by skb DMA functions
  *	@secmark: security marking
@@ -414,9 +453,11 @@ struct sk_buff {
 	__u8			ndisc_nodetype:2;
 #endif
 	__u8			ooo_okay:1;
+	__u8			l4_rxhash:1;
+	__u8			wifi_acked_valid:1;
+	__u8			wifi_acked:1;
+	/* 10/12 bit hole (depending on ndisc_nodetype presence) */
 	kmemcheck_bitfield_end(flags2);
-
-	/* 0/13 bit hole */
 
 #ifdef CONFIG_NET_DMA
 	dma_cookie_t		dma_cookie;
@@ -509,6 +550,7 @@ extern void consume_skb(struct sk_buff *skb);
 extern void	       __kfree_skb(struct sk_buff *skb);
 extern struct sk_buff *__alloc_skb(unsigned int size,
 				   gfp_t priority, int fclone, int node);
+extern struct sk_buff *build_skb(void *data);
 static inline struct sk_buff *alloc_skb(unsigned int size,
 					gfp_t priority)
 {
@@ -521,15 +563,18 @@ static inline struct sk_buff *alloc_skb_fclone(unsigned int size,
 	return __alloc_skb(size, priority, 1, NUMA_NO_NODE);
 }
 
+extern void skb_recycle(struct sk_buff *skb);
 extern bool skb_recycle_check(struct sk_buff *skb, int skb_size);
 
 extern struct sk_buff *skb_morph(struct sk_buff *dst, struct sk_buff *src);
+extern int skb_copy_ubufs(struct sk_buff *skb, gfp_t gfp_mask);
 extern struct sk_buff *skb_clone(struct sk_buff *skb,
 				 gfp_t priority);
 extern struct sk_buff *skb_copy(const struct sk_buff *skb,
 				gfp_t priority);
-extern struct sk_buff *pskb_copy(struct sk_buff *skb,
-				 gfp_t gfp_mask);
+extern struct sk_buff *__pskb_copy(struct sk_buff *skb,
+				 int headroom, gfp_t gfp_mask);
+
 extern int	       pskb_expand_head(struct sk_buff *skb,
 					int nhead, int ntail,
 					gfp_t gfp_mask);
@@ -572,11 +617,11 @@ extern unsigned int   skb_find_text(struct sk_buff *skb, unsigned int from,
 				    unsigned int to, struct ts_config *config,
 				    struct ts_state *state);
 
-extern __u32 __skb_get_rxhash(struct sk_buff *skb);
+extern void __skb_get_rxhash(struct sk_buff *skb);
 static inline __u32 skb_get_rxhash(struct sk_buff *skb)
 {
 	if (!skb->rxhash)
-		skb->rxhash = __skb_get_rxhash(skb);
+		__skb_get_rxhash(skb);
 
 	return skb->rxhash;
 }
@@ -822,9 +867,9 @@ static inline struct sk_buff *skb_unshare(struct sk_buff *skb,
  *	The reference count is not incremented and the reference is therefore
  *	volatile. Use with caution.
  */
-static inline struct sk_buff *skb_peek(struct sk_buff_head *list_)
+static inline struct sk_buff *skb_peek(const struct sk_buff_head *list_)
 {
-	struct sk_buff *list = ((struct sk_buff *)list_)->next;
+	struct sk_buff *list = ((const struct sk_buff *)list_)->next;
 	if (list == (struct sk_buff *)list_)
 		list = NULL;
 	return list;
@@ -843,9 +888,9 @@ static inline struct sk_buff *skb_peek(struct sk_buff_head *list_)
  *	The reference count is not incremented and the reference is therefore
  *	volatile. Use with caution.
  */
-static inline struct sk_buff *skb_peek_tail(struct sk_buff_head *list_)
+static inline struct sk_buff *skb_peek_tail(const struct sk_buff_head *list_)
 {
-	struct sk_buff *list = ((struct sk_buff *)list_)->prev;
+	struct sk_buff *list = ((const struct sk_buff *)list_)->prev;
 	if (list == (struct sk_buff *)list_)
 		list = NULL;
 	return list;
@@ -1122,18 +1167,51 @@ static inline int skb_pagelen(const struct sk_buff *skb)
 	int i, len = 0;
 
 	for (i = (int)skb_shinfo(skb)->nr_frags - 1; i >= 0; i--)
-		len += skb_shinfo(skb)->frags[i].size;
+		len += skb_frag_size(&skb_shinfo(skb)->frags[i]);
 	return len + skb_headlen(skb);
 }
 
-static inline void skb_fill_page_desc(struct sk_buff *skb, int i,
-				      struct page *page, int off, int size)
+/**
+ * __skb_fill_page_desc - initialise a paged fragment in an skb
+ * @skb: buffer containing fragment to be initialised
+ * @i: paged fragment index to initialise
+ * @page: the page to use for this fragment
+ * @off: the offset to the data with @page
+ * @size: the length of the data
+ *
+ * Initialises the @i'th fragment of @skb to point to &size bytes at
+ * offset @off within @page.
+ *
+ * Does not take any additional reference on the fragment.
+ */
+static inline void __skb_fill_page_desc(struct sk_buff *skb, int i,
+					struct page *page, int off, int size)
 {
 	skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
 
-	frag->page		  = page;
+	frag->page.p		  = page;
 	frag->page_offset	  = off;
-	frag->size		  = size;
+	skb_frag_size_set(frag, size);
+}
+
+/**
+ * skb_fill_page_desc - initialise a paged fragment in an skb
+ * @skb: buffer containing fragment to be initialised
+ * @i: paged fragment index to initialise
+ * @page: the page to use for this fragment
+ * @off: the offset to the data with @page
+ * @size: the length of the data
+ *
+ * As per __skb_fill_page_desc() -- initialises the @i'th fragment of
+ * @skb to point to &size bytes at offset @off within @page. In
+ * addition updates @skb such that @i is the last fragment.
+ *
+ * Does not take any additional reference on the fragment.
+ */
+static inline void skb_fill_page_desc(struct sk_buff *skb, int i,
+				      struct page *page, int off, int size)
+{
+	__skb_fill_page_desc(skb, i, page, off, size);
 	skb_shinfo(skb)->nr_frags = i + 1;
 }
 
@@ -1596,35 +1674,140 @@ static inline struct sk_buff *netdev_alloc_skb_ip_align(struct net_device *dev,
 }
 
 /**
- *	__netdev_alloc_page - allocate a page for ps-rx on a specific device
- *	@dev: network device to receive on
- *	@gfp_mask: alloc_pages_node mask
+ * skb_frag_page - retrieve the page refered to by a paged fragment
+ * @frag: the paged fragment
  *
- * 	Allocate a new page. dev currently unused.
- *
- * 	%NULL is returned if there is no free memory.
+ * Returns the &struct page associated with @frag.
  */
-static inline struct page *__netdev_alloc_page(struct net_device *dev, gfp_t gfp_mask)
+static inline struct page *skb_frag_page(const skb_frag_t *frag)
 {
-	return alloc_pages_node(NUMA_NO_NODE, gfp_mask, 0);
+	return frag->page.p;
 }
 
 /**
- *	netdev_alloc_page - allocate a page for ps-rx on a specific device
- *	@dev: network device to receive on
+ * __skb_frag_ref - take an addition reference on a paged fragment.
+ * @frag: the paged fragment
  *
- * 	Allocate a new page. dev currently unused.
- *
- * 	%NULL is returned if there is no free memory.
+ * Takes an additional reference on the paged fragment @frag.
  */
-static inline struct page *netdev_alloc_page(struct net_device *dev)
+static inline void __skb_frag_ref(skb_frag_t *frag)
 {
-	return __netdev_alloc_page(dev, GFP_ATOMIC);
+	get_page(skb_frag_page(frag));
 }
 
-static inline void netdev_free_page(struct net_device *dev, struct page *page)
+/**
+ * skb_frag_ref - take an addition reference on a paged fragment of an skb.
+ * @skb: the buffer
+ * @f: the fragment offset.
+ *
+ * Takes an additional reference on the @f'th paged fragment of @skb.
+ */
+static inline void skb_frag_ref(struct sk_buff *skb, int f)
 {
-	__free_page(page);
+	__skb_frag_ref(&skb_shinfo(skb)->frags[f]);
+}
+
+/**
+ * __skb_frag_unref - release a reference on a paged fragment.
+ * @frag: the paged fragment
+ *
+ * Releases a reference on the paged fragment @frag.
+ */
+static inline void __skb_frag_unref(skb_frag_t *frag)
+{
+	put_page(skb_frag_page(frag));
+}
+
+/**
+ * skb_frag_unref - release a reference on a paged fragment of an skb.
+ * @skb: the buffer
+ * @f: the fragment offset
+ *
+ * Releases a reference on the @f'th paged fragment of @skb.
+ */
+static inline void skb_frag_unref(struct sk_buff *skb, int f)
+{
+	__skb_frag_unref(&skb_shinfo(skb)->frags[f]);
+}
+
+/**
+ * skb_frag_address - gets the address of the data contained in a paged fragment
+ * @frag: the paged fragment buffer
+ *
+ * Returns the address of the data within @frag. The page must already
+ * be mapped.
+ */
+static inline void *skb_frag_address(const skb_frag_t *frag)
+{
+	return page_address(skb_frag_page(frag)) + frag->page_offset;
+}
+
+/**
+ * skb_frag_address_safe - gets the address of the data contained in a paged fragment
+ * @frag: the paged fragment buffer
+ *
+ * Returns the address of the data within @frag. Checks that the page
+ * is mapped and returns %NULL otherwise.
+ */
+static inline void *skb_frag_address_safe(const skb_frag_t *frag)
+{
+	void *ptr = page_address(skb_frag_page(frag));
+	if (unlikely(!ptr))
+		return NULL;
+
+	return ptr + frag->page_offset;
+}
+
+/**
+ * __skb_frag_set_page - sets the page contained in a paged fragment
+ * @frag: the paged fragment
+ * @page: the page to set
+ *
+ * Sets the fragment @frag to contain @page.
+ */
+static inline void __skb_frag_set_page(skb_frag_t *frag, struct page *page)
+{
+	frag->page.p = page;
+}
+
+/**
+ * skb_frag_set_page - sets the page contained in a paged fragment of an skb
+ * @skb: the buffer
+ * @f: the fragment offset
+ * @page: the page to set
+ *
+ * Sets the @f'th fragment of @skb to contain @page.
+ */
+static inline void skb_frag_set_page(struct sk_buff *skb, int f,
+				     struct page *page)
+{
+	__skb_frag_set_page(&skb_shinfo(skb)->frags[f], page);
+}
+
+/**
+ * skb_frag_dma_map - maps a paged fragment via the DMA API
+ * @dev: the device to map the fragment to
+ * @frag: the paged fragment to map
+ * @offset: the offset within the fragment (starting at the
+ *          fragment's own offset)
+ * @size: the number of bytes to map
+ * @dir: the direction of the mapping (%PCI_DMA_*)
+ *
+ * Maps the page associated with @frag to @device.
+ */
+static inline dma_addr_t skb_frag_dma_map(struct device *dev,
+					  const skb_frag_t *frag,
+					  size_t offset, size_t size,
+					  enum dma_data_direction dir)
+{
+	return dma_map_page(dev, skb_frag_page(frag),
+			    frag->page_offset + offset, size, dir);
+}
+
+static inline struct sk_buff *pskb_copy(struct sk_buff *skb,
+					gfp_t gfp_mask)
+{
+	return __pskb_copy(skb, skb_headroom(skb), gfp_mask);
 }
 
 /**
@@ -1635,7 +1818,7 @@ static inline void netdev_free_page(struct net_device *dev, struct page *page)
  *	Returns true if modifying the header part of the cloned buffer
  *	does not requires the data to be copied.
  */
-static inline int skb_clone_writable(struct sk_buff *skb, unsigned int len)
+static inline int skb_clone_writable(const struct sk_buff *skb, unsigned int len)
 {
 	return !skb_header_cloned(skb) &&
 	       skb_headroom(skb) + len <= skb->hdr_len;
@@ -1729,13 +1912,13 @@ static inline int skb_add_data(struct sk_buff *skb,
 }
 
 static inline int skb_can_coalesce(struct sk_buff *skb, int i,
-				   struct page *page, int off)
+				   const struct page *page, int off)
 {
 	if (i) {
-		struct skb_frag_struct *frag = &skb_shinfo(skb)->frags[i - 1];
+		const struct skb_frag_struct *frag = &skb_shinfo(skb)->frags[i - 1];
 
-		return page == frag->page &&
-		       off == frag->page_offset + frag->size;
+		return page == skb_frag_page(frag) &&
+		       off == frag->page_offset + skb_frag_size(frag);
 	}
 	return 0;
 }
@@ -1908,7 +2091,8 @@ extern void	       skb_split(struct sk_buff *skb,
 extern int	       skb_shift(struct sk_buff *tgt, struct sk_buff *skb,
 				 int shiftlen);
 
-extern struct sk_buff *skb_segment(struct sk_buff *skb, u32 features);
+extern struct sk_buff *skb_segment(struct sk_buff *skb,
+				   netdev_features_t features);
 
 static inline void *skb_header_pointer(const struct sk_buff *skb, int offset,
 				       int len, void *buffer)
@@ -2019,8 +2203,13 @@ static inline bool skb_defer_rx_timestamp(struct sk_buff *skb)
 /**
  * skb_complete_tx_timestamp() - deliver cloned skb with tx timestamps
  *
+ * PHY drivers may accept clones of transmitted packets for
+ * timestamping via their phy_driver.txtstamp method. These drivers
+ * must call this function to return the skb back to the stack, with
+ * or without a timestamp.
+ *
  * @skb: clone of the the original outgoing packet
- * @hwtstamps: hardware time stamps
+ * @hwtstamps: hardware time stamps, may be NULL if not available
  *
  */
 void skb_complete_tx_timestamp(struct sk_buff *skb,
@@ -2060,6 +2249,15 @@ static inline void skb_tx_timestamp(struct sk_buff *skb)
 	skb_clone_tx_timestamp(skb);
 	sw_tx_timestamp(skb);
 }
+
+/**
+ * skb_complete_wifi_ack - deliver skb with wifi status
+ *
+ * @skb: the original outgoing packet
+ * @acked: ack status
+ *
+ */
+void skb_complete_wifi_ack(struct sk_buff *skb, bool acked);
 
 extern __sum16 __skb_checksum_complete_head(struct sk_buff *skb, int len);
 extern __sum16 __skb_checksum_complete(struct sk_buff *skb);
@@ -2256,7 +2454,8 @@ static inline bool skb_warn_if_lro(const struct sk_buff *skb)
 {
 	/* LRO sets gso_size but not gso_type, whereas if GSO is really
 	 * wanted then gso_type will be set. */
-	struct skb_shared_info *shinfo = skb_shinfo(skb);
+	const struct skb_shared_info *shinfo = skb_shinfo(skb);
+
 	if (skb_is_nonlinear(skb) && shinfo->gso_size != 0 &&
 	    unlikely(shinfo->gso_type == 0)) {
 		__skb_warn_lro_forwarding(skb);
@@ -2280,7 +2479,7 @@ static inline void skb_forward_csum(struct sk_buff *skb)
  * Instead of forcing ip_summed to CHECKSUM_NONE, we can
  * use this helper, to document places where we make this assertion.
  */
-static inline void skb_checksum_none_assert(struct sk_buff *skb)
+static inline void skb_checksum_none_assert(const struct sk_buff *skb)
 {
 #ifdef DEBUG
 	BUG_ON(skb->ip_summed != CHECKSUM_NONE);
@@ -2289,5 +2488,25 @@ static inline void skb_checksum_none_assert(struct sk_buff *skb)
 
 bool skb_partial_csum_set(struct sk_buff *skb, u16 start, u16 off);
 
+static inline bool skb_is_recycleable(const struct sk_buff *skb, int skb_size)
+{
+	if (irqs_disabled())
+		return false;
+
+	if (skb_shinfo(skb)->tx_flags & SKBTX_DEV_ZEROCOPY)
+		return false;
+
+	if (skb_is_nonlinear(skb) || skb->fclone != SKB_FCLONE_UNAVAILABLE)
+		return false;
+
+	skb_size = SKB_DATA_ALIGN(skb_size + NET_SKB_PAD);
+	if (skb_end_pointer(skb) - skb->head < skb_size)
+		return false;
+
+	if (skb_shared(skb) || skb_cloned(skb))
+		return false;
+
+	return true;
+}
 #endif	/* __KERNEL__ */
 #endif	/* _LINUX_SKBUFF_H */

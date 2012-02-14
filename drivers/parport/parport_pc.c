@@ -2595,14 +2595,17 @@ static int __devinit sio_ite_8872_probe(struct pci_dev *pdev, int autoirq,
 		break;
 	case 0x6:
 		printk(KERN_INFO "parport_pc: ITE8873 found (1S)\n");
+		release_region(inta_addr[i], 32);
 		return 0;
 	case 0x8:
 		printk(KERN_INFO "parport_pc: ITE8874 found (2S)\n");
+		release_region(inta_addr[i], 32);
 		return 0;
 	default:
 		printk(KERN_INFO "parport_pc: unknown ITE887x\n");
 		printk(KERN_INFO "parport_pc: please mail 'lspci -nvv' "
 			"output to Rich.Liu@ite.com.tw\n");
+		release_region(inta_addr[i], 32);
 		return 0;
 	}
 
@@ -3401,8 +3404,8 @@ static int __init parport_init_mode_setup(char *str)
 #endif
 
 #ifdef MODULE
-static const char *irq[PARPORT_PC_MAX_PORTS];
-static const char *dma[PARPORT_PC_MAX_PORTS];
+static char *irq[PARPORT_PC_MAX_PORTS];
+static char *dma[PARPORT_PC_MAX_PORTS];
 
 MODULE_PARM_DESC(io, "Base I/O address (SPP regs)");
 module_param_array(io, int, NULL, 0);

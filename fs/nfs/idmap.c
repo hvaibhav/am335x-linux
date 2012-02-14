@@ -38,6 +38,89 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/nfs_idmap.h>
+#include <linux/nfs_fs.h>
+
+/**
+ * nfs_fattr_init_names - initialise the nfs_fattr owner_name/group_name fields
+ * @fattr: fully initialised struct nfs_fattr
+ * @owner_name: owner name string cache
+ * @group_name: group name string cache
+ */
+void nfs_fattr_init_names(struct nfs_fattr *fattr,
+		struct nfs4_string *owner_name,
+		struct nfs4_string *group_name)
+{
+	fattr->owner_name = owner_name;
+	fattr->group_name = group_name;
+}
+
+static void nfs_fattr_free_owner_name(struct nfs_fattr *fattr)
+{
+	fattr->valid &= ~NFS_ATTR_FATTR_OWNER_NAME;
+	kfree(fattr->owner_name->data);
+}
+
+static void nfs_fattr_free_group_name(struct nfs_fattr *fattr)
+{
+	fattr->valid &= ~NFS_ATTR_FATTR_GROUP_NAME;
+	kfree(fattr->group_name->data);
+}
+
+static bool nfs_fattr_map_owner_name(struct nfs_server *server, struct nfs_fattr *fattr)
+{
+	struct nfs4_string *owner = fattr->owner_name;
+	__u32 uid;
+
+	if (!(fattr->valid & NFS_ATTR_FATTR_OWNER_NAME))
+		return false;
+	if (nfs_map_name_to_uid(server, owner->data, owner->len, &uid) == 0) {
+		fattr->uid = uid;
+		fattr->valid |= NFS_ATTR_FATTR_OWNER;
+	}
+	return true;
+}
+
+static bool nfs_fattr_map_group_name(struct nfs_server *server, struct nfs_fattr *fattr)
+{
+	struct nfs4_string *group = fattr->group_name;
+	__u32 gid;
+
+	if (!(fattr->valid & NFS_ATTR_FATTR_GROUP_NAME))
+		return false;
+	if (nfs_map_group_to_gid(server, group->data, group->len, &gid) == 0) {
+		fattr->gid = gid;
+		fattr->valid |= NFS_ATTR_FATTR_GROUP;
+	}
+	return true;
+}
+
+/**
+ * nfs_fattr_free_names - free up the NFSv4 owner and group strings
+ * @fattr: a fully initialised nfs_fattr structure
+ */
+void nfs_fattr_free_names(struct nfs_fattr *fattr)
+{
+	if (fattr->valid & NFS_ATTR_FATTR_OWNER_NAME)
+		nfs_fattr_free_owner_name(fattr);
+	if (fattr->valid & NFS_ATTR_FATTR_GROUP_NAME)
+		nfs_fattr_free_group_name(fattr);
+}
+
+/**
+ * nfs_fattr_map_and_free_names - map owner/group strings into uid/gid and free
+ * @server: pointer to the filesystem nfs_server structure
+ * @fattr: a fully initialised nfs_fattr structure
+ *
+ * This helper maps the cached NFSv4 owner/group strings in fattr into
+ * their numeric uid/gid equivalents, and then frees the cached strings.
+ */
+void nfs_fattr_map_and_free_names(struct nfs_server *server, struct nfs_fattr *fattr)
+{
+	if (nfs_fattr_map_owner_name(server, fattr))
+		nfs_fattr_free_owner_name(fattr);
+	if (nfs_fattr_map_group_name(server, fattr))
+		nfs_fattr_free_group_name(fattr);
+}
 
 static int nfs_map_string_to_numeric(const char *name, size_t namelen, __u32 *res)
 {
@@ -115,6 +198,7 @@ int nfs_idmap_init(void)
 	if (ret < 0)
 		goto failed_put_key;
 
+	set_bit(KEY_FLAG_ROOT_CAN_CLEAR, &keyring->flags);
 	cred->thread_keyring = keyring;
 	cred->jit_keyring = KEY_REQKEY_DEFL_THREAD_KEYRING;
 	id_resolver_cache = cred;
@@ -336,8 +420,6 @@ struct idmap {
 	struct idmap_hashtable	idmap_group_hash;
 };
 
-static ssize_t idmap_pipe_upcall(struct file *, struct rpc_pipe_msg *,
-				 char __user *, size_t);
 static ssize_t idmap_pipe_downcall(struct file *, const char __user *,
 				   size_t);
 static void idmap_pipe_destroy_msg(struct rpc_pipe_msg *);
@@ -345,7 +427,7 @@ static void idmap_pipe_destroy_msg(struct rpc_pipe_msg *);
 static unsigned int fnvhash32(const void *, size_t);
 
 static const struct rpc_pipe_ops idmap_upcall_ops = {
-	.upcall		= idmap_pipe_upcall,
+	.upcall		= rpc_pipe_generic_upcall,
 	.downcall	= idmap_pipe_downcall,
 	.destroy_msg	= idmap_pipe_destroy_msg,
 };
@@ -593,27 +675,6 @@ nfs_idmap_name(struct idmap *idmap, struct idmap_hashtable *h,
 	mutex_unlock(&idmap->idmap_im_lock);
 	mutex_unlock(&idmap->idmap_lock);
 	return ret;
-}
-
-/* RPC pipefs upcall/downcall routines */
-static ssize_t
-idmap_pipe_upcall(struct file *filp, struct rpc_pipe_msg *msg,
-		  char __user *dst, size_t buflen)
-{
-	char *data = (char *)msg->data + msg->copied;
-	size_t mlen = min(msg->len, buflen);
-	unsigned long left;
-
-	left = copy_to_user(dst, data, mlen);
-	if (left == mlen) {
-		msg->errno = -EFAULT;
-		return -EFAULT;
-	}
-
-	mlen -= left;
-	msg->copied += mlen;
-	msg->errno = 0;
-	return mlen;
 }
 
 static ssize_t

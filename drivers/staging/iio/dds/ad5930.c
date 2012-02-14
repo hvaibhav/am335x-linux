@@ -14,6 +14,7 @@
 #include <linux/spi/spi.h>
 #include <linux/slab.h>
 #include <linux/sysfs.h>
+#include <linux/module.h>
 
 #include "../iio.h"
 #include "../sysfs.h"
@@ -129,6 +130,7 @@ error_ret:
 static int __devexit ad5930_remove(struct spi_device *spi)
 {
 	iio_device_unregister(spi_get_drvdata(spi));
+	iio_free_device(spi_get_drvdata(spi));
 
 	return 0;
 }
@@ -141,19 +143,9 @@ static struct spi_driver ad5930_driver = {
 	.probe = ad5930_probe,
 	.remove = __devexit_p(ad5930_remove),
 };
-
-static __init int ad5930_spi_init(void)
-{
-	return spi_register_driver(&ad5930_driver);
-}
-module_init(ad5930_spi_init);
-
-static __exit void ad5930_spi_exit(void)
-{
-	spi_unregister_driver(&ad5930_driver);
-}
-module_exit(ad5930_spi_exit);
+module_spi_driver(ad5930_driver);
 
 MODULE_AUTHOR("Cliff Cai");
 MODULE_DESCRIPTION("Analog Devices ad5930 driver");
 MODULE_LICENSE("GPL v2");
+MODULE_ALIAS("spi:" DRV_NAME);

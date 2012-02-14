@@ -420,7 +420,7 @@ static int __init init_control(struct fb_info_control *p)
 
 	/* Try to pick a video mode out of NVRAM if we have one. */
 #ifdef CONFIG_NVRAM
-	if (default_cmode == CMODE_NVRAM){
+	if (default_cmode == CMODE_NVRAM) {
 		cmode = nvram_read_byte(NV_CMODE);
 		if(cmode < CMODE_8 || cmode > CMODE_32)
 			cmode = CMODE_8;
@@ -550,7 +550,7 @@ static void control_set_hardware(struct fb_info_control *p, struct fb_par_contro
 
 
 /*
- * Parse user speficied options (`video=controlfb:')
+ * Parse user specified options (`video=controlfb:')
  */
 static void __init control_setup(char *options)
 {

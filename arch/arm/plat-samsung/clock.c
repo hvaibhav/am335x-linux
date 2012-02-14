@@ -33,7 +33,7 @@
 #include <linux/errno.h>
 #include <linux/err.h>
 #include <linux/platform_device.h>
-#include <linux/sysdev.h>
+#include <linux/device.h>
 #include <linux/interrupt.h>
 #include <linux/ioport.h>
 #include <linux/clk.h>
@@ -63,6 +63,17 @@ static LIST_HEAD(clocks);
  * causing an BUG to be triggered.
  */
 DEFINE_SPINLOCK(clocks_lock);
+
+/* Global watchdog clock used by arch_wtd_reset() callback */
+struct clk *s3c2410_wdtclk;
+static int __init s3c_wdt_reset_init(void)
+{
+	s3c2410_wdtclk = clk_get(NULL, "watchdog");
+	if (IS_ERR(s3c2410_wdtclk))
+		printk(KERN_WARNING "%s: warning: cannot get watchdog clock\n", __func__);
+	return 0;
+}
+arch_initcall(s3c_wdt_reset_init);
 
 /* enable and disable calls for use with the clk struct */
 

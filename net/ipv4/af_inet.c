@@ -466,8 +466,13 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 		goto out;
 
 	if (addr->sin_family != AF_INET) {
+		/* Compatibility games : accept AF_UNSPEC (mapped to AF_INET)
+		 * only if s_addr is INADDR_ANY.
+		 */
 		err = -EAFNOSUPPORT;
-		goto out;
+		if (addr->sin_family != AF_UNSPEC ||
+		    addr->sin_addr.s_addr != htonl(INADDR_ANY))
+			goto out;
 	}
 
 	chk_addr_ret = inet_addr_type(sock_net(sk), addr->sin_addr.s_addr);
@@ -888,7 +893,7 @@ int inet_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 EXPORT_SYMBOL(inet_ioctl);
 
 #ifdef CONFIG_COMPAT
-int inet_compat_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
+static int inet_compat_ioctl(struct socket *sock, unsigned int cmd, unsigned long arg)
 {
 	struct sock *sk = sock->sk;
 	int err = -ENOIOCTLCMD;
@@ -1245,7 +1250,8 @@ out:
 	return err;
 }
 
-static struct sk_buff *inet_gso_segment(struct sk_buff *skb, u32 features)
+static struct sk_buff *inet_gso_segment(struct sk_buff *skb,
+	netdev_features_t features)
 {
 	struct sk_buff *segs = ERR_PTR(-EINVAL);
 	struct iphdr *iph;
@@ -1567,9 +1573,9 @@ static __net_init int ipv4_mib_init_net(struct net *net)
 			  sizeof(struct icmp_mib),
 			  __alignof__(struct icmp_mib)) < 0)
 		goto err_icmp_mib;
-	if (snmp_mib_init((void __percpu **)net->mib.icmpmsg_statistics,
-			  sizeof(struct icmpmsg_mib),
-			  __alignof__(struct icmpmsg_mib)) < 0)
+	net->mib.icmpmsg_statistics = kzalloc(sizeof(struct icmpmsg_mib),
+					      GFP_KERNEL);
+	if (!net->mib.icmpmsg_statistics)
 		goto err_icmpmsg_mib;
 
 	tcp_mib_init(net);
@@ -1593,7 +1599,7 @@ err_tcp_mib:
 
 static __net_exit void ipv4_mib_exit_net(struct net *net)
 {
-	snmp_mib_free((void __percpu **)net->mib.icmpmsg_statistics);
+	kfree(net->mib.icmpmsg_statistics);
 	snmp_mib_free((void __percpu **)net->mib.icmp_statistics);
 	snmp_mib_free((void __percpu **)net->mib.udplite_statistics);
 	snmp_mib_free((void __percpu **)net->mib.udp_statistics);
@@ -1665,6 +1671,8 @@ static int __init inet_init(void)
 #ifdef CONFIG_SYSCTL
 	ip_static_sysctl_init();
 #endif
+
+	tcp_prot.sysctl_mem = init_net.ipv4.sysctl_tcp_mem;
 
 	/*
 	 *	Add all the base protocols.

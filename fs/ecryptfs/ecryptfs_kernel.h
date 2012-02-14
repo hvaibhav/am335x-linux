@@ -151,6 +151,11 @@ ecryptfs_get_key_payload_data(struct key *key)
 					  * dentry name */
 #define ECRYPTFS_TAG_73_PACKET_TYPE 0x49 /* FEK-encrypted filename as
 					  * metadata */
+#define ECRYPTFS_MIN_PKT_LEN_SIZE 1 /* Min size to specify packet length */
+#define ECRYPTFS_MAX_PKT_LEN_SIZE 2 /* Pass at least this many bytes to
+				     * ecryptfs_parse_packet_length() and
+				     * ecryptfs_write_packet_length()
+				     */
 /* Constraint: ECRYPTFS_FILENAME_MIN_RANDOM_PREPEND_BYTES >=
  * ECRYPTFS_MAX_IV_BYTES */
 #define ECRYPTFS_FILENAME_MIN_RANDOM_PREPEND_BYTES 16
@@ -514,7 +519,7 @@ ecryptfs_set_dentry_lower_mnt(struct dentry *dentry, struct vfsmount *lower_mnt)
 
 #define ecryptfs_printk(type, fmt, arg...) \
         __ecryptfs_printk(type "%s: " fmt, __func__, ## arg);
-__attribute__ ((format(printf, 1, 2)))
+__printf(1, 2)
 void __ecryptfs_printk(const char *fmt, ...);
 
 extern const struct file_operations ecryptfs_main_fops;
@@ -584,9 +589,10 @@ int ecryptfs_init_crypt_ctx(struct ecryptfs_crypt_stat *crypt_stat);
 int ecryptfs_write_inode_size_to_metadata(struct inode *ecryptfs_inode);
 int ecryptfs_encrypt_page(struct page *page);
 int ecryptfs_decrypt_page(struct page *page);
-int ecryptfs_write_metadata(struct dentry *ecryptfs_dentry);
+int ecryptfs_write_metadata(struct dentry *ecryptfs_dentry,
+			    struct inode *ecryptfs_inode);
 int ecryptfs_read_metadata(struct dentry *ecryptfs_dentry);
-int ecryptfs_new_file_context(struct dentry *ecryptfs_dentry);
+int ecryptfs_new_file_context(struct inode *ecryptfs_inode);
 void ecryptfs_write_crypt_stat_flags(char *page_virt,
 				     struct ecryptfs_crypt_stat *crypt_stat,
 				     size_t *written);

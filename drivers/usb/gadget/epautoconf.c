@@ -7,16 +7,6 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- *
  */
 
 #include <linux/kernel.h>
@@ -136,13 +126,10 @@ ep_matches (
 	 * descriptor and see if the EP matches it
 	 */
 	if (usb_endpoint_xfer_bulk(desc)) {
-		if (ep_comp) {
+		if (ep_comp && gadget->max_speed >= USB_SPEED_SUPER) {
 			num_req_streams = ep_comp->bmAttributes & 0x1f;
 			if (num_req_streams > ep->max_streams)
 				return 0;
-			/* Update the ep_comp descriptor if needed */
-			if (num_req_streams != ep->max_streams)
-				ep_comp->bmAttributes = ep->max_streams;
 		}
 
 	}
@@ -158,11 +145,11 @@ ep_matches (
 	 * where it's an output parameter representing the full speed limit.
 	 * the usb spec fixes high speed bulk maxpacket at 512 bytes.
 	 */
-	max = 0x7ff & le16_to_cpu(desc->wMaxPacketSize);
+	max = 0x7ff & usb_endpoint_maxp(desc);
 	switch (type) {
 	case USB_ENDPOINT_XFER_INT:
 		/* INT:  limit 64 bytes full speed, 1024 high/super speed */
-		if (!gadget->is_dualspeed && max > 64)
+		if (!gadget_is_dualspeed(gadget) && max > 64)
 			return 0;
 		/* FALLTHROUGH */
 
@@ -170,12 +157,12 @@ ep_matches (
 		/* ISO:  limit 1023 bytes full speed, 1024 high/super speed */
 		if (ep->maxpacket < max)
 			return 0;
-		if (!gadget->is_dualspeed && max > 1023)
+		if (!gadget_is_dualspeed(gadget) && max > 1023)
 			return 0;
 
 		/* BOTH:  "high bandwidth" works only at high speed */
 		if ((desc->wMaxPacketSize & cpu_to_le16(3<<11))) {
-			if (!gadget->is_dualspeed)
+			if (!gadget_is_dualspeed(gadget))
 				return 0;
 			/* configure your hardware with enough buffering!! */
 		}

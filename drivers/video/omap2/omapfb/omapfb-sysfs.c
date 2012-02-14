@@ -104,15 +104,13 @@ static ssize_t store_mirror(struct device *dev,
 {
 	struct fb_info *fbi = dev_get_drvdata(dev);
 	struct omapfb_info *ofbi = FB2OFB(fbi);
-	int mirror;
+	bool mirror;
 	int r;
 	struct fb_var_screeninfo new_var;
 
-	r = kstrtoint(buf, 0, &mirror);
+	r = strtobool(buf, &mirror);
 	if (r)
 		return r;
-
-	mirror = !!mirror;
 
 	if (!lock_fb_info(fbi))
 		return -ENODEV;
@@ -475,7 +473,9 @@ static ssize_t store_size(struct device *dev, struct device_attribute *attr,
 			continue;
 
 		for (j = 0; j < ofbi2->num_overlays; j++) {
-			if (ofbi2->overlays[j]->info.enabled) {
+			struct omap_overlay *ovl;
+			ovl = ofbi2->overlays[j];
+			if (ovl->is_enabled(ovl)) {
 				r = -EBUSY;
 				goto out;
 			}

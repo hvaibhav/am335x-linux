@@ -563,7 +563,7 @@ int bnx2i_send_iscsi_nopout(struct bnx2i_conn *bnx2i_conn,
 	nopout_wqe->itt = ((u16)task->itt |
 			   (ISCSI_TASK_TYPE_MPATH <<
 			    ISCSI_TMF_REQUEST_TYPE_SHIFT));
-	nopout_wqe->ttt = nopout_hdr->ttt;
+	nopout_wqe->ttt = be32_to_cpu(nopout_hdr->ttt);
 	nopout_wqe->flags = 0;
 	if (!unsol)
 		nopout_wqe->flags = ISCSI_NOP_OUT_REQUEST_LOCAL_COMPLETION;
@@ -1906,17 +1906,18 @@ static int bnx2i_queue_scsi_cmd_resp(struct iscsi_session *session,
 	spin_lock(&session->lock);
 	task = iscsi_itt_to_task(bnx2i_conn->cls_conn->dd_data,
 				 cqe->itt & ISCSI_CMD_RESPONSE_INDEX);
-	if (!task) {
+	if (!task || !task->sc) {
 		spin_unlock(&session->lock);
 		return -EINVAL;
 	}
 	sc = task->sc;
-	spin_unlock(&session->lock);
 
 	if (!blk_rq_cpu_valid(sc->request))
 		cpu = smp_processor_id();
 	else
 		cpu = sc->request->cpu;
+
+	spin_unlock(&session->lock);
 
 	p = &per_cpu(bnx2i_percpu, cpu);
 	spin_lock(&p->p_work_lock);

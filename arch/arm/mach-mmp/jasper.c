@@ -14,7 +14,6 @@
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
-#include <linux/gpio.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/max8649.h>
 #include <linux/mfd/max8925.h>
@@ -176,4 +175,5 @@ MACHINE_START(MARVELL_JASPER, "Jasper Development Platform")
 	.init_irq       = mmp2_init_irq,
 	.timer          = &mmp2_timer,
 	.init_machine   = jasper_init,
+	.restart	= mmp_restart,
 MACHINE_END

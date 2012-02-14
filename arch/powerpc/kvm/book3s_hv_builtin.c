@@ -8,6 +8,7 @@
 
 #include <linux/kvm_host.h>
 #include <linux/preempt.h>
+#include <linux/export.h>
 #include <linux/sched.h>
 #include <linux/spinlock.h>
 #include <linux/bootmem.h>
@@ -85,7 +86,7 @@ static inline int lpcr_rmls(unsigned long rma_size)
  * to allocate contiguous physical memory for the real memory
  * areas for guests.
  */
-void kvm_rma_init(void)
+void __init kvm_rma_init(void)
 {
 	unsigned long i;
 	unsigned long j, npages;

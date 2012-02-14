@@ -141,7 +141,7 @@ static inline struct msdos_inode_info *MSDOS_I(struct inode *inode)
 static inline int fat_mode_can_hold_ro(struct inode *inode)
 {
 	struct msdos_sb_info *sbi = MSDOS_SB(inode->i_sb);
-	mode_t mask;
+	umode_t mask;
 
 	if (S_ISDIR(inode->i_mode)) {
 		if (!sbi->options.rodir)
@@ -156,8 +156,8 @@ static inline int fat_mode_can_hold_ro(struct inode *inode)
 }
 
 /* Convert attribute bits and a mask to the UNIX mode. */
-static inline mode_t fat_make_mode(struct msdos_sb_info *sbi,
-				   u8 attrs, mode_t mode)
+static inline umode_t fat_make_mode(struct msdos_sb_info *sbi,
+				   u8 attrs, umode_t mode)
 {
 	if (attrs & ATTR_RO && !((attrs & ATTR_DIR) && !sbi->options.rodir))
 		mode &= ~S_IWUGO;
@@ -326,15 +326,14 @@ extern int fat_fill_super(struct super_block *sb, void *data, int silent,
 extern int fat_flush_inodes(struct super_block *sb, struct inode *i1,
 		            struct inode *i2);
 /* fat/misc.c */
-extern void
-__fat_fs_error(struct super_block *sb, int report, const char *fmt, ...)
-	__attribute__ ((format (printf, 3, 4))) __cold;
+extern __printf(3, 4) __cold
+void __fat_fs_error(struct super_block *sb, int report, const char *fmt, ...);
 #define fat_fs_error(sb, fmt, args...)		\
 	__fat_fs_error(sb, 1, fmt , ## args)
 #define fat_fs_error_ratelimit(sb, fmt, args...) \
 	__fat_fs_error(sb, __ratelimit(&MSDOS_SB(sb)->ratelimit), fmt , ## args)
-void fat_msg(struct super_block *sb, const char *level, const char *fmt, ...)
-	__attribute__ ((format (printf, 3, 4))) __cold;
+__printf(3, 4) __cold
+void fat_msg(struct super_block *sb, const char *level, const char *fmt, ...);
 extern int fat_clusters_flush(struct super_block *sb);
 extern int fat_chain_add(struct inode *inode, int new_dclus, int nr_cluster);
 extern void fat_time_fat2unix(struct msdos_sb_info *sbi, struct timespec *ts,

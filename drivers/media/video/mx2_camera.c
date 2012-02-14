@@ -210,6 +210,22 @@
 
 #define MAX_VIDEO_MEM	16
 
+struct mx2_prp_cfg {
+	int channel;
+	u32 in_fmt;
+	u32 out_fmt;
+	u32 src_pixel;
+	u32 ch1_pixel;
+	u32 irq_flags;
+};
+
+/* prp configuration for a client-host fmt pair */
+struct mx2_fmt_cfg {
+	enum v4l2_mbus_pixelcode	in_fmt;
+	u32				out_fmt;
+	struct mx2_prp_cfg		cfg;
+};
+
 struct mx2_camera_dev {
 	struct device		*dev;
 	struct soc_camera_host	soc_host;
@@ -241,6 +257,8 @@ struct mx2_camera_dev {
 	void			*discard_buffer;
 	dma_addr_t		discard_buffer_dma;
 	size_t			discard_size;
+	struct mx2_fmt_cfg	*emma_prp;
+	u32			frame_count;
 };
 
 /* buffer for one video frame */
@@ -251,6 +269,59 @@ struct mx2_buffer {
 	enum v4l2_mbus_pixelcode	code;
 
 	int bufnum;
+};
+
+static struct mx2_fmt_cfg mx27_emma_prp_table[] = {
+	/*
+	 * This is a generic configuration which is valid for most
+	 * prp input-output format combinations.
+	 * We set the incomming and outgoing pixelformat to a
+	 * 16 Bit wide format and adjust the bytesperline
+	 * accordingly. With this configuration the inputdata
+	 * will not be changed by the emma and could be any type
+	 * of 16 Bit Pixelformat.
+	 */
+	{
+		.in_fmt		= 0,
+		.out_fmt	= 0,
+		.cfg		= {
+			.channel	= 1,
+			.in_fmt		= PRP_CNTL_DATA_IN_RGB16,
+			.out_fmt	= PRP_CNTL_CH1_OUT_RGB16,
+			.src_pixel	= 0x2ca00565, /* RGB565 */
+			.ch1_pixel	= 0x2ca00565, /* RGB565 */
+			.irq_flags	= PRP_INTR_RDERR | PRP_INTR_CH1WERR |
+						PRP_INTR_CH1FC | PRP_INTR_LBOVF,
+		}
+	},
+	{
+		.in_fmt		= V4L2_MBUS_FMT_YUYV8_2X8,
+		.out_fmt	= V4L2_PIX_FMT_YUV420,
+		.cfg		= {
+			.channel	= 2,
+			.in_fmt		= PRP_CNTL_DATA_IN_YUV422,
+			.out_fmt	= PRP_CNTL_CH2_OUT_YUV420,
+			.src_pixel	= 0x22000888, /* YUV422 (YUYV) */
+			.irq_flags	= PRP_INTR_RDERR | PRP_INTR_CH2WERR |
+					PRP_INTR_CH2FC | PRP_INTR_LBOVF |
+					PRP_INTR_CH2OVF,
+		}
+	},
+};
+
+static struct mx2_fmt_cfg *mx27_emma_prp_get_format(
+					enum v4l2_mbus_pixelcode in_fmt,
+					u32 out_fmt)
+{
+	int i;
+
+	for (i = 1; i < ARRAY_SIZE(mx27_emma_prp_table); i++)
+		if ((mx27_emma_prp_table[i].in_fmt == in_fmt) &&
+				(mx27_emma_prp_table[i].out_fmt == out_fmt)) {
+			return &mx27_emma_prp_table[i];
+		}
+	/* If no match return the most generic configuration */
+	return &mx27_emma_prp_table[0];
 };
 
 static void mx2_camera_deactivate(struct mx2_camera_dev *pcdev)
@@ -301,6 +372,7 @@ static int mx2_camera_add_device(struct soc_camera_device *icd)
 	writel(pcdev->csicr1, pcdev->base_csi + CSICR1);
 
 	pcdev->icd = icd;
+	pcdev->frame_count = 0;
 
 	dev_info(icd->parent, "Camera driver attached to camera %d\n",
 		 icd->devnum);
@@ -686,16 +758,15 @@ static void mx2_camera_init_videobuf(struct videobuf_queue *q,
 			icd, &icd->video_lock);
 }
 
-#define MX2_BUS_FLAGS	(SOCAM_DATAWIDTH_8 | \
-			SOCAM_MASTER | \
-			SOCAM_VSYNC_ACTIVE_HIGH | \
-			SOCAM_VSYNC_ACTIVE_LOW | \
-			SOCAM_HSYNC_ACTIVE_HIGH | \
-			SOCAM_HSYNC_ACTIVE_LOW | \
-			SOCAM_PCLK_SAMPLE_RISING | \
-			SOCAM_PCLK_SAMPLE_FALLING | \
-			SOCAM_DATA_ACTIVE_HIGH | \
-			SOCAM_DATA_ACTIVE_LOW)
+#define MX2_BUS_FLAGS	(V4L2_MBUS_MASTER | \
+			V4L2_MBUS_VSYNC_ACTIVE_HIGH | \
+			V4L2_MBUS_VSYNC_ACTIVE_LOW | \
+			V4L2_MBUS_HSYNC_ACTIVE_HIGH | \
+			V4L2_MBUS_HSYNC_ACTIVE_LOW | \
+			V4L2_MBUS_PCLK_SAMPLE_RISING | \
+			V4L2_MBUS_PCLK_SAMPLE_FALLING | \
+			V4L2_MBUS_DATA_ACTIVE_HIGH | \
+			V4L2_MBUS_DATA_ACTIVE_LOW)
 
 static int mx27_camera_emma_prp_reset(struct mx2_camera_dev *pcdev)
 {
@@ -720,96 +791,131 @@ static void mx27_camera_emma_buf_init(struct soc_camera_device *icd,
 	struct soc_camera_host *ici =
 		to_soc_camera_host(icd->parent);
 	struct mx2_camera_dev *pcdev = ici->priv;
+	struct mx2_fmt_cfg *prp = pcdev->emma_prp;
+	u32 imgsize = pcdev->icd->user_height * pcdev->icd->user_width;
 
-	writel(pcdev->discard_buffer_dma,
-			pcdev->base_emma + PRP_DEST_RGB1_PTR);
-	writel(pcdev->discard_buffer_dma,
-			pcdev->base_emma + PRP_DEST_RGB2_PTR);
+	if (prp->cfg.channel == 1) {
+		writel(pcdev->discard_buffer_dma,
+				pcdev->base_emma + PRP_DEST_RGB1_PTR);
+		writel(pcdev->discard_buffer_dma,
+				pcdev->base_emma + PRP_DEST_RGB2_PTR);
 
-	/*
-	 * We only use the EMMA engine to get rid of the broken
-	 * DMA Engine. No color space consversion at the moment.
-	 * We set the incomming and outgoing pixelformat to an
-	 * 16 Bit wide format and adjust the bytesperline
-	 * accordingly. With this configuration the inputdata
-	 * will not be changed by the emma and could be any type
-	 * of 16 Bit Pixelformat.
-	 */
-	writel(PRP_CNTL_CH1EN |
+		writel(PRP_CNTL_CH1EN |
+				PRP_CNTL_CSIEN |
+				prp->cfg.in_fmt |
+				prp->cfg.out_fmt |
+				PRP_CNTL_CH1_LEN |
+				PRP_CNTL_CH1BYP |
+				PRP_CNTL_CH1_TSKIP(0) |
+				PRP_CNTL_IN_TSKIP(0),
+				pcdev->base_emma + PRP_CNTL);
+
+		writel((icd->user_width << 16) | icd->user_height,
+			pcdev->base_emma + PRP_SRC_FRAME_SIZE);
+		writel((icd->user_width << 16) | icd->user_height,
+			pcdev->base_emma + PRP_CH1_OUT_IMAGE_SIZE);
+		writel(bytesperline,
+			pcdev->base_emma + PRP_DEST_CH1_LINE_STRIDE);
+		writel(prp->cfg.src_pixel,
+			pcdev->base_emma + PRP_SRC_PIXEL_FORMAT_CNTL);
+		writel(prp->cfg.ch1_pixel,
+			pcdev->base_emma + PRP_CH1_PIXEL_FORMAT_CNTL);
+	} else { /* channel 2 */
+		writel(pcdev->discard_buffer_dma,
+			pcdev->base_emma + PRP_DEST_Y_PTR);
+		writel(pcdev->discard_buffer_dma,
+			pcdev->base_emma + PRP_SOURCE_Y_PTR);
+
+		if (prp->cfg.out_fmt == PRP_CNTL_CH2_OUT_YUV420) {
+			writel(pcdev->discard_buffer_dma + imgsize,
+				pcdev->base_emma + PRP_DEST_CB_PTR);
+			writel(pcdev->discard_buffer_dma + ((5 * imgsize) / 4),
+				pcdev->base_emma + PRP_DEST_CR_PTR);
+			writel(pcdev->discard_buffer_dma + imgsize,
+				pcdev->base_emma + PRP_SOURCE_CB_PTR);
+			writel(pcdev->discard_buffer_dma + ((5 * imgsize) / 4),
+				pcdev->base_emma + PRP_SOURCE_CR_PTR);
+		}
+
+		writel(PRP_CNTL_CH2EN |
 			PRP_CNTL_CSIEN |
-			PRP_CNTL_DATA_IN_RGB16 |
-			PRP_CNTL_CH1_OUT_RGB16 |
-			PRP_CNTL_CH1_LEN |
-			PRP_CNTL_CH1BYP |
-			PRP_CNTL_CH1_TSKIP(0) |
+			prp->cfg.in_fmt |
+			prp->cfg.out_fmt |
+			PRP_CNTL_CH2_LEN |
+			PRP_CNTL_CH2_TSKIP(0) |
 			PRP_CNTL_IN_TSKIP(0),
 			pcdev->base_emma + PRP_CNTL);
 
-	writel(((bytesperline >> 1) << 16) | icd->user_height,
+		writel((icd->user_width << 16) | icd->user_height,
 			pcdev->base_emma + PRP_SRC_FRAME_SIZE);
-	writel(((bytesperline >> 1) << 16) | icd->user_height,
-			pcdev->base_emma + PRP_CH1_OUT_IMAGE_SIZE);
-	writel(bytesperline,
-			pcdev->base_emma + PRP_DEST_CH1_LINE_STRIDE);
-	writel(0x2ca00565, /* RGB565 */
+
+		writel((icd->user_width << 16) | icd->user_height,
+			pcdev->base_emma + PRP_CH2_OUT_IMAGE_SIZE);
+
+		writel(prp->cfg.src_pixel,
 			pcdev->base_emma + PRP_SRC_PIXEL_FORMAT_CNTL);
-	writel(0x2ca00565, /* RGB565 */
-			pcdev->base_emma + PRP_CH1_PIXEL_FORMAT_CNTL);
+
+	}
 
 	/* Enable interrupts */
-	writel(PRP_INTR_RDERR |
-			PRP_INTR_CH1WERR |
-			PRP_INTR_CH2WERR |
-			PRP_INTR_CH1FC |
-			PRP_INTR_CH2FC |
-			PRP_INTR_LBOVF |
-			PRP_INTR_CH2OVF,
-			pcdev->base_emma + PRP_INTR_CNTL);
+	writel(prp->cfg.irq_flags, pcdev->base_emma + PRP_INTR_CNTL);
 }
 
-static int mx2_camera_set_bus_param(struct soc_camera_device *icd,
-		__u32 pixfmt)
+static int mx2_camera_set_bus_param(struct soc_camera_device *icd)
 {
-	struct soc_camera_host *ici =
-		to_soc_camera_host(icd->parent);
+	struct v4l2_subdev *sd = soc_camera_to_subdev(icd);
+	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
 	struct mx2_camera_dev *pcdev = ici->priv;
-	unsigned long camera_flags, common_flags;
-	int ret = 0;
+	struct v4l2_mbus_config cfg = {.type = V4L2_MBUS_PARALLEL,};
+	unsigned long common_flags;
+	int ret;
 	int bytesperline;
 	u32 csicr1 = pcdev->csicr1;
 
-	camera_flags = icd->ops->query_bus_param(icd);
-
-	common_flags = soc_camera_bus_param_compatible(camera_flags,
-				MX2_BUS_FLAGS);
-	if (!common_flags)
-		return -EINVAL;
-
-	if ((common_flags & SOCAM_HSYNC_ACTIVE_HIGH) &&
-	    (common_flags & SOCAM_HSYNC_ACTIVE_LOW)) {
-		if (pcdev->platform_flags & MX2_CAMERA_HSYNC_HIGH)
-			common_flags &= ~SOCAM_HSYNC_ACTIVE_LOW;
-		else
-			common_flags &= ~SOCAM_HSYNC_ACTIVE_HIGH;
-	}
-
-	if ((common_flags & SOCAM_PCLK_SAMPLE_RISING) &&
-	    (common_flags & SOCAM_PCLK_SAMPLE_FALLING)) {
-		if (pcdev->platform_flags & MX2_CAMERA_PCLK_SAMPLE_RISING)
-			common_flags &= ~SOCAM_PCLK_SAMPLE_FALLING;
-		else
-			common_flags &= ~SOCAM_PCLK_SAMPLE_RISING;
-	}
-
-	ret = icd->ops->set_bus_param(icd, common_flags);
-	if (ret < 0)
+	ret = v4l2_subdev_call(sd, video, g_mbus_config, &cfg);
+	if (!ret) {
+		common_flags = soc_mbus_config_compatible(&cfg, MX2_BUS_FLAGS);
+		if (!common_flags) {
+			dev_warn(icd->parent,
+				 "Flags incompatible: camera 0x%x, host 0x%x\n",
+				 cfg.flags, MX2_BUS_FLAGS);
+			return -EINVAL;
+		}
+	} else if (ret != -ENOIOCTLCMD) {
 		return ret;
+	} else {
+		common_flags = MX2_BUS_FLAGS;
+	}
 
-	if (common_flags & SOCAM_PCLK_SAMPLE_RISING)
+	if ((common_flags & V4L2_MBUS_HSYNC_ACTIVE_HIGH) &&
+	    (common_flags & V4L2_MBUS_HSYNC_ACTIVE_LOW)) {
+		if (pcdev->platform_flags & MX2_CAMERA_HSYNC_HIGH)
+			common_flags &= ~V4L2_MBUS_HSYNC_ACTIVE_LOW;
+		else
+			common_flags &= ~V4L2_MBUS_HSYNC_ACTIVE_HIGH;
+	}
+
+	if ((common_flags & V4L2_MBUS_PCLK_SAMPLE_RISING) &&
+	    (common_flags & V4L2_MBUS_PCLK_SAMPLE_FALLING)) {
+		if (pcdev->platform_flags & MX2_CAMERA_PCLK_SAMPLE_RISING)
+			common_flags &= ~V4L2_MBUS_PCLK_SAMPLE_FALLING;
+		else
+			common_flags &= ~V4L2_MBUS_PCLK_SAMPLE_RISING;
+	}
+
+	cfg.flags = common_flags;
+	ret = v4l2_subdev_call(sd, video, s_mbus_config, &cfg);
+	if (ret < 0 && ret != -ENOIOCTLCMD) {
+		dev_dbg(icd->parent, "camera s_mbus_config(0x%lx) returned %d\n",
+			common_flags, ret);
+		return ret;
+	}
+
+	if (common_flags & V4L2_MBUS_PCLK_SAMPLE_RISING)
 		csicr1 |= CSICR1_REDGE;
-	if (common_flags & SOCAM_VSYNC_ACTIVE_HIGH)
+	if (common_flags & V4L2_MBUS_VSYNC_ACTIVE_HIGH)
 		csicr1 |= CSICR1_SOF_POL;
-	if (common_flags & SOCAM_HSYNC_ACTIVE_HIGH)
+	if (common_flags & V4L2_MBUS_HSYNC_ACTIVE_HIGH)
 		csicr1 |= CSICR1_HSYNC_POL;
 	if (pcdev->platform_flags & MX2_CAMERA_SWAP16)
 		csicr1 |= CSICR1_SWAP16_EN;
@@ -899,9 +1005,58 @@ static int mx2_camera_set_crop(struct soc_camera_device *icd,
 	return ret;
 }
 
+static int mx2_camera_get_formats(struct soc_camera_device *icd,
+				  unsigned int idx,
+				  struct soc_camera_format_xlate *xlate)
+{
+	struct v4l2_subdev *sd = soc_camera_to_subdev(icd);
+	const struct soc_mbus_pixelfmt *fmt;
+	struct device *dev = icd->parent;
+	enum v4l2_mbus_pixelcode code;
+	int ret, formats = 0;
+
+	ret = v4l2_subdev_call(sd, video, enum_mbus_fmt, idx, &code);
+	if (ret < 0)
+		/* no more formats */
+		return 0;
+
+	fmt = soc_mbus_get_fmtdesc(code);
+	if (!fmt) {
+		dev_err(dev, "Invalid format code #%u: %d\n", idx, code);
+		return 0;
+	}
+
+	if (code == V4L2_MBUS_FMT_YUYV8_2X8) {
+		formats++;
+		if (xlate) {
+			/*
+			 * CH2 can output YUV420 which is a standard format in
+			 * soc_mediabus.c
+			 */
+			xlate->host_fmt =
+				soc_mbus_get_fmtdesc(V4L2_MBUS_FMT_YUYV8_1_5X8);
+			xlate->code	= code;
+			dev_dbg(dev, "Providing host format %s for sensor code %d\n",
+			       xlate->host_fmt->name, code);
+			xlate++;
+		}
+	}
+
+	/* Generic pass-trough */
+	formats++;
+	if (xlate) {
+		xlate->host_fmt = fmt;
+		xlate->code	= code;
+		xlate++;
+	}
+	return formats;
+}
+
 static int mx2_camera_set_fmt(struct soc_camera_device *icd,
 			       struct v4l2_format *f)
 {
+	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
+	struct mx2_camera_dev *pcdev = ici->priv;
 	struct v4l2_subdev *sd = soc_camera_to_subdev(icd);
 	const struct soc_camera_format_xlate *xlate;
 	struct v4l2_pix_format *pix = &f->fmt.pix;
@@ -933,6 +1088,10 @@ static int mx2_camera_set_fmt(struct soc_camera_device *icd,
 	pix->field		= mf.field;
 	pix->colorspace		= mf.colorspace;
 	icd->current_fmt	= xlate;
+
+	if (mx27_camera_emma(pcdev))
+		pcdev->emma_prp = mx27_emma_prp_get_format(xlate->code,
+						xlate->host_fmt->fourcc);
 
 	return 0;
 }
@@ -999,7 +1158,12 @@ static int mx2_camera_try_fmt(struct soc_camera_device *icd,
 
 	if (mf.field == V4L2_FIELD_ANY)
 		mf.field = V4L2_FIELD_NONE;
-	if (mf.field != V4L2_FIELD_NONE) {
+	/*
+	 * Driver supports interlaced images provided they have
+	 * both fields so that they can be processed as if they
+	 * were progressive.
+	 */
+	if (mf.field != V4L2_FIELD_NONE && !V4L2_FIELD_HAS_BOTH(mf.field)) {
 		dev_err(icd->parent, "Field type %d unsupported.\n",
 				mf.field);
 		return -EINVAL;
@@ -1161,6 +1325,7 @@ static struct soc_camera_host_ops mx2_soc_camera_host_ops = {
 	.remove		= mx2_camera_remove_device,
 	.set_fmt	= mx2_camera_set_fmt,
 	.set_crop	= mx2_camera_set_crop,
+	.get_formats	= mx2_camera_get_formats,
 	.try_fmt	= mx2_camera_try_fmt,
 	.init_videobuf	= mx2_camera_init_videobuf,
 	.reqbufs	= mx2_camera_reqbufs,
@@ -1172,6 +1337,8 @@ static struct soc_camera_host_ops mx2_soc_camera_host_ops = {
 static void mx27_camera_frame_done_emma(struct mx2_camera_dev *pcdev,
 		int bufnum, int state)
 {
+	u32 imgsize = pcdev->icd->user_height * pcdev->icd->user_width;
+	struct mx2_fmt_cfg *prp = pcdev->emma_prp;
 	struct mx2_buffer *buf;
 	struct videobuf_buffer *vb;
 	unsigned long phys;
@@ -1185,12 +1352,22 @@ static void mx27_camera_frame_done_emma(struct mx2_camera_dev *pcdev,
 		vb = &buf->vb;
 #ifdef DEBUG
 		phys = videobuf_to_dma_contig(vb);
-		if (readl(pcdev->base_emma + PRP_DEST_RGB1_PTR + 4 * bufnum)
-				!= phys) {
-			dev_err(pcdev->dev, "%p != %p\n", phys,
-					readl(pcdev->base_emma +
-						PRP_DEST_RGB1_PTR +
-						4 * bufnum));
+		if (prp->cfg.channel == 1) {
+			if (readl(pcdev->base_emma + PRP_DEST_RGB1_PTR +
+				4 * bufnum) != phys) {
+				dev_err(pcdev->dev, "%p != %p\n", phys,
+						readl(pcdev->base_emma +
+							PRP_DEST_RGB1_PTR +
+							4 * bufnum));
+			}
+		} else {
+			if (readl(pcdev->base_emma + PRP_DEST_Y_PTR -
+				0x14 * bufnum) != phys) {
+				dev_err(pcdev->dev, "%p != %p\n", phys,
+						readl(pcdev->base_emma +
+							PRP_DEST_Y_PTR -
+							0x14 * bufnum));
+			}
 		}
 #endif
 		dev_dbg(pcdev->dev, "%s (vb=0x%p) 0x%08lx %d\n", __func__, vb,
@@ -1199,14 +1376,29 @@ static void mx27_camera_frame_done_emma(struct mx2_camera_dev *pcdev,
 		list_del(&vb->queue);
 		vb->state = state;
 		do_gettimeofday(&vb->ts);
-		vb->field_count++;
+		vb->field_count = pcdev->frame_count * 2;
+		pcdev->frame_count++;
 
 		wake_up(&vb->done);
 	}
 
 	if (list_empty(&pcdev->capture)) {
-		writel(pcdev->discard_buffer_dma, pcdev->base_emma +
-				PRP_DEST_RGB1_PTR + 4 * bufnum);
+		if (prp->cfg.channel == 1) {
+			writel(pcdev->discard_buffer_dma, pcdev->base_emma +
+					PRP_DEST_RGB1_PTR + 4 * bufnum);
+		} else {
+			writel(pcdev->discard_buffer_dma, pcdev->base_emma +
+						PRP_DEST_Y_PTR -
+						0x14 * bufnum);
+			if (prp->out_fmt == V4L2_PIX_FMT_YUV420) {
+				writel(pcdev->discard_buffer_dma + imgsize,
+				       pcdev->base_emma + PRP_DEST_CB_PTR -
+				       0x14 * bufnum);
+				writel(pcdev->discard_buffer_dma +
+				       ((5 * imgsize) / 4), pcdev->base_emma +
+				       PRP_DEST_CR_PTR - 0x14 * bufnum);
+			}
+		}
 		return;
 	}
 
@@ -1221,7 +1413,18 @@ static void mx27_camera_frame_done_emma(struct mx2_camera_dev *pcdev,
 	vb->state = VIDEOBUF_ACTIVE;
 
 	phys = videobuf_to_dma_contig(vb);
-	writel(phys, pcdev->base_emma + PRP_DEST_RGB1_PTR + 4 * bufnum);
+	if (prp->cfg.channel == 1) {
+		writel(phys, pcdev->base_emma + PRP_DEST_RGB1_PTR + 4 * bufnum);
+	} else {
+		writel(phys, pcdev->base_emma +
+				PRP_DEST_Y_PTR - 0x14 * bufnum);
+		if (prp->cfg.out_fmt == PRP_CNTL_CH2_OUT_YUV420) {
+			writel(phys + imgsize, pcdev->base_emma +
+					PRP_DEST_CB_PTR - 0x14 * bufnum);
+			writel(phys + ((5 * imgsize) / 4), pcdev->base_emma +
+					PRP_DEST_CR_PTR - 0x14 * bufnum);
+		}
+	}
 }
 
 static irqreturn_t mx27_camera_emma_irq(int irq_emma, void *data)
@@ -1241,10 +1444,12 @@ static irqreturn_t mx27_camera_emma_irq(int irq_emma, void *data)
 		 * the next one.
 		 */
 		cntl = readl(pcdev->base_emma + PRP_CNTL);
-		writel(cntl & ~PRP_CNTL_CH1EN, pcdev->base_emma + PRP_CNTL);
+		writel(cntl & ~(PRP_CNTL_CH1EN | PRP_CNTL_CH2EN),
+		       pcdev->base_emma + PRP_CNTL);
 		writel(cntl, pcdev->base_emma + PRP_CNTL);
 	}
-	if ((status & (3 << 5)) == (3 << 5)
+	if ((((status & (3 << 5)) == (3 << 5)) ||
+		((status & (3 << 3)) == (3 << 3)))
 			&& !list_empty(&pcdev->active_bufs)) {
 		/*
 		 * Both buffers have triggered, process the one we're expecting
@@ -1255,9 +1460,9 @@ static irqreturn_t mx27_camera_emma_irq(int irq_emma, void *data)
 		mx27_camera_frame_done_emma(pcdev, buf->bufnum, VIDEOBUF_DONE);
 		status &= ~(1 << (6 - buf->bufnum)); /* mark processed */
 	}
-	if (status & (1 << 6))
+	if ((status & (1 << 6)) || (status & (1 << 4)))
 		mx27_camera_frame_done_emma(pcdev, 0, VIDEOBUF_DONE);
-	if (status & (1 << 5))
+	if ((status & (1 << 5)) || (status & (1 << 3)))
 		mx27_camera_frame_done_emma(pcdev, 1, VIDEOBUF_DONE);
 
 	writel(status, pcdev->base_emma + PRP_INTRSTATUS);

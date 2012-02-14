@@ -127,7 +127,7 @@ static int tegra_spdif_hw_params(struct snd_pcm_substream *substream,
 {
 	struct device *dev = substream->pcm->card->dev;
 	struct tegra_spdif *spdif = snd_soc_dai_get_drvdata(dai);
-	int ret, srate, spdifclock;
+	int ret, spdifclock;
 
 	spdif->reg_ctrl &= ~TEGRA_SPDIF_CTRL_PACK;
 	spdif->reg_ctrl &= ~TEGRA_SPDIF_CTRL_BIT_MODE_MASK;
@@ -140,7 +140,6 @@ static int tegra_spdif_hw_params(struct snd_pcm_substream *substream,
 		return -EINVAL;
 	}
 
-	srate = params_rate(params);
 	switch (params_rate(params)) {
 	case 32000:
 		spdifclock = 4096000;
@@ -227,12 +226,12 @@ static int tegra_spdif_probe(struct snd_soc_dai *dai)
 	return 0;
 }
 
-static struct snd_soc_dai_ops tegra_spdif_dai_ops = {
+static const struct snd_soc_dai_ops tegra_spdif_dai_ops = {
 	.hw_params	= tegra_spdif_hw_params,
 	.trigger	= tegra_spdif_trigger,
 };
 
-struct snd_soc_dai_driver tegra_spdif_dai = {
+static struct snd_soc_dai_driver tegra_spdif_dai = {
 	.name = DRV_NAME,
 	.probe = tegra_spdif_probe,
 	.playback = {
@@ -353,17 +352,7 @@ static struct platform_driver tegra_spdif_driver = {
 	.remove = __devexit_p(tegra_spdif_platform_remove),
 };
 
-static int __init snd_tegra_spdif_init(void)
-{
-	return platform_driver_register(&tegra_spdif_driver);
-}
-module_init(snd_tegra_spdif_init);
-
-static void __exit snd_tegra_spdif_exit(void)
-{
-	platform_driver_unregister(&tegra_spdif_driver);
-}
-module_exit(snd_tegra_spdif_exit);
+module_platform_driver(tegra_spdif_driver);
 
 MODULE_AUTHOR("Stephen Warren <swarren@nvidia.com>");
 MODULE_DESCRIPTION("Tegra SPDIF ASoC driver");

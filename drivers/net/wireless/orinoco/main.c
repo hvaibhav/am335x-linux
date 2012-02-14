@@ -121,7 +121,7 @@ module_param(orinoco_debug, int, 0644);
 MODULE_PARM_DESC(orinoco_debug, "Debug level");
 #endif
 
-static int suppress_linkstatus; /* = 0 */
+static bool suppress_linkstatus; /* = 0 */
 module_param(suppress_linkstatus, bool, 0644);
 MODULE_PARM_DESC(suppress_linkstatus, "Don't log link status changes");
 
@@ -2135,7 +2135,7 @@ static const struct net_device_ops orinoco_netdev_ops = {
 	.ndo_open		= orinoco_open,
 	.ndo_stop		= orinoco_stop,
 	.ndo_start_xmit		= orinoco_xmit,
-	.ndo_set_multicast_list	= orinoco_set_multicast_list,
+	.ndo_set_rx_mode	= orinoco_set_multicast_list,
 	.ndo_change_mtu		= orinoco_change_mtu,
 	.ndo_set_mac_address	= eth_mac_addr,
 	.ndo_validate_addr	= eth_validate_addr,

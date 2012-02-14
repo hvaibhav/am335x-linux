@@ -129,7 +129,12 @@ struct mii_bus {
 };
 #define to_mii_bus(d) container_of(d, struct mii_bus, dev)
 
-struct mii_bus *mdiobus_alloc(void);
+struct mii_bus *mdiobus_alloc_size(size_t);
+static inline struct mii_bus *mdiobus_alloc(void)
+{
+	return mdiobus_alloc_size(0);
+}
+
 int mdiobus_register(struct mii_bus *bus);
 void mdiobus_unregister(struct mii_bus *bus);
 void mdiobus_free(struct mii_bus *bus);
@@ -420,7 +425,7 @@ struct phy_driver {
 
 	/*
 	 * Requests a Tx timestamp for 'skb'. The phy driver promises
-	 * to deliver it to the socket's error queue as soon as a
+	 * to deliver it using skb_complete_tx_timestamp() as soon as a
 	 * timestamp becomes available. One of the PTP_CLASS_ values
 	 * is passed in 'type'.
 	 */

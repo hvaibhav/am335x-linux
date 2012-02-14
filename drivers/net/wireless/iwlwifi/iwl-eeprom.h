@@ -66,6 +66,7 @@
 #include <net/mac80211.h>
 
 struct iwl_priv;
+struct iwl_shared;
 
 /*
  * EEPROM access time values:
@@ -163,11 +164,19 @@ struct iwl_eeprom_enhanced_txpwr {
 } __packed;
 
 /* calibration */
+struct iwl_eeprom_calib_hdr {
+	u8 version;
+	u8 pa_type;
+	__le16 voltage;
+} __packed;
+
 #define EEPROM_CALIB_ALL	(INDIRECT_ADDRESS | INDIRECT_CALIBRATION)
 #define EEPROM_XTAL		((2*0x128) | EEPROM_CALIB_ALL)
 
 /* temperature */
-#define EEPROM_TEMPERATURE ((2*0x12A) | EEPROM_CALIB_ALL)
+#define EEPROM_KELVIN_TEMPERATURE	((2*0x12A) | EEPROM_CALIB_ALL)
+#define EEPROM_RAW_TEMPERATURE		((2*0x12B) | EEPROM_CALIB_ALL)
+
 
 /* agn links */
 #define EEPROM_LINK_HOST             (2*0x64)
@@ -297,12 +306,11 @@ struct iwl_eeprom_ops {
 
 
 int iwl_eeprom_init(struct iwl_priv *priv, u32 hw_rev);
-void iwl_eeprom_free(struct iwl_priv *priv);
+void iwl_eeprom_free(struct iwl_shared *shrd);
 int  iwl_eeprom_check_version(struct iwl_priv *priv);
 int  iwl_eeprom_check_sku(struct iwl_priv *priv);
-const u8 *iwl_eeprom_query_addr(const struct iwl_priv *priv, size_t offset);
-int iwlcore_eeprom_verify_signature(struct iwl_priv *priv);
-u16 iwl_eeprom_query16(const struct iwl_priv *priv, size_t offset);
+const u8 *iwl_eeprom_query_addr(const struct iwl_shared *shrd, size_t offset);
+u16 iwl_eeprom_query16(const struct iwl_shared *shrd, size_t offset);
 int iwl_init_channel_map(struct iwl_priv *priv);
 void iwl_free_channel_map(struct iwl_priv *priv);
 const struct iwl_channel_info *iwl_get_channel_info(

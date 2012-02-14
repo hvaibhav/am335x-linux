@@ -48,6 +48,7 @@
 #include <linux/mtd/nand_ecc.h>
 #include <linux/mtd/partitions.h>
 
+#include <plat/s3c2412.h>
 #include <plat/gpio-cfg.h>
 #include <plat/clock.h>
 #include <plat/devs.h>
@@ -655,10 +656,11 @@ static void __init jive_machine_init(void)
 
 MACHINE_START(JIVE, "JIVE")
 	/* Maintainer: Ben Dooks <ben-linux@fluff.org> */
-	.boot_params	= S3C2410_SDRAM_PA + 0x100,
+	.atag_offset	= 0x100,
 
 	.init_irq	= s3c24xx_init_irq,
 	.map_io		= jive_map_io,
 	.init_machine	= jive_machine_init,
 	.timer		= &s3c24xx_timer,
+	.restart	= s3c2412_restart,
 MACHINE_END

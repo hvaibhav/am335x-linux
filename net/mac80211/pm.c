@@ -42,7 +42,7 @@ int __ieee80211_suspend(struct ieee80211_hw *hw, struct cfg80211_wowlan *wowlan)
 	if (hw->flags & IEEE80211_HW_AMPDU_AGGREGATION) {
 		mutex_lock(&local->sta_mtx);
 		list_for_each_entry(sta, &local->sta_list, list) {
-			set_sta_flags(sta, WLAN_STA_BLOCK_BA);
+			set_sta_flag(sta, WLAN_STA_BLOCK_BA);
 			ieee80211_sta_tear_down_BA_sessions(sta, true);
 		}
 		mutex_unlock(&local->sta_mtx);
@@ -125,7 +125,7 @@ int __ieee80211_suspend(struct ieee80211_hw *hw, struct cfg80211_wowlan *wowlan)
 		ieee80211_bss_info_change_notify(sdata,
 			BSS_CHANGED_BEACON_ENABLED);
 
-		drv_remove_interface(local, &sdata->vif);
+		drv_remove_interface(local, sdata);
 	}
 
 	/* stop hardware - this must stop RX */

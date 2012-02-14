@@ -63,32 +63,15 @@ enum p9_debug_flags {
 
 #ifdef CONFIG_NET_9P_DEBUG
 extern unsigned int p9_debug_level;
-
-#define P9_DPRINTK(level, format, arg...) \
-do {  \
-	if ((p9_debug_level & level) == level) {\
-		if (level == P9_DEBUG_9P) \
-			printk(KERN_NOTICE "(%8.8d) " \
-			format , task_pid_nr(current) , ## arg); \
-		else \
-			printk(KERN_NOTICE "-- %s (%d): " \
-			format , __func__, task_pid_nr(current) , ## arg); \
-	} \
-} while (0)
-
-#define P9_DUMP_PKT(way, pdu) p9pdu_dump(way, pdu)
-
+__printf(3, 4)
+void _p9_debug(enum p9_debug_flags level, const char *func,
+	       const char *fmt, ...);
+#define p9_debug(level, fmt, ...)			\
+	_p9_debug(level, __func__, fmt, ##__VA_ARGS__)
 #else
-#define P9_DPRINTK(level, format, arg...)  do { } while (0)
-#define P9_DUMP_PKT(way, pdu) do { } while (0)
+#define p9_debug(level, fmt, ...)			\
+	no_printk(fmt, ##__VA_ARGS__)
 #endif
-
-
-#define P9_EPRINTK(level, format, arg...) \
-do { \
-	printk(level "9p: %s (%d): " \
-		format , __func__, task_pid_nr(current), ## arg); \
-} while (0)
 
 /**
  * enum p9_msg_t - 9P message types
@@ -288,6 +271,35 @@ enum p9_perm_t {
 	P9_DMSETVTX = 0x00010000,
 };
 
+/* 9p2000.L open flags */
+#define P9_DOTL_RDONLY        00000000
+#define P9_DOTL_WRONLY        00000001
+#define P9_DOTL_RDWR          00000002
+#define P9_DOTL_NOACCESS      00000003
+#define P9_DOTL_CREATE        00000100
+#define P9_DOTL_EXCL          00000200
+#define P9_DOTL_NOCTTY        00000400
+#define P9_DOTL_TRUNC         00001000
+#define P9_DOTL_APPEND        00002000
+#define P9_DOTL_NONBLOCK      00004000
+#define P9_DOTL_DSYNC         00010000
+#define P9_DOTL_FASYNC        00020000
+#define P9_DOTL_DIRECT        00040000
+#define P9_DOTL_LARGEFILE     00100000
+#define P9_DOTL_DIRECTORY     00200000
+#define P9_DOTL_NOFOLLOW      00400000
+#define P9_DOTL_NOATIME       01000000
+#define P9_DOTL_CLOEXEC       02000000
+#define P9_DOTL_SYNC          04000000
+
+/* 9p2000.L at flags */
+#define P9_DOTL_AT_REMOVEDIR		0x200
+
+/* 9p2000.L lock type */
+#define P9_LOCK_TYPE_RDLCK 0
+#define P9_LOCK_TYPE_WRLCK 1
+#define P9_LOCK_TYPE_UNLCK 2
+
 /**
  * enum p9_qid_t - QID types
  * @P9_QTDIR: directory
@@ -329,6 +341,9 @@ enum p9_qid_t {
 
 /* Room for readdir header */
 #define P9_READDIRHDRSZ	24
+
+/* size of header for zero copy read/write */
+#define P9_ZC_HDR_SZ 4096
 
 /**
  * struct p9_qid - file system entity information
@@ -526,10 +541,6 @@ struct p9_rstatfs {
  * @tag: transaction id of the request
  * @offset: used by marshalling routines to track current position in buffer
  * @capacity: used by marshalling routines to track total malloc'd capacity
- * @pubuf: Payload user buffer given by the caller
- * @pkbuf: Payload kernel buffer given by the caller
- * @pbuf_size: pubuf/pkbuf(only one will be !NULL) size to be read/write.
- * @private: For transport layer's use.
  * @sdata: payload
  *
  * &p9_fcall represents the structure for all 9P RPC
@@ -546,10 +557,6 @@ struct p9_fcall {
 
 	size_t offset;
 	size_t capacity;
-	char __user *pubuf;
-	char *pkbuf;
-	size_t pbuf_size;
-	void *private;
 
 	u8 *sdata;
 };

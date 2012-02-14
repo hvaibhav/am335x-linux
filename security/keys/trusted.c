@@ -993,7 +993,7 @@ out:
 	kfree(datablob);
 	kfree(options);
 	if (!ret)
-		rcu_assign_pointer(key->payload.data, payload);
+		rcu_assign_keypointer(key, payload);
 	else
 		kfree(payload);
 	return ret;
@@ -1067,7 +1067,7 @@ static int trusted_update(struct key *key, const void *data, size_t datalen)
 			goto out;
 		}
 	}
-	rcu_assign_pointer(key->payload.data, new_p);
+	rcu_assign_keypointer(key, new_p);
 	call_rcu(&p->rcu, trusted_rcu_free);
 out:
 	kfree(datablob);
@@ -1098,7 +1098,7 @@ static long trusted_read(const struct key *key, char __user *buffer,
 
 	bufp = ascii_buf;
 	for (i = 0; i < p->blob_len; i++)
-		bufp = pack_hex_byte(bufp, p->blob[i]);
+		bufp = hex_byte_pack(bufp, p->blob[i]);
 	if ((copy_to_user(buffer, ascii_buf, 2 * p->blob_len)) != 0) {
 		kfree(ascii_buf);
 		return -EFAULT;

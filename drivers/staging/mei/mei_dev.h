@@ -18,15 +18,9 @@
 #define _MEI_DEV_H_
 
 #include <linux/types.h>
+#include <linux/watchdog.h>
 #include "mei.h"
 #include "hw.h"
-
-/*
- * MEI Char Driver Minors
- */
-#define MEI_MINORS_BASE	1
-#define MEI_MINORS_COUNT	1
-#define MEI_MINOR_NUMBER	1
 
 /*
  * watch dog definition
@@ -35,6 +29,12 @@
 #define MEI_START_WD_DATA_SIZE         20
 #define MEI_WD_PARAMS_SIZE             4
 #define MEI_WD_STATE_INDEPENDENCE_MSG_SENT       (1 << 0)
+
+/*
+ * MEI PCI Device object
+ */
+extern struct pci_dev *mei_device;
+
 
 /*
  * AMTHI Client UUID
@@ -163,7 +163,6 @@ struct mei_cl {
 
 struct mei_io_list {
 	struct mei_cl_cb mei_cb;
-	int status;
 };
 
 /* MEI private device struct */
@@ -197,7 +196,7 @@ struct mei_device {
 	 * lock for the device
 	 */
 	struct mutex device_lock; /* device lock */
-	struct delayed_work wd_work;	/* watch dog deleye work */
+	struct delayed_work timer_work;	/* MEI timer delayed work (timeouts) */
 	bool recvd_msg;
 	/*
 	 * hw states of host and fw(ME)
@@ -258,6 +257,8 @@ struct mei_device {
 	bool iamthif_flow_control_pending;
 	bool iamthif_ioctl;
 	bool iamthif_canceled;
+
+	bool wd_interface_reg;
 };
 
 
@@ -315,14 +316,14 @@ static inline bool mei_cl_cmp_id(const struct mei_cl *cl1,
  */
 void mei_host_start_message(struct mei_device *dev);
 void mei_host_enum_clients_message(struct mei_device *dev);
-void mei_host_client_properties(struct mei_device *dev);
+int mei_host_client_properties(struct mei_device *dev);
 
 /*
  *  MEI interrupt functions prototype
  */
 irqreturn_t mei_interrupt_quick_handler(int irq, void *dev_id);
 irqreturn_t mei_interrupt_thread_handler(int irq, void *dev_id);
-void mei_wd_timer(struct work_struct *work);
+void mei_timer(struct work_struct *work);
 
 /*
  *  MEI input output function prototype
@@ -356,7 +357,7 @@ int mei_find_me_client_index(const struct mei_device *dev, uuid_le cuuid);
  * @dev: the device structure
  * @offset: offset from which to read the data
  *
- * returns the byte read.
+ * returns register value (u32)
  */
 static inline u32 mei_reg_read(struct mei_device *dev, unsigned long offset)
 {
@@ -368,7 +369,7 @@ static inline u32 mei_reg_read(struct mei_device *dev, unsigned long offset)
  *
  * @dev: the device structure
  * @offset: offset from which to write the data
- * @value: the byte to write
+ * @value: register value to write (u32)
  */
 static inline void mei_reg_write(struct mei_device *dev,
 				unsigned long offset, u32 value)

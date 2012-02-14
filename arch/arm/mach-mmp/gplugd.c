@@ -9,23 +9,25 @@
  */
 
 #include <linux/init.h>
+#include <linux/gpio.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach-types.h>
 
-#include <mach/gpio.h>
 #include <mach/pxa168.h>
 #include <mach/mfp-pxa168.h>
-#include <mach/mfp-gplugd.h>
 
 #include "common.h"
 
 static unsigned long gplugd_pin_config[] __initdata = {
 	/* UART3 */
-	GPIO8_UART3_SOUT,
-	GPIO9_UART3_SIN,
-	GPI1O_UART3_CTS,
-	GPI11_UART3_RTS,
+	GPIO8_UART3_TXD,
+	GPIO9_UART3_RXD,
+	GPIO1O_UART3_CTS,
+	GPIO11_UART3_RTS,
+
+	/* USB OTG PEN */
+	GPIO18_GPIO,
 
 	/* MMC2 */
 	GPIO28_MMC2_CMD,
@@ -109,6 +111,12 @@ static unsigned long gplugd_pin_config[] __initdata = {
 	GPIO105_CI2C_SDA,
 	GPIO106_CI2C_SCL,
 
+	/* SPI NOR Flash on SSP2 */
+	GPIO107_SSP2_RXD,
+	GPIO108_SSP2_TXD,
+	GPIO110_GPIO,     /* SPI_CSn */
+	GPIO111_SSP2_CLK,
+
 	/* Select JTAG */
 	GPIO109_GPIO,
 
@@ -154,7 +162,7 @@ static void __init select_disp_freq(void)
 				"frequency\n");
 	} else {
 		gpio_direction_output(35, 1);
-		gpio_free(104);
+		gpio_free(35);
 	}
 
 	if (unlikely(gpio_request(85, "DISP_FREQ_SEL_2"))) {
@@ -162,7 +170,7 @@ static void __init select_disp_freq(void)
 				"frequency\n");
 	} else {
 		gpio_direction_output(85, 0);
-		gpio_free(104);
+		gpio_free(85);
 	}
 }
 
@@ -174,16 +182,18 @@ static void __init gplugd_init(void)
 
 	/* on-chip devices */
 	pxa168_add_uart(3);
-	pxa168_add_ssp(0);
+	pxa168_add_ssp(1);
 	pxa168_add_twsi(0, NULL, ARRAY_AND_SIZE(gplugd_i2c_board_info));
+	platform_device_register(&pxa168_device_gpio);
 
 	pxa168_add_eth(&gplugd_eth_platform_data);
 }
 
-MACHINE_START(SHEEVAD, "PXA168-based GuruPlug Display (gplugD) Platform")
+MACHINE_START(GPLUGD, "PXA168-based GuruPlug Display (gplugD) Platform")
 	.map_io		= mmp_map_io,
 	.nr_irqs	= IRQ_BOARD_START,
 	.init_irq       = pxa168_init_irq,
 	.timer          = &pxa168_timer,
 	.init_machine   = gplugd_init,
+	.restart	= pxa168_restart,
 MACHINE_END

@@ -103,10 +103,12 @@ void cpu_idle(void)
 		if (!idle)
 			idle = default_idle;
 
-		tick_nohz_stop_sched_tick(1);
+		tick_nohz_idle_enter();
+		rcu_idle_enter();
 		while (!need_resched())
 			idle();
-		tick_nohz_restart_sched_tick();
+		rcu_idle_exit();
+		tick_nohz_idle_exit();
 
 		preempt_enable_no_resched();
 		schedule();
@@ -179,6 +181,7 @@ int copy_thread(unsigned long clone_flags, unsigned long usp,
 
 	ti->cpu_context.msr = (childregs->msr|MSR_VM);
 	ti->cpu_context.msr &= ~MSR_UMS; /* switch_to to kernel mode */
+	ti->cpu_context.msr &= ~MSR_IE;
 #endif
 	ti->cpu_context.r15 = (unsigned long)ret_from_fork - 8;
 

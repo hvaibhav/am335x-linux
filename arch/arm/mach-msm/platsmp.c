@@ -20,6 +20,7 @@
 #include <asm/cacheflush.h>
 #include <asm/cputype.h>
 #include <asm/mach-types.h>
+#include <asm/smp_plat.h>
 
 #include <mach/msm_iomap.h>
 
@@ -79,7 +80,7 @@ static __cpuinit void prepare_cold_cpu(unsigned int cpu)
 	ret = scm_set_boot_addr(virt_to_phys(msm_secondary_startup),
 				SCM_FLAG_COLDBOOT_CPU1);
 	if (ret == 0) {
-		void *sc1_base_ptr;
+		void __iomem *sc1_base_ptr;
 		sc1_base_ptr = ioremap_nocache(0x00902000, SZ_4K*2);
 		if (sc1_base_ptr) {
 			writel(0, sc1_base_ptr + VDD_SC1_ARRAY_CLAMP_GFS_CTL);
@@ -117,7 +118,7 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 	 * Note that "pen_release" is the hardware CPU ID, whereas
 	 * "cpu" is Linux's internal ID.
 	 */
-	pen_release = cpu;
+	pen_release = cpu_logical_map(cpu);
 	__cpuc_flush_dcache_area((void *)&pen_release, sizeof(pen_release));
 	outer_clean_range(__pa(&pen_release), __pa(&pen_release + 1));
 
@@ -155,6 +156,12 @@ int __cpuinit boot_secondary(unsigned int cpu, struct task_struct *idle)
 void __init smp_init_cpus(void)
 {
 	unsigned int i, ncores = get_core_count();
+
+	if (ncores > nr_cpu_ids) {
+		pr_warn("SMP: %u cores greater than maximum (%u), clipping\n",
+			ncores, nr_cpu_ids);
+		ncores = nr_cpu_ids;
+	}
 
 	for (i = 0; i < ncores; i++)
 		set_cpu_possible(i, true);

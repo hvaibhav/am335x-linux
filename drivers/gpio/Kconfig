@@ -70,7 +70,7 @@ config GPIO_GENERIC
 
 config GPIO_DA9052
 	tristate "Dialog DA9052 GPIO"
-	depends on PMIC_DA9052
+	depends on PMIC_DA9052 && BROKEN
 	help
 	  Say yes here to enable the GPIO driver for the DA9052 chip.
 
@@ -87,6 +87,7 @@ config GPIO_GENERIC_PLATFORM
 
 config GPIO_IT8761E
 	tristate "IT8761E GPIO support"
+	depends on X86  # unconditional access to IO space.
 	help
 	  Say yes here to support GPIO functionality of IT8761E super I/O chip.
 
@@ -95,13 +96,17 @@ config GPIO_EP93XX
 	depends on ARCH_EP93XX
 	select GPIO_GENERIC
 
-config GPIO_EXYNOS4
-	def_bool y
-	depends on CPU_EXYNOS4210
-
 config GPIO_MPC5200
 	def_bool y
 	depends on PPC_MPC52xx
+
+config GPIO_MPC8XXX
+	bool "MPC512x/MPC8xxx GPIO support"
+	depends on PPC_MPC512x || PPC_MPC831x || PPC_MPC834x || PPC_MPC837x || \
+		   FSL_SOC_BOOKE || PPC_86xx
+	help
+	  Say Y here if you're going to use hardware that connects to the
+	  MPC512x/831x/834x/837x/8572/8610 GPIOs.
 
 config GPIO_MSM_V1
 	tristate "Qualcomm MSM GPIO v1"
@@ -131,23 +136,18 @@ config GPIO_MXS
 	select GPIO_GENERIC
 	select GENERIC_IRQ_CHIP
 
-config GPIO_PLAT_SAMSUNG
-	def_bool y
-	depends on SAMSUNG_GPIOLIB_4BIT
-
-config GPIO_S5PC100
-	def_bool y
-	depends on CPU_S5PC100
-
-config GPIO_S5PV210
-	def_bool y
-	depends on CPU_S5PV210
-
 config GPIO_PL061
 	bool "PrimeCell PL061 GPIO support"
 	depends on ARM_AMBA
+	select GENERIC_IRQ_CHIP
 	help
 	  Say yes here to support the PrimeCell PL061 GPIO device
+
+config GPIO_PXA
+	bool "PXA GPIO support"
+	depends on ARCH_PXA || ARCH_MMP
+	help
+	  Say yes here to support the PXA GPIO device
 
 config GPIO_XILINX
 	bool "Xilinx GPIO support"
@@ -180,7 +180,7 @@ config GPIO_SCH
 
 config GPIO_VX855
 	tristate "VIA VX855/VX875 GPIO"
-	depends on MFD_SUPPORT && PCI
+	depends on PCI
 	select MFD_CORE
 	select MFD_VX855
 	help
@@ -355,7 +355,7 @@ comment "PCI GPIO expanders:"
 
 config GPIO_CS5535
 	tristate "AMD CS5535/CS5536 GPIO support"
-	depends on PCI && X86 && !CS5535_GPIO && MFD_CS5535
+	depends on PCI && X86 && MFD_CS5535
 	help
 	  The AMD CS5535 and CS5536 southbridges support 28 GPIO pins that
 	  can be used for quite a number of things.  The CS5535/6 is found on
@@ -386,22 +386,25 @@ config GPIO_LANGWELL
 	  Say Y here to support Intel Langwell/Penwell GPIO.
 
 config GPIO_PCH
-	tristate "Intel EG20T PCH / OKI SEMICONDUCTOR ML7223 IOH GPIO"
+	tristate "Intel EG20T PCH/LAPIS Semiconductor IOH(ML7223/ML7831) GPIO"
 	depends on PCI && X86
+	select GENERIC_IRQ_CHIP
 	help
 	  This driver is for PCH(Platform controller Hub) GPIO of Intel Topcliff
 	  which is an IOH(Input/Output Hub) for x86 embedded processor.
 	  This driver can access PCH GPIO device.
 
-	  This driver also can be used for OKI SEMICONDUCTOR IOH(Input/
-	  Output Hub), ML7223.
+	  This driver also can be used for LAPIS Semiconductor IOH(Input/
+	  Output Hub), ML7223 and ML7831.
 	  ML7223 IOH is for MP(Media Phone) use.
-	  ML7223 is companion chip for Intel Atom E6xx series.
-	  ML7223 is completely compatible for Intel EG20T PCH.
+	  ML7831 IOH is for general purpose use.
+	  ML7223/ML7831 is companion chip for Intel Atom E6xx series.
+	  ML7223/ML7831 is completely compatible for Intel EG20T PCH.
 
 config GPIO_ML_IOH
 	tristate "OKI SEMICONDUCTOR ML7213 IOH GPIO support"
 	depends on PCI
+	select GENERIC_IRQ_CHIP
 	help
 	  ML7213 is companion chip for Intel Atom E6xx series.
 	  This driver can be used for OKI SEMICONDUCTOR ML7213 IOH(Input/Output
@@ -417,7 +420,6 @@ config GPIO_TIMBERDALE
 config GPIO_RDC321X
 	tristate "RDC R-321x GPIO support"
 	depends on PCI
-	select MFD_SUPPORT
 	select MFD_CORE
 	select MFD_RDC321X
 	help

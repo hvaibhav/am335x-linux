@@ -951,6 +951,7 @@
 #define PVR_403GCX	0x00201400
 #define PVR_405GP	0x40110000
 #define PVR_476		0x11a52000
+#define PVR_476FPE	0x7ff50000
 #define PVR_STB03XXX	0x40310000
 #define PVR_NP405H	0x41410000
 #define PVR_NP405L	0x41610000
@@ -1003,7 +1004,6 @@
 #define PV_970		0x0039
 #define PV_POWER5	0x003A
 #define PV_POWER5p	0x003B
-#define PV_POWER7	0x003F
 #define PV_970FX	0x003C
 #define PV_POWER6	0x003E
 #define PV_POWER7	0x003F
@@ -1024,13 +1024,16 @@
 #define mtmsrd(v)	__mtmsrd((v), 0)
 #define mtmsr(v)	mtmsrd(v)
 #else
-#define mtmsr(v)	asm volatile("mtmsr %0" : : "r" (v) : "memory")
+#define mtmsr(v)	asm volatile("mtmsr %0" : \
+				     : "r" ((unsigned long)(v)) \
+				     : "memory")
 #endif
 
 #define mfspr(rn)	({unsigned long rval; \
 			asm volatile("mfspr %0," __stringify(rn) \
 				: "=r" (rval)); rval;})
-#define mtspr(rn, v)	asm volatile("mtspr " __stringify(rn) ",%0" : : "r" (v)\
+#define mtspr(rn, v)	asm volatile("mtspr " __stringify(rn) ",%0" : \
+				     : "r" ((unsigned long)(v)) \
 				     : "memory")
 
 #ifdef __powerpc64__

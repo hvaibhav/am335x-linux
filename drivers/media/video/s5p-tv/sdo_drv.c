@@ -170,6 +170,7 @@ static int sdo_g_mbus_fmt(struct v4l2_subdev *sd,
 	fmt->height = sdev->fmt->height;
 	fmt->code = V4L2_MBUS_FMT_FIXED;
 	fmt->field = V4L2_FIELD_INTERLACED;
+	fmt->colorspace = V4L2_COLORSPACE_JPEG;
 	return 0;
 }
 
@@ -456,24 +457,4 @@ static struct platform_driver sdo_driver __refdata = {
 	}
 };
 
-static int __init sdo_init(void)
-{
-	int ret;
-	static const char banner[] __initdata = KERN_INFO \
-		"Samsung Standard Definition Output (SDO) driver, "
-		"(c) 2010-2011 Samsung Electronics Co., Ltd.\n";
-	printk(banner);
-
-	ret = platform_driver_register(&sdo_driver);
-	if (ret)
-		printk(KERN_ERR "SDO platform driver register failed\n");
-
-	return ret;
-}
-module_init(sdo_init);
-
-static void __exit sdo_exit(void)
-{
-	platform_driver_unregister(&sdo_driver);
-}
-module_exit(sdo_exit);
+module_platform_driver(sdo_driver);

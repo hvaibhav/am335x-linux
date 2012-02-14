@@ -367,9 +367,9 @@ int psb_intel_pipe_set_base(struct drm_crtc *crtc,
 		goto psb_intel_pipe_set_base_exit;
 	start = psbfb->gtt->offset;
 
-	offset = y * crtc->fb->pitch + x * (crtc->fb->bits_per_pixel / 8);
+	offset = y * crtc->fb->pitches[0] + x * (crtc->fb->bits_per_pixel / 8);
 
-	REG_WRITE(dspstride, crtc->fb->pitch);
+	REG_WRITE(dspstride, crtc->fb->pitches[0]);
 
 	dspcntr = REG_READ(dspcntr_reg);
 	dspcntr &= ~DISPPLANE_PIXFORMAT_MASK;
@@ -1102,10 +1102,6 @@ static int psb_crtc_set_config(struct drm_mode_set *set)
 {
 	int ret;
 	struct drm_device *dev = set->crtc->dev;
-	struct drm_psb_private *dev_priv = dev->dev_private;
-
-	if (!dev_priv->rpm_enabled)
-		return drm_crtc_helper_set_config(set);
 
 	pm_runtime_forbid(&dev->pdev->dev);
 	ret = drm_crtc_helper_set_config(set);

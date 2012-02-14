@@ -23,6 +23,7 @@
 #include <linux/gpio.h>
 #include <linux/i2c.h>
 #include <linux/i2c/pcf857x.h>
+#include <linux/module.h>
 
 
 static const struct i2c_device_id pcf857x_id[] = {
@@ -289,10 +290,7 @@ static int pcf857x_probe(struct i2c_client *client,
 	 * methods can't be called from sleeping contexts.
 	 */
 
-	dev_info(&client->dev, "gpios %d..%d on a %s%s\n",
-			gpio->chip.base,
-			gpio->chip.base + gpio->chip.ngpio - 1,
-			client->name,
+	dev_info(&client->dev, "%s\n",
 			client->irq ? " (irq ignored)" : "");
 
 	/* Let platform code set up the GPIOs and their users.

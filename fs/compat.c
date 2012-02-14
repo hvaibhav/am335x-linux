@@ -37,7 +37,6 @@
 #include <linux/dirent.h>
 #include <linux/fsnotify.h>
 #include <linux/highuid.h>
-#include <linux/nfsd/syscall.h>
 #include <linux/personality.h>
 #include <linux/rwsem.h>
 #include <linux/tsacct_kern.h>
@@ -247,11 +246,8 @@ static int put_compat_statfs(struct compat_statfs __user *ubuf, struct kstatfs *
 	    __put_user(kbuf->f_fsid.val[0], &ubuf->f_fsid.val[0]) ||
 	    __put_user(kbuf->f_fsid.val[1], &ubuf->f_fsid.val[1]) ||
 	    __put_user(kbuf->f_frsize, &ubuf->f_frsize) ||
-	    __put_user(0, &ubuf->f_spare[0]) || 
-	    __put_user(0, &ubuf->f_spare[1]) || 
-	    __put_user(0, &ubuf->f_spare[2]) || 
-	    __put_user(0, &ubuf->f_spare[3]) || 
-	    __put_user(0, &ubuf->f_spare[4]))
+	    __put_user(kbuf->f_flags, &ubuf->f_flags) ||
+	    __clear_user(ubuf->f_spare, sizeof(ubuf->f_spare)))
 		return -EFAULT;
 	return 0;
 }
@@ -346,16 +342,9 @@ asmlinkage long compat_sys_fstatfs64(unsigned int fd, compat_size_t sz, struct c
  */
 asmlinkage long compat_sys_ustat(unsigned dev, struct compat_ustat __user *u)
 {
-	struct super_block *sb;
 	struct compat_ustat tmp;
 	struct kstatfs sbuf;
-	int err;
-
-	sb = user_get_super(new_decode_dev(dev));
-	if (!sb)
-		return -EINVAL;
-	err = statfs_by_dentry(sb->s_root, &sbuf);
-	drop_super(sb);
+	int err = vfs_ustat(new_decode_dev(dev), &sbuf);
 	if (err)
 		return err;
 
@@ -550,7 +539,7 @@ out:
 ssize_t compat_rw_copy_check_uvector(int type,
 		const struct compat_iovec __user *uvector, unsigned long nr_segs,
 		unsigned long fast_segs, struct iovec *fast_pointer,
-		struct iovec **ret_pointer)
+		struct iovec **ret_pointer, int check_access)
 {
 	compat_ssize_t tot_len;
 	struct iovec *iov = *ret_pointer = fast_pointer;
@@ -597,7 +586,8 @@ ssize_t compat_rw_copy_check_uvector(int type,
 		}
 		if (len < 0)	/* size_t not fitting in compat_ssize_t .. */
 			goto out;
-		if (!access_ok(vrfy_dir(type), compat_ptr(buf), len)) {
+		if (check_access &&
+		    !access_ok(vrfy_dir(type), compat_ptr(buf), len)) {
 			ret = -EFAULT;
 			goto out;
 		}
@@ -1111,7 +1101,7 @@ static ssize_t compat_do_readv_writev(int type, struct file *file,
 		goto out;
 
 	tot_len = compat_rw_copy_check_uvector(type, uvector, nr_segs,
-					       UIO_FASTIOV, iovstack, &iov);
+					       UIO_FASTIOV, iovstack, &iov, 1);
 	if (tot_len == 0) {
 		ret = 0;
 		goto out;
@@ -1291,7 +1281,7 @@ compat_sys_vmsplice(int fd, const struct compat_iovec __user *iov32,
  * O_LARGEFILE flag.
  */
 asmlinkage long
-compat_sys_open(const char __user *filename, int flags, int mode)
+compat_sys_open(const char __user *filename, int flags, umode_t mode)
 {
 	return do_sys_open(AT_FDCWD, filename, flags, mode);
 }
@@ -1301,7 +1291,7 @@ compat_sys_open(const char __user *filename, int flags, int mode)
  * O_LARGEFILE flag.
  */
 asmlinkage long
-compat_sys_openat(unsigned int dfd, const char __user *filename, int flags, int mode)
+compat_sys_openat(unsigned int dfd, const char __user *filename, int flags, umode_t mode)
 {
 	return do_sys_open(dfd, filename, flags, mode);
 }
@@ -1674,11 +1664,6 @@ asmlinkage long compat_sys_ppoll(struct pollfd __user *ufds,
 	return ret;
 }
 #endif /* HAVE_SET_RESTORE_SIGMASK */
-
-long asmlinkage compat_sys_nfsservctl(int cmd, void *notused, void *notused2)
-{
-	return sys_ni_syscall();
-}
 
 #ifdef CONFIG_EPOLL
 

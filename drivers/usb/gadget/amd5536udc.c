@@ -8,15 +8,6 @@
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
 
 /*
@@ -161,15 +152,15 @@ static const char *ep_string[] = {
 };
 
 /* DMA usage flag */
-static int use_dma = 1;
+static bool use_dma = 1;
 /* packet per buffer dma */
-static int use_dma_ppb = 1;
+static bool use_dma_ppb = 1;
 /* with per descr. update */
-static int use_dma_ppb_du;
+static bool use_dma_ppb_du;
 /* buffer fill mode */
 static int use_dma_bufferfill_mode;
 /* full speed only mode */
-static int use_fullspeed;
+static bool use_fullspeed;
 /* tx buffer size for high speed */
 static unsigned long hs_tx_buf = UDC_EPIN_BUFF_SIZE;
 
@@ -354,7 +345,7 @@ udc_ep_enable(struct usb_ep *usbep, const struct usb_endpoint_descriptor *desc)
 	writel(tmp, &dev->ep[ep->num].regs->ctl);
 
 	/* set max packet size */
-	maxpacket = le16_to_cpu(desc->wMaxPacketSize);
+	maxpacket = usb_endpoint_maxp(desc);
 	tmp = readl(&dev->ep[ep->num].regs->bufout_maxpkt);
 	tmp = AMD_ADDBITS(tmp, maxpacket, UDC_EP_MAX_PKT_SIZE);
 	ep->ep.maxpacket = maxpacket;
@@ -1968,7 +1959,7 @@ static int amd5536_start(struct usb_gadget_driver *driver,
 	u32 tmp;
 
 	if (!driver || !bind || !driver->setup
-			|| driver->speed != USB_SPEED_HIGH)
+			|| driver->max_speed < USB_SPEED_HIGH)
 		return -EINVAL;
 	if (!dev)
 		return -ENODEV;
@@ -3014,13 +3005,8 @@ __acquires(dev->lock)
 
 		/* link up all endpoints */
 		udc_setup_endpoints(dev);
-		if (dev->gadget.speed == USB_SPEED_HIGH) {
-			dev_info(&dev->pdev->dev, "Connect: speed = %s\n",
-				"high");
-		} else if (dev->gadget.speed == USB_SPEED_FULL) {
-			dev_info(&dev->pdev->dev, "Connect: speed = %s\n",
-				"full");
-		}
+		dev_info(&dev->pdev->dev, "Connect: %s\n",
+			 usb_speed_string(dev->gadget.speed));
 
 		/* init ep 0 */
 		activate_control_endpoints(dev);
@@ -3363,7 +3349,7 @@ static int udc_probe(struct udc *dev)
 	dev_set_name(&dev->gadget.dev, "gadget");
 	dev->gadget.dev.release = gadget_release;
 	dev->gadget.name = name;
-	dev->gadget.is_dualspeed = 1;
+	dev->gadget.max_speed = USB_SPEED_HIGH;
 
 	/* init registers, interrupts, ... */
 	startup_registers(dev);

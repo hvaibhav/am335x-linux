@@ -99,9 +99,6 @@ static struct platform_device sh_keysc_device = {
 	.dev	= {
 		.platform_data	= &sh_keysc_info,
 	},
-	.archdata = {
-		.hwblk_id = HWBLK_KEYSC,
-	},
 };
 
 static struct mtd_partition migor_nor_flash_partitions[] =
@@ -244,7 +241,7 @@ static struct sh_mobile_lcdc_info sh_mobile_lcdc_info = {
 	.clock_source = LCDC_CLK_BUS,
 	.ch[0] = {
 		.chan = LCDC_CHAN_MAINLCD,
-		.bpp = 16,
+		.fourcc = V4L2_PIX_FMT_RGB565,
 		.interface_type = RGB16,
 		.clock_divider = 2,
 		.lcd_cfg = migor_lcd_modes,
@@ -258,7 +255,7 @@ static struct sh_mobile_lcdc_info sh_mobile_lcdc_info = {
 	.clock_source = LCDC_CLK_PERIPHERAL,
 	.ch[0] = {
 		.chan = LCDC_CHAN_MAINLCD,
-		.bpp = 16,
+		.fourcc = V4L2_PIX_FMT_RGB565,
 		.interface_type = SYS16A,
 		.clock_divider = 10,
 		.lcd_cfg = migor_lcd_modes,
@@ -299,9 +296,6 @@ static struct platform_device migor_lcdc_device = {
 	.resource	= migor_lcdc_resources,
 	.dev	= {
 		.platform_data	= &sh_mobile_lcdc_info,
-	},
-	.archdata = {
-		.hwblk_id = HWBLK_LCDC,
 	},
 };
 
@@ -390,9 +384,6 @@ static struct platform_device migor_ceu_device = {
 	.dev	= {
 		.platform_data	= &sh_mobile_ceu_info,
 	},
-	.archdata = {
-		.hwblk_id = HWBLK_CEU,
-	},
 };
 
 static struct resource sdhi_cn9_resources[] = {
@@ -421,9 +412,6 @@ static struct platform_device sdhi_cn9_device = {
 	.dev = {
 		.platform_data	= &sh7724_sdhi_data,
 	},
-	.archdata = {
-		.hwblk_id = HWBLK_SDHI,
-	},
 };
 
 static struct i2c_board_info migor_i2c_devices[] = {
@@ -448,9 +436,7 @@ static struct i2c_board_info migor_i2c_camera[] = {
 	},
 };
 
-static struct ov772x_camera_info ov7725_info = {
-	.flags		= OV772X_FLAG_8BIT,
-};
+static struct ov772x_camera_info ov7725_info;
 
 static struct soc_camera_link ov7725_link = {
 	.power		= ov7725_power,

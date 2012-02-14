@@ -75,12 +75,6 @@ static void *vb2_dma_sg_alloc(void *alloc_ctx, unsigned long size)
 
 	printk(KERN_DEBUG "%s: Allocated buffer of %d pages\n",
 		__func__, buf->sg_desc.num_pages);
-
-	if (!buf->vaddr)
-		buf->vaddr = vm_map_ram(buf->pages,
-					buf->sg_desc.num_pages,
-					-1,
-					PAGE_KERNEL);
 	return buf;
 
 fail_pages_alloc:
@@ -146,7 +140,6 @@ static void *vb2_dma_sg_get_userptr(void *alloc_ctx, unsigned long vaddr,
 	if (!buf->pages)
 		goto userptr_fail_pages_array_alloc;
 
-	down_read(&current->mm->mmap_sem);
 	num_pages_from_user = get_user_pages(current, current->mm,
 					     vaddr & PAGE_MASK,
 					     buf->sg_desc.num_pages,
@@ -154,7 +147,7 @@ static void *vb2_dma_sg_get_userptr(void *alloc_ctx, unsigned long vaddr,
 					     1, /* force */
 					     buf->pages,
 					     NULL);
-	up_read(&current->mm->mmap_sem);
+
 	if (num_pages_from_user != buf->sg_desc.num_pages)
 		goto userptr_fail_get_user_pages;
 

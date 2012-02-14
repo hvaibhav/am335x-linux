@@ -32,6 +32,8 @@
 #include <linux/pagemap.h>
 #include <linux/memblock.h>
 #include <linux/gfp.h>
+#include <linux/slab.h>
+#include <linux/hugetlb.h>
 
 #include <asm/pgalloc.h>
 #include <asm/prom.h>
@@ -44,6 +46,7 @@
 #include <asm/tlb.h>
 #include <asm/sections.h>
 #include <asm/system.h>
+#include <asm/hugetlb.h>
 
 #include "mmu_decl.h"
 
@@ -62,6 +65,13 @@ phys_addr_t memstart_addr = (phys_addr_t)~0ull;
 EXPORT_SYMBOL(memstart_addr);
 phys_addr_t kernstart_addr;
 EXPORT_SYMBOL(kernstart_addr);
+
+#ifdef CONFIG_RELOCATABLE_PPC32
+/* Used in __va()/__pa() */
+long long virt_phys_offset;
+EXPORT_SYMBOL(virt_phys_offset);
+#endif
+
 phys_addr_t lowmem_end_addr;
 
 int boot_mapsize;
@@ -123,10 +133,15 @@ void __init MMU_init(void)
 	/* parse args from command line */
 	MMU_setup();
 
+	/*
+	 * Reserve gigantic pages for hugetlb.  This MUST occur before
+	 * lowmem_end_addr is initialized below.
+	 */
+	reserve_hugetlb_gpages();
+
 	if (memblock.memory.cnt > 1) {
 #ifndef CONFIG_WII
-		memblock.memory.cnt = 1;
-		memblock_analyze();
+		memblock_enforce_memory_limit(memblock.memory.regions[0].size);
 		printk(KERN_WARNING "Only using first contiguous memory region");
 #else
 		wii_memory_fixups();
@@ -149,7 +164,6 @@ void __init MMU_init(void)
 #ifndef CONFIG_HIGHMEM
 		total_memory = total_lowmem;
 		memblock_enforce_memory_limit(total_lowmem);
-		memblock_analyze();
 #endif /* CONFIG_HIGHMEM */
 	}
 

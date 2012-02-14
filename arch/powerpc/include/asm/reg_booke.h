@@ -31,7 +31,7 @@
 
 #define MSR_		MSR_ME | MSR_CE
 #define MSR_KERNEL	MSR_ | MSR_64BIT
-#define MSR_USER32	MSR_ | MSR_PR | MSR_EE | MSR_DE
+#define MSR_USER32	MSR_ | MSR_PR | MSR_EE
 #define MSR_USER64	MSR_USER32 | MSR_64BIT
 #elif defined (CONFIG_40x)
 #define MSR_KERNEL	(MSR_ME|MSR_RI|MSR_IR|MSR_DR|MSR_CE)
@@ -185,6 +185,10 @@
 #define SPRN_DAC2	0x3F7	/* Data Address Compare 2 */
 #define SPRN_CSRR0	SPRN_SRR2 /* Critical Save and Restore Register 0 */
 #define SPRN_CSRR1	SPRN_SRR3 /* Critical Save and Restore Register 1 */
+#endif
+
+#ifdef CONFIG_PPC_ICSWX
+#define SPRN_HACOP	0x15F	/* Hypervisor Available Coprocessor Register */
 #endif
 
 /* Bit definitions for CCR1. */
@@ -547,6 +551,9 @@
 #define L1CSR1_ICLFR	0x00000100	/* Instr Cache Lock Bits Flash Reset */
 #define L1CSR1_ICFI	0x00000002	/* Instr Cache Flash Invalidate */
 #define L1CSR1_ICE	0x00000001	/* Instr Cache Enable */
+
+/* Bit definitions for L1CSR2. */
+#define L1CSR2_DCWS	0x40000000	/* Data Cache write shadow */
 
 /* Bit definitions for L2CSR0. */
 #define L2CSR0_L2E	0x80000000	/* L2 Cache Enable */

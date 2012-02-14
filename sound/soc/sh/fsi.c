@@ -16,6 +16,7 @@
 #include <linux/pm_runtime.h>
 #include <linux/io.h>
 #include <linux/slab.h>
+#include <linux/module.h>
 #include <sound/soc.h>
 #include <sound/sh_fsi.h>
 
@@ -31,7 +32,9 @@
 #define REG_DIDT	0x0020
 #define REG_DODT	0x0024
 #define REG_MUTE_ST	0x0028
+#define REG_OUT_DMAC	0x002C
 #define REG_OUT_SEL	0x0030
+#define REG_IN_DMAC	0x0038
 
 /* master register */
 #define MST_CLK_RST	0x0210
@@ -210,7 +213,7 @@ struct fsi_master {
  *		basic read write function
  */
 
-static void __fsi_reg_write(u32 reg, u32 data)
+static void __fsi_reg_write(u32 __iomem *reg, u32 data)
 {
 	/* valid data area is 24bit */
 	data &= 0x00ffffff;
@@ -218,12 +221,12 @@ static void __fsi_reg_write(u32 reg, u32 data)
 	__raw_writel(data, reg);
 }
 
-static u32 __fsi_reg_read(u32 reg)
+static u32 __fsi_reg_read(u32 __iomem *reg)
 {
 	return __raw_readl(reg);
 }
 
-static void __fsi_reg_mask_set(u32 reg, u32 mask, u32 data)
+static void __fsi_reg_mask_set(u32 __iomem *reg, u32 mask, u32 data)
 {
 	u32 val = __fsi_reg_read(reg);
 
@@ -234,13 +237,13 @@ static void __fsi_reg_mask_set(u32 reg, u32 mask, u32 data)
 }
 
 #define fsi_reg_write(p, r, d)\
-	__fsi_reg_write((u32)(p->base + REG_##r), d)
+	__fsi_reg_write((p->base + REG_##r), d)
 
 #define fsi_reg_read(p, r)\
-	__fsi_reg_read((u32)(p->base + REG_##r))
+	__fsi_reg_read((p->base + REG_##r))
 
 #define fsi_reg_mask_set(p, r, m, d)\
-	__fsi_reg_mask_set((u32)(p->base + REG_##r), m, d)
+	__fsi_reg_mask_set((p->base + REG_##r), m, d)
 
 #define fsi_master_read(p, r) _fsi_master_read(p, MST_##r)
 #define fsi_core_read(p, r)   _fsi_master_read(p, p->core->r)
@@ -250,7 +253,7 @@ static u32 _fsi_master_read(struct fsi_master *master, u32 reg)
 	unsigned long flags;
 
 	spin_lock_irqsave(&master->lock, flags);
-	ret = __fsi_reg_read((u32)(master->base + reg));
+	ret = __fsi_reg_read(master->base + reg);
 	spin_unlock_irqrestore(&master->lock, flags);
 
 	return ret;
@@ -264,7 +267,7 @@ static void _fsi_master_mask_set(struct fsi_master *master,
 	unsigned long flags;
 
 	spin_lock_irqsave(&master->lock, flags);
-	__fsi_reg_mask_set((u32)(master->base + reg), mask, data);
+	__fsi_reg_mask_set(master->base + reg, mask, data);
 	spin_unlock_irqrestore(&master->lock, flags);
 }
 
@@ -885,10 +888,10 @@ static int fsi_hw_startup(struct fsi_priv *fsi,
 			  int is_play,
 			  struct device *dev)
 {
+	struct fsi_master *master = fsi_get_master(fsi);
+	int fsi_ver = master->core->ver;
 	u32 flags = fsi_get_info_flags(fsi);
 	u32 data = 0;
-
-	pm_runtime_get_sync(dev);
 
 	/* clock setting */
 	if (fsi_is_clk_master(fsi))
@@ -919,6 +922,17 @@ static int fsi_hw_startup(struct fsi_priv *fsi,
 		fsi_reg_mask_set(fsi, OUT_SEL, DMMD, DMMD);
 	}
 
+	/*
+	 * FIXME
+	 *
+	 * FSI driver assumed that data package is in-back.
+	 * FSI2 chip can select it.
+	 */
+	if (fsi_ver >= 2) {
+		fsi_reg_write(fsi, OUT_DMAC,	(1 << 4));
+		fsi_reg_write(fsi, IN_DMAC,	(1 << 4));
+	}
+
 	/* irq clear */
 	fsi_irq_disable(fsi, is_play);
 	fsi_irq_clear_status(fsi);
@@ -935,8 +949,6 @@ static void fsi_hw_shutdown(struct fsi_priv *fsi,
 {
 	if (fsi_is_clk_master(fsi))
 		fsi_set_master_clk(dev, fsi, fsi->rate, 0);
-
-	pm_runtime_put_sync(dev);
 }
 
 static int fsi_dai_startup(struct snd_pcm_substream *substream,
@@ -1080,7 +1092,7 @@ static int fsi_dai_hw_params(struct snd_pcm_substream *substream,
 	return ret;
 }
 
-static struct snd_soc_dai_ops fsi_dai_ops = {
+static const struct snd_soc_dai_ops fsi_dai_ops = {
 	.startup	= fsi_dai_startup,
 	.shutdown	= fsi_dai_shutdown,
 	.trigger	= fsi_dai_trigger,
@@ -1285,7 +1297,7 @@ static int fsi_probe(struct platform_device *pdev)
 	pm_runtime_enable(&pdev->dev);
 	dev_set_drvdata(&pdev->dev, master);
 
-	ret = request_irq(irq, &fsi_interrupt, IRQF_DISABLED,
+	ret = request_irq(irq, &fsi_interrupt, 0,
 			  id_entry->name, master);
 	if (ret) {
 		dev_err(&pdev->dev, "irq request err\n");
@@ -1452,18 +1464,7 @@ static struct platform_driver fsi_driver = {
 	.id_table	= fsi_id_table,
 };
 
-static int __init fsi_mobile_init(void)
-{
-	return platform_driver_register(&fsi_driver);
-}
-
-static void __exit fsi_mobile_exit(void)
-{
-	platform_driver_unregister(&fsi_driver);
-}
-
-module_init(fsi_mobile_init);
-module_exit(fsi_mobile_exit);
+module_platform_driver(fsi_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("SuperH onchip FSI audio driver");

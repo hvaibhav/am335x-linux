@@ -73,6 +73,7 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/prefetch.h>
+#include <linux/export.h>
 #include <net/net_namespace.h>
 #include <net/ip.h>
 #include <net/protocol.h>
@@ -1606,6 +1607,7 @@ found:
 	rcu_read_unlock();
 	return ret;
 }
+EXPORT_SYMBOL_GPL(fib_table_lookup);
 
 /*
  * Remove the leaf and return parent.
@@ -1621,7 +1623,7 @@ static void trie_leaf_remove(struct trie *t, struct leaf *l)
 		put_child(t, (struct tnode *)tp, cindex, NULL);
 		trie_rebalance(t, tp);
 	} else
-		rcu_assign_pointer(t->trie, NULL);
+		RCU_INIT_POINTER(t->trie, NULL);
 
 	free_leaf(l);
 }

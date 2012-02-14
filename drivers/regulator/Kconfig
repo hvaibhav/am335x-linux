@@ -64,6 +64,16 @@ config REGULATOR_USERSPACE_CONSUMER
 
           If unsure, say no.
 
+config REGULATOR_GPIO
+	tristate "GPIO regulator support"
+	depends on GENERIC_GPIO
+	help
+	  This driver provides support for regulators that can be
+	  controlled via gpios.
+	  It is capable of supporting current and voltage regulators
+	  and the platform has to provide a mapping of GPIO-states
+	  to target volts/amps.
+
 config REGULATOR_BQ24022
 	tristate "TI bq24022 Dual Input 1-Cell Li-Ion Charger IC"
 	help
@@ -83,6 +93,7 @@ config REGULATOR_MAX1586
 config REGULATOR_MAX8649
 	tristate "Maxim 8649 voltage regulator"
 	depends on I2C
+	select REGMAP_I2C
 	help
 	  This driver controls a Maxim 8649 voltage output regulator via
 	  I2C bus.
@@ -166,6 +177,13 @@ config REGULATOR_DA903X
 	help
 	  Say y here to support the BUCKs and LDOs regulators found on
 	  Dialog Semiconductor DA9030/DA9034 PMIC.
+
+config REGULATOR_DA9052
+	tristate "Dialog DA9052/DA9053 regulators"
+	depends on PMIC_DA9052
+	help
+	  This driver supports the voltage regulators of DA9052-BC and
+	  DA9053-AA/Bx PMIC.
 
 config REGULATOR_PCF50633
 	tristate "PCF50633 regulator driver"

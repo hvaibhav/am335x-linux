@@ -25,6 +25,7 @@
 #include <linux/input.h>
 #include <linux/pwm_backlight.h>
 
+#include <asm/hardware/vic.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
@@ -42,7 +43,6 @@
 #include <plat/clock.h>
 #include <plat/devs.h>
 #include <plat/cpu.h>
-#include <plat/s5pc100.h>
 #include <plat/fb.h>
 #include <plat/iic.h>
 #include <plat/ata.h>
@@ -52,6 +52,8 @@
 #include <plat/audio.h>
 #include <plat/backlight.h>
 #include <plat/regs-fb-v4.h>
+
+#include "common.h"
 
 /* Following are default values for UCON, ULCON and UFCON UART registers */
 #define SMDKC100_UCON_DEFAULT	(S3C2410_UCON_TXILEVEL |	\
@@ -203,12 +205,6 @@ static struct platform_device *smdkc100_devices[] __initdata = {
 	&s5pc100_device_spdif,
 };
 
-static struct s3c2410_ts_mach_info s3c_ts_platform __initdata = {
-	.delay			= 10000,
-	.presc			= 49,
-	.oversampling_shift	= 2,
-};
-
 /* LCD Backlight data */
 static struct samsung_bl_gpio_info smdkc100_bl_gpio_info = {
 	.no = S5PC100_GPD(0),
@@ -221,14 +217,14 @@ static struct platform_pwm_backlight_data smdkc100_bl_data = {
 
 static void __init smdkc100_map_io(void)
 {
-	s5p_init_io(NULL, 0, S5P_VA_CHIPID);
+	s5pc100_init_io(NULL, 0);
 	s3c24xx_init_clocks(12000000);
 	s3c24xx_init_uarts(smdkc100_uartcfgs, ARRAY_SIZE(smdkc100_uartcfgs));
 }
 
 static void __init smdkc100_machine_init(void)
 {
-	s3c24xx_ts_set_platdata(&s3c_ts_platform);
+	s3c24xx_ts_set_platdata(NULL);
 
 	/* I2C */
 	s3c_i2c0_set_platdata(NULL);
@@ -254,9 +250,11 @@ static void __init smdkc100_machine_init(void)
 
 MACHINE_START(SMDKC100, "SMDKC100")
 	/* Maintainer: Byungho Min <bhmin@samsung.com> */
-	.boot_params	= S5P_PA_SDRAM + 0x100,
+	.atag_offset	= 0x100,
 	.init_irq	= s5pc100_init_irq,
+	.handle_irq	= vic_handle_irq,
 	.map_io		= smdkc100_map_io,
 	.init_machine	= smdkc100_machine_init,
 	.timer		= &s3c24xx_timer,
+	.restart	= s5pc100_restart,
 MACHINE_END

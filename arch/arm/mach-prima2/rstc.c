@@ -19,6 +19,7 @@ static DEFINE_MUTEX(rstc_lock);
 
 static struct of_device_id rstc_ids[]  = {
 	{ .compatible = "sirf,prima2-rstc" },
+	{},
 };
 
 static int __init sirfsoc_of_rstc_init(void)
@@ -66,4 +67,11 @@ int sirfsoc_reset_device(struct device *dev)
 	mutex_unlock(&rstc_lock);
 
 	return 0;
+}
+
+#define SIRFSOC_SYS_RST_BIT  BIT(31)
+
+void sirfsoc_restart(char mode, const char *cmd)
+{
+	writel(SIRFSOC_SYS_RST_BIT, sirfsoc_rstc_base);
 }

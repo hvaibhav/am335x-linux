@@ -19,11 +19,12 @@
 #include <linux/delay.h>
 #include <linux/errno.h>
 #include <linux/init.h>
-#include <linux/sysdev.h>
+#include <linux/device.h>
 #include <linux/pm.h>
 #include <linux/pci.h>
 #include <linux/interrupt.h>
 #include <linux/sfi.h>
+#include <linux/module.h>
 #include <asm/mrst.h>
 #include <asm/intel_scu_ipc.h>
 

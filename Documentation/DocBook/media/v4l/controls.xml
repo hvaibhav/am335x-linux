@@ -232,8 +232,9 @@ control is deprecated. New drivers and applications should use the
 	    <entry>Enables a power line frequency filter to avoid
 flicker. Possible values for <constant>enum v4l2_power_line_frequency</constant> are:
 <constant>V4L2_CID_POWER_LINE_FREQUENCY_DISABLED</constant> (0),
-<constant>V4L2_CID_POWER_LINE_FREQUENCY_50HZ</constant> (1) and
-<constant>V4L2_CID_POWER_LINE_FREQUENCY_60HZ</constant> (2).</entry>
+<constant>V4L2_CID_POWER_LINE_FREQUENCY_50HZ</constant> (1),
+<constant>V4L2_CID_POWER_LINE_FREQUENCY_60HZ</constant> (2) and
+<constant>V4L2_CID_POWER_LINE_FREQUENCY_AUTO</constant> (3).</entry>
 	  </row>
 	  <row>
 	    <entry><constant>V4L2_CID_HUE_AUTO</constant></entry>
@@ -323,12 +324,6 @@ minimum value disables backlight compensation.</entry>
 		(usually a microscope).</entry>
 	  </row>
 	  <row>
-	    <entry><constant>V4L2_CID_LASTP1</constant></entry>
-	    <entry></entry>
-	    <entry>End of the predefined control IDs (currently
-<constant>V4L2_CID_ILLUMINATORS_2</constant> + 1).</entry>
-	  </row>
-	  <row>
 	    <entry><constant>V4L2_CID_MIN_BUFFERS_FOR_CAPTURE</constant></entry>
 	    <entry>integer</entry>
 	    <entry>This is a read-only control that can be read by the application
@@ -343,6 +338,25 @@ to work.</entry>
 and used as a hint to determine the number of OUTPUT buffers to pass to REQBUFS.
 The value is the minimum number of OUTPUT buffers that is necessary for hardware
 to work.</entry>
+	  </row>
+	  <row id="v4l2-alpha-component">
+	    <entry><constant>V4L2_CID_ALPHA_COMPONENT</constant></entry>
+	    <entry>integer</entry>
+	    <entry> Sets the alpha color component on the capture device or on
+	    the capture buffer queue of a mem-to-mem device. When a mem-to-mem
+	    device produces frame format that includes an alpha component
+	    (e.g. <link linkend="rgb-formats">packed RGB image formats</link>)
+	    and the alpha value is not defined by the mem-to-mem input data
+	    this control lets you select the alpha component value of all
+	    pixels. It is applicable to any pixel format that contains an alpha
+	    component.
+	    </entry>
+	  </row>
+	  <row>
+	    <entry><constant>V4L2_CID_LASTP1</constant></entry>
+	    <entry></entry>
+	    <entry>End of the predefined control IDs (currently
+	      <constant>V4L2_CID_ALPHA_COMPONENT</constant> + 1).</entry>
 	  </row>
 	  <row>
 	    <entry><constant>V4L2_CID_PRIVATE_BASE</constant></entry>
@@ -1455,7 +1469,7 @@ Applicable to the H264 encoder.</entry>
 	      </row>
 
 	      <row><entry></entry></row>
-	      <row>
+	      <row id="v4l2-mpeg-video-h264-vui-sar-idc">
 		<entry spanname="id"><constant>V4L2_CID_MPEG_VIDEO_H264_VUI_SAR_IDC</constant>&nbsp;</entry>
 		<entry>enum&nbsp;v4l2_mpeg_video_h264_vui_sar_idc</entry>
 	      </row>
@@ -1561,7 +1575,7 @@ Applicable to the H264 encoder.</entry>
 	      </row>
 
 	      <row><entry></entry></row>
-	      <row>
+	      <row id="v4l2-mpeg-video-h264-level">
 		<entry spanname="id"><constant>V4L2_CID_MPEG_VIDEO_H264_LEVEL</constant>&nbsp;</entry>
 		<entry>enum&nbsp;v4l2_mpeg_video_h264_level</entry>
 	      </row>
@@ -1641,7 +1655,7 @@ Possible values are:</entry>
 	      </row>
 
 	      <row><entry></entry></row>
-	      <row>
+	      <row id="v4l2-mpeg-video-mpeg4-level">
 		<entry spanname="id"><constant>V4L2_CID_MPEG_VIDEO_MPEG4_LEVEL</constant>&nbsp;</entry>
 		<entry>enum&nbsp;v4l2_mpeg_video_mpeg4_level</entry>
 	      </row>
@@ -1689,9 +1703,9 @@ Possible values are:</entry>
 	      </row>
 
 	      <row><entry></entry></row>
-	      <row>
+	      <row id="v4l2-mpeg-video-h264-profile">
 		<entry spanname="id"><constant>V4L2_CID_MPEG_VIDEO_H264_PROFILE</constant>&nbsp;</entry>
-		<entry>enum&nbsp;v4l2_mpeg_h264_profile</entry>
+		<entry>enum&nbsp;v4l2_mpeg_video_h264_profile</entry>
 	      </row>
 	      <row><entry spanname="descr">The profile information for H264.
 Applicable to the H264 encoder.
@@ -1774,9 +1788,9 @@ Possible values are:</entry>
 	      </row>
 
 	      <row><entry></entry></row>
-	      <row>
+	      <row id="v4l2-mpeg-video-mpeg4-profile">
 		<entry spanname="id"><constant>V4L2_CID_MPEG_VIDEO_MPEG4_PROFILE</constant>&nbsp;</entry>
-		<entry>enum&nbsp;v4l2_mpeg_mpeg4_profile</entry>
+		<entry>enum&nbsp;v4l2_mpeg_video_mpeg4_profile</entry>
 	      </row>
 	      <row><entry spanname="descr">The profile information for MPEG4.
 Applicable to the MPEG4 encoder.
@@ -1820,9 +1834,9 @@ Applicable to the encoder.
 	      </row>
 
 	      <row><entry></entry></row>
-	      <row>
+	      <row id="v4l2-mpeg-video-multi-slice-mode">
 		<entry spanname="id"><constant>V4L2_CID_MPEG_VIDEO_MULTI_SLICE_MODE</constant>&nbsp;</entry>
-		<entry>enum&nbsp;v4l2_mpeg_multi_slice_mode</entry>
+		<entry>enum&nbsp;v4l2_mpeg_video_multi_slice_mode</entry>
 	      </row>
 	      <row><entry spanname="descr">Determines how the encoder should handle division of frame into slices.
 Applicable to the encoder.
@@ -1868,9 +1882,9 @@ Applicable to the encoder.</entry>
 	      </row>
 
 	      <row><entry></entry></row>
-	      <row>
+	      <row id="v4l2-mpeg-video-h264-loop-filter-mode">
 		<entry spanname="id"><constant>V4L2_CID_MPEG_VIDEO_H264_LOOP_FILTER_MODE</constant>&nbsp;</entry>
-		<entry>enum&nbsp;v4l2_mpeg_h264_loop_filter_mode</entry>
+		<entry>enum&nbsp;v4l2_mpeg_video_h264_loop_filter_mode</entry>
 	      </row>
 	      <row><entry spanname="descr">Loop filter mode for H264 encoder.
 Possible values are:</entry>
@@ -1913,9 +1927,9 @@ Applicable to the H264 encoder.</entry>
 	      </row>
 
 	      <row><entry></entry></row>
-	      <row>
+	      <row id="v4l2-mpeg-video-h264-entropy-mode">
 		<entry spanname="id"><constant>V4L2_CID_MPEG_VIDEO_H264_ENTROPY_MODE</constant>&nbsp;</entry>
-		<entry>enum&nbsp;v4l2_mpeg_h264_symbol_mode</entry>
+		<entry>enum&nbsp;v4l2_mpeg_video_h264_entropy_mode</entry>
 	      </row>
 	      <row><entry spanname="descr">Entropy coding mode for H264 - CABAC/CAVALC.
 Applicable to the H264 encoder.
@@ -2140,9 +2154,9 @@ previous frames. Applicable to the H264 encoder.</entry>
 	      </row>
 
 	      <row><entry></entry></row>
-	      <row>
+	      <row id="v4l2-mpeg-video-header-mode">
 		<entry spanname="id"><constant>V4L2_CID_MPEG_VIDEO_HEADER_MODE</constant>&nbsp;</entry>
-		<entry>enum&nbsp;v4l2_mpeg_header_mode</entry>
+		<entry>enum&nbsp;v4l2_mpeg_video_header_mode</entry>
 	      </row>
 	      <row><entry spanname="descr">Determines whether the header is returned as the first buffer or is
 it returned together with the first frame. Applicable to encoders.
@@ -2320,9 +2334,9 @@ Valid only when H.264 and macroblock level RC is enabled (<constant>V4L2_CID_MPE
 Applicable to the H264 encoder.</entry>
 	      </row>
 	      <row><entry></entry></row>
-	      <row>
+	      <row id="v4l2-mpeg-mfc51-video-frame-skip-mode">
 		<entry spanname="id"><constant>V4L2_CID_MPEG_MFC51_VIDEO_FRAME_SKIP_MODE</constant>&nbsp;</entry>
-		<entry>enum&nbsp;v4l2_mpeg_mfc51_frame_skip_mode</entry>
+		<entry>enum&nbsp;v4l2_mpeg_mfc51_video_frame_skip_mode</entry>
 	      </row>
 	      <row><entry spanname="descr">
 Indicates in what conditions the encoder should skip frames. If encoding a frame would cause the encoded stream to be larger then
@@ -2361,9 +2375,9 @@ the stream will meet tight bandwidth contraints. Applicable to encoders.
 </entry>
 	      </row>
 	      <row><entry></entry></row>
-	      <row>
+	      <row id="v4l2-mpeg-mfc51-video-force-frame-type">
 		<entry spanname="id"><constant>V4L2_CID_MPEG_MFC51_VIDEO_FORCE_FRAME_TYPE</constant>&nbsp;</entry>
-		<entry>enum&nbsp;v4l2_mpeg_mfc51_force_frame_type</entry>
+		<entry>enum&nbsp;v4l2_mpeg_mfc51_video_force_frame_type</entry>
 	      </row>
 	      <row><entry spanname="descr">Force a frame type for the next queued buffer. Applicable to encoders.
 Possible values are:</entry>
@@ -3328,6 +3342,16 @@ interface and may change in the future.</para>
 		  <entry>The short circuit protection of the flash
 		  controller has been triggered.</entry>
 		</row>
+		<row>
+		  <entry><constant>V4L2_FLASH_FAULT_OVER_CURRENT</constant></entry>
+		  <entry>Current in the LED power supply has exceeded the limit
+		  specific to the flash controller.</entry>
+		</row>
+		<row>
+		  <entry><constant>V4L2_FLASH_FAULT_INDICATOR</constant></entry>
+		  <entry>The flash controller has detected a short or open
+		  circuit condition on the indicator LED.</entry>
+		</row>
 	      </tbody>
 	    </entrytbl>
 	  </row>
@@ -3356,11 +3380,3 @@ interface and may change in the future.</para>
 
     </section>
 </section>
-
-  <!--
-Local Variables:
-mode: sgml
-sgml-parent-document: "common.sgml"
-indent-tabs-mode: nil
-End:
-  -->

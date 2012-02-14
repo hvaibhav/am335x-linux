@@ -19,7 +19,7 @@
 #include <linux/kernel.h>
 #include <linux/percpu.h>
 #include <linux/string.h>
-#include <linux/sysdev.h>
+#include <linux/device.h>
 #include <linux/syscore_ops.h>
 #include <linux/delay.h>
 #include <linux/ctype.h>
@@ -36,8 +36,8 @@
 #include <linux/fs.h>
 #include <linux/mm.h>
 #include <linux/debugfs.h>
-#include <linux/edac_mce.h>
 #include <linux/irq_work.h>
+#include <linux/export.h>
 
 #include <asm/processor.h>
 #include <asm/mce.h>
@@ -95,19 +95,18 @@ static DECLARE_WAIT_QUEUE_HEAD(mce_chrdev_wait);
 static DEFINE_PER_CPU(struct mce, mces_seen);
 static int			cpu_missing;
 
-/*
- * CPU/chipset specific EDAC code can register a notifier call here to print
- * MCE errors in a human-readable form.
- */
-ATOMIC_NOTIFIER_HEAD(x86_mce_decoder_chain);
-EXPORT_SYMBOL_GPL(x86_mce_decoder_chain);
-
 /* MCA banks polled by the period polling timer for corrected events */
 DEFINE_PER_CPU(mce_banks_t, mce_poll_banks) = {
 	[0 ... BITS_TO_LONGS(MAX_NR_BANKS)-1] = ~0UL
 };
 
 static DEFINE_PER_CPU(struct work_struct, mce_work);
+
+/*
+ * CPU/chipset specific EDAC code can register a notifier call here to print
+ * MCE errors in a human-readable form.
+ */
+ATOMIC_NOTIFIER_HEAD(x86_mce_decoder_chain);
 
 /* Do initial initialization of a struct mce */
 void mce_setup(struct mce *m)
@@ -119,9 +118,7 @@ void mce_setup(struct mce *m)
 	m->time = get_seconds();
 	m->cpuvendor = boot_cpu_data.x86_vendor;
 	m->cpuid = cpuid_eax(1);
-#ifdef CONFIG_SMP
 	m->socketid = cpu_data(m->extcpu).phys_proc_id;
-#endif
 	m->apicid = cpu_data(m->extcpu).initial_apicid;
 	rdmsrl(MSR_IA32_MCG_CAP, m->mcgcap);
 }
@@ -144,23 +141,20 @@ static struct mce_log mcelog = {
 void mce_log(struct mce *mce)
 {
 	unsigned next, entry;
+	int ret = 0;
 
 	/* Emit the trace record: */
 	trace_mce_record(mce);
+
+	ret = atomic_notifier_call_chain(&x86_mce_decoder_chain, 0, mce);
+	if (ret == NOTIFY_STOP)
+		return;
 
 	mce->finished = 0;
 	wmb();
 	for (;;) {
 		entry = rcu_dereference_check_mce(mcelog.next);
 		for (;;) {
-			/*
-			 * If edac_mce is enabled, it will check the error type
-			 * and will process it, if it is a known error.
-			 * Otherwise, the error will be sent through mcelog
-			 * interface
-			 */
-			if (edac_mce_parse(mce))
-				return;
 
 			/*
 			 * When the buffer fills up discard new entries.
@@ -193,6 +187,57 @@ void mce_log(struct mce *mce)
 	set_bit(0, &mce_need_notify);
 }
 
+static void drain_mcelog_buffer(void)
+{
+	unsigned int next, i, prev = 0;
+
+	next = rcu_dereference_check_mce(mcelog.next);
+
+	do {
+		struct mce *m;
+
+		/* drain what was logged during boot */
+		for (i = prev; i < next; i++) {
+			unsigned long start = jiffies;
+			unsigned retries = 1;
+
+			m = &mcelog.entry[i];
+
+			while (!m->finished) {
+				if (time_after_eq(jiffies, start + 2*retries))
+					retries++;
+
+				cpu_relax();
+
+				if (!m->finished && retries >= 4) {
+					pr_err("MCE: skipping error being logged currently!\n");
+					break;
+				}
+			}
+			smp_rmb();
+			atomic_notifier_call_chain(&x86_mce_decoder_chain, 0, m);
+		}
+
+		memset(mcelog.entry + prev, 0, (next - prev) * sizeof(*m));
+		prev = next;
+		next = cmpxchg(&mcelog.next, prev, 0);
+	} while (next != prev);
+}
+
+
+void mce_register_decode_chain(struct notifier_block *nb)
+{
+	atomic_notifier_chain_register(&x86_mce_decoder_chain, nb);
+	drain_mcelog_buffer();
+}
+EXPORT_SYMBOL_GPL(mce_register_decode_chain);
+
+void mce_unregister_decode_chain(struct notifier_block *nb)
+{
+	atomic_notifier_chain_unregister(&x86_mce_decoder_chain, nb);
+}
+EXPORT_SYMBOL_GPL(mce_unregister_decode_chain);
+
 static void print_mce(struct mce *m)
 {
 	int ret = 0;
@@ -217,8 +262,13 @@ static void print_mce(struct mce *m)
 		pr_cont("MISC %llx ", m->misc);
 
 	pr_cont("\n");
-	pr_emerg(HW_ERR "PROCESSOR %u:%x TIME %llu SOCKET %u APIC %x\n",
-		m->cpuvendor, m->cpuid, m->time, m->socketid, m->apicid);
+	/*
+	 * Note this output is parsed by external tools and old fields
+	 * should not be changed.
+	 */
+	pr_emerg(HW_ERR "PROCESSOR %u:%x TIME %llu SOCKET %u APIC %x microcode %x\n",
+		m->cpuvendor, m->cpuid, m->time, m->socketid, m->apicid,
+		cpu_data(m->extcpu).microcode);
 
 	/*
 	 * Print out human-readable details about the MCE error,
@@ -551,10 +601,8 @@ void machine_check_poll(enum mcp_flags flags, mce_banks_t *b)
 		 * Don't get the IP here because it's unlikely to
 		 * have anything to do with the actual error location.
 		 */
-		if (!(flags & MCP_DONTLOG) && !mce_dont_log_ce) {
+		if (!(flags & MCP_DONTLOG) && !mce_dont_log_ce)
 			mce_log(&m);
-			atomic_notifier_call_chain(&x86_mce_decoder_chain, 0, &m);
-		}
 
 		/*
 		 * Clear state for this bank.
@@ -908,9 +956,6 @@ void do_machine_check(struct pt_regs *regs, long error_code)
 
 	percpu_inc(mce_exception_count);
 
-	if (notify_die(DIE_NMI, "machine check", regs, error_code,
-			   18, SIGKILL) == NOTIFY_STOP)
-		goto out;
 	if (!banks)
 		goto out;
 
@@ -1138,6 +1183,15 @@ static void mce_start_timer(unsigned long data)
 
 	t->expires = jiffies + *n;
 	add_timer_on(t, smp_processor_id());
+}
+
+/* Must not be called in IRQ context where del_timer_sync() can deadlock */
+static void mce_timer_delete_all(void)
+{
+	int cpu;
+
+	for_each_online_cpu(cpu)
+		del_timer_sync(&per_cpu(mce_timer, cpu));
 }
 
 static void mce_do_trigger(struct work_struct *work)
@@ -1628,16 +1682,35 @@ static long mce_chrdev_ioctl(struct file *f, unsigned int cmd,
 	}
 }
 
-/* Modified in mce-inject.c, so not static or const */
-struct file_operations mce_chrdev_ops = {
+static ssize_t (*mce_write)(struct file *filp, const char __user *ubuf,
+			    size_t usize, loff_t *off);
+
+void register_mce_write_callback(ssize_t (*fn)(struct file *filp,
+			     const char __user *ubuf,
+			     size_t usize, loff_t *off))
+{
+	mce_write = fn;
+}
+EXPORT_SYMBOL_GPL(register_mce_write_callback);
+
+ssize_t mce_chrdev_write(struct file *filp, const char __user *ubuf,
+			 size_t usize, loff_t *off)
+{
+	if (mce_write)
+		return mce_write(filp, ubuf, usize, off);
+	else
+		return -EINVAL;
+}
+
+static const struct file_operations mce_chrdev_ops = {
 	.open			= mce_chrdev_open,
 	.release		= mce_chrdev_release,
 	.read			= mce_chrdev_read,
+	.write			= mce_chrdev_write,
 	.poll			= mce_chrdev_poll,
 	.unlocked_ioctl		= mce_chrdev_ioctl,
 	.llseek			= no_llseek,
 };
-EXPORT_SYMBOL_GPL(mce_chrdev_ops);
 
 static struct miscdevice mce_chrdev_device = {
 	MISC_MCELOG_MINOR,
@@ -1745,12 +1818,11 @@ static struct syscore_ops mce_syscore_ops = {
 };
 
 /*
- * mce_sysdev: Sysfs support
+ * mce_device: Sysfs support
  */
 
 static void mce_cpu_restart(void *data)
 {
-	del_timer_sync(&__get_cpu_var(mce_timer));
 	if (!mce_available(__this_cpu_ptr(&cpu_info)))
 		return;
 	__mcheck_cpu_init_generic();
@@ -1760,16 +1832,15 @@ static void mce_cpu_restart(void *data)
 /* Reinit MCEs after user configuration changes */
 static void mce_restart(void)
 {
+	mce_timer_delete_all();
 	on_each_cpu(mce_cpu_restart, NULL, 1);
 }
 
 /* Toggle features for corrected errors */
-static void mce_disable_ce(void *all)
+static void mce_disable_cmci(void *data)
 {
 	if (!mce_available(__this_cpu_ptr(&cpu_info)))
 		return;
-	if (all)
-		del_timer_sync(&__get_cpu_var(mce_timer));
 	cmci_clear();
 }
 
@@ -1783,27 +1854,28 @@ static void mce_enable_ce(void *all)
 		__mcheck_cpu_init_timer();
 }
 
-static struct sysdev_class mce_sysdev_class = {
+static struct bus_type mce_subsys = {
 	.name		= "machinecheck",
+	.dev_name	= "machinecheck",
 };
 
-DEFINE_PER_CPU(struct sys_device, mce_sysdev);
+struct device *mce_device[CONFIG_NR_CPUS];
 
 __cpuinitdata
 void (*threshold_cpu_callback)(unsigned long action, unsigned int cpu);
 
-static inline struct mce_bank *attr_to_bank(struct sysdev_attribute *attr)
+static inline struct mce_bank *attr_to_bank(struct device_attribute *attr)
 {
 	return container_of(attr, struct mce_bank, attr);
 }
 
-static ssize_t show_bank(struct sys_device *s, struct sysdev_attribute *attr,
+static ssize_t show_bank(struct device *s, struct device_attribute *attr,
 			 char *buf)
 {
 	return sprintf(buf, "%llx\n", attr_to_bank(attr)->ctl);
 }
 
-static ssize_t set_bank(struct sys_device *s, struct sysdev_attribute *attr,
+static ssize_t set_bank(struct device *s, struct device_attribute *attr,
 			const char *buf, size_t size)
 {
 	u64 new;
@@ -1818,14 +1890,14 @@ static ssize_t set_bank(struct sys_device *s, struct sysdev_attribute *attr,
 }
 
 static ssize_t
-show_trigger(struct sys_device *s, struct sysdev_attribute *attr, char *buf)
+show_trigger(struct device *s, struct device_attribute *attr, char *buf)
 {
 	strcpy(buf, mce_helper);
 	strcat(buf, "\n");
 	return strlen(mce_helper) + 1;
 }
 
-static ssize_t set_trigger(struct sys_device *s, struct sysdev_attribute *attr,
+static ssize_t set_trigger(struct device *s, struct device_attribute *attr,
 				const char *buf, size_t siz)
 {
 	char *p;
@@ -1840,8 +1912,8 @@ static ssize_t set_trigger(struct sys_device *s, struct sysdev_attribute *attr,
 	return strlen(mce_helper) + !!p;
 }
 
-static ssize_t set_ignore_ce(struct sys_device *s,
-			     struct sysdev_attribute *attr,
+static ssize_t set_ignore_ce(struct device *s,
+			     struct device_attribute *attr,
 			     const char *buf, size_t size)
 {
 	u64 new;
@@ -1852,7 +1924,8 @@ static ssize_t set_ignore_ce(struct sys_device *s,
 	if (mce_ignore_ce ^ !!new) {
 		if (new) {
 			/* disable ce features */
-			on_each_cpu(mce_disable_ce, (void *)1, 1);
+			mce_timer_delete_all();
+			on_each_cpu(mce_disable_cmci, NULL, 1);
 			mce_ignore_ce = 1;
 		} else {
 			/* enable ce features */
@@ -1863,8 +1936,8 @@ static ssize_t set_ignore_ce(struct sys_device *s,
 	return size;
 }
 
-static ssize_t set_cmci_disabled(struct sys_device *s,
-				 struct sysdev_attribute *attr,
+static ssize_t set_cmci_disabled(struct device *s,
+				 struct device_attribute *attr,
 				 const char *buf, size_t size)
 {
 	u64 new;
@@ -1875,7 +1948,7 @@ static ssize_t set_cmci_disabled(struct sys_device *s,
 	if (mce_cmci_disabled ^ !!new) {
 		if (new) {
 			/* disable cmci */
-			on_each_cpu(mce_disable_ce, NULL, 1);
+			on_each_cpu(mce_disable_cmci, NULL, 1);
 			mce_cmci_disabled = 1;
 		} else {
 			/* enable cmci */
@@ -1886,108 +1959,117 @@ static ssize_t set_cmci_disabled(struct sys_device *s,
 	return size;
 }
 
-static ssize_t store_int_with_restart(struct sys_device *s,
-				      struct sysdev_attribute *attr,
+static ssize_t store_int_with_restart(struct device *s,
+				      struct device_attribute *attr,
 				      const char *buf, size_t size)
 {
-	ssize_t ret = sysdev_store_int(s, attr, buf, size);
+	ssize_t ret = device_store_int(s, attr, buf, size);
 	mce_restart();
 	return ret;
 }
 
-static SYSDEV_ATTR(trigger, 0644, show_trigger, set_trigger);
-static SYSDEV_INT_ATTR(tolerant, 0644, tolerant);
-static SYSDEV_INT_ATTR(monarch_timeout, 0644, monarch_timeout);
-static SYSDEV_INT_ATTR(dont_log_ce, 0644, mce_dont_log_ce);
+static DEVICE_ATTR(trigger, 0644, show_trigger, set_trigger);
+static DEVICE_INT_ATTR(tolerant, 0644, tolerant);
+static DEVICE_INT_ATTR(monarch_timeout, 0644, monarch_timeout);
+static DEVICE_INT_ATTR(dont_log_ce, 0644, mce_dont_log_ce);
 
-static struct sysdev_ext_attribute attr_check_interval = {
-	_SYSDEV_ATTR(check_interval, 0644, sysdev_show_int,
-		     store_int_with_restart),
+static struct dev_ext_attribute dev_attr_check_interval = {
+	__ATTR(check_interval, 0644, device_show_int, store_int_with_restart),
 	&check_interval
 };
 
-static struct sysdev_ext_attribute attr_ignore_ce = {
-	_SYSDEV_ATTR(ignore_ce, 0644, sysdev_show_int, set_ignore_ce),
+static struct dev_ext_attribute dev_attr_ignore_ce = {
+	__ATTR(ignore_ce, 0644, device_show_int, set_ignore_ce),
 	&mce_ignore_ce
 };
 
-static struct sysdev_ext_attribute attr_cmci_disabled = {
-	_SYSDEV_ATTR(cmci_disabled, 0644, sysdev_show_int, set_cmci_disabled),
+static struct dev_ext_attribute dev_attr_cmci_disabled = {
+	__ATTR(cmci_disabled, 0644, device_show_int, set_cmci_disabled),
 	&mce_cmci_disabled
 };
 
-static struct sysdev_attribute *mce_sysdev_attrs[] = {
-	&attr_tolerant.attr,
-	&attr_check_interval.attr,
-	&attr_trigger,
-	&attr_monarch_timeout.attr,
-	&attr_dont_log_ce.attr,
-	&attr_ignore_ce.attr,
-	&attr_cmci_disabled.attr,
+static struct device_attribute *mce_device_attrs[] = {
+	&dev_attr_tolerant.attr,
+	&dev_attr_check_interval.attr,
+	&dev_attr_trigger,
+	&dev_attr_monarch_timeout.attr,
+	&dev_attr_dont_log_ce.attr,
+	&dev_attr_ignore_ce.attr,
+	&dev_attr_cmci_disabled.attr,
 	NULL
 };
 
-static cpumask_var_t mce_sysdev_initialized;
+static cpumask_var_t mce_device_initialized;
 
-/* Per cpu sysdev init. All of the cpus still share the same ctrl bank: */
-static __cpuinit int mce_sysdev_create(unsigned int cpu)
+static void mce_device_release(struct device *dev)
 {
-	struct sys_device *sysdev = &per_cpu(mce_sysdev, cpu);
+	kfree(dev);
+}
+
+/* Per cpu device init. All of the cpus still share the same ctrl bank: */
+static __cpuinit int mce_device_create(unsigned int cpu)
+{
+	struct device *dev;
 	int err;
 	int i, j;
 
 	if (!mce_available(&boot_cpu_data))
 		return -EIO;
 
-	memset(&sysdev->kobj, 0, sizeof(struct kobject));
-	sysdev->id  = cpu;
-	sysdev->cls = &mce_sysdev_class;
+	dev = kzalloc(sizeof *dev, GFP_KERNEL);
+	if (!dev)
+		return -ENOMEM;
+	dev->id  = cpu;
+	dev->bus = &mce_subsys;
+	dev->release = &mce_device_release;
 
-	err = sysdev_register(sysdev);
+	err = device_register(dev);
 	if (err)
 		return err;
 
-	for (i = 0; mce_sysdev_attrs[i]; i++) {
-		err = sysdev_create_file(sysdev, mce_sysdev_attrs[i]);
+	for (i = 0; mce_device_attrs[i]; i++) {
+		err = device_create_file(dev, mce_device_attrs[i]);
 		if (err)
 			goto error;
 	}
 	for (j = 0; j < banks; j++) {
-		err = sysdev_create_file(sysdev, &mce_banks[j].attr);
+		err = device_create_file(dev, &mce_banks[j].attr);
 		if (err)
 			goto error2;
 	}
-	cpumask_set_cpu(cpu, mce_sysdev_initialized);
+	cpumask_set_cpu(cpu, mce_device_initialized);
+	mce_device[cpu] = dev;
 
 	return 0;
 error2:
 	while (--j >= 0)
-		sysdev_remove_file(sysdev, &mce_banks[j].attr);
+		device_remove_file(dev, &mce_banks[j].attr);
 error:
 	while (--i >= 0)
-		sysdev_remove_file(sysdev, mce_sysdev_attrs[i]);
+		device_remove_file(dev, mce_device_attrs[i]);
 
-	sysdev_unregister(sysdev);
+	device_unregister(dev);
 
 	return err;
 }
 
-static __cpuinit void mce_sysdev_remove(unsigned int cpu)
+static __cpuinit void mce_device_remove(unsigned int cpu)
 {
-	struct sys_device *sysdev = &per_cpu(mce_sysdev, cpu);
+	struct device *dev = mce_device[cpu];
 	int i;
 
-	if (!cpumask_test_cpu(cpu, mce_sysdev_initialized))
+	if (!cpumask_test_cpu(cpu, mce_device_initialized))
 		return;
 
-	for (i = 0; mce_sysdev_attrs[i]; i++)
-		sysdev_remove_file(sysdev, mce_sysdev_attrs[i]);
+	for (i = 0; mce_device_attrs[i]; i++)
+		device_remove_file(dev, mce_device_attrs[i]);
 
 	for (i = 0; i < banks; i++)
-		sysdev_remove_file(sysdev, &mce_banks[i].attr);
+		device_remove_file(dev, &mce_banks[i].attr);
 
-	sysdev_unregister(sysdev);
-	cpumask_clear_cpu(cpu, mce_sysdev_initialized);
+	device_unregister(dev);
+	cpumask_clear_cpu(cpu, mce_device_initialized);
+	mce_device[cpu] = NULL;
 }
 
 /* Make sure there are no machine checks on offlined CPUs. */
@@ -2037,7 +2119,7 @@ mce_cpu_callback(struct notifier_block *nfb, unsigned long action, void *hcpu)
 	switch (action) {
 	case CPU_ONLINE:
 	case CPU_ONLINE_FROZEN:
-		mce_sysdev_create(cpu);
+		mce_device_create(cpu);
 		if (threshold_cpu_callback)
 			threshold_cpu_callback(action, cpu);
 		break;
@@ -2045,7 +2127,7 @@ mce_cpu_callback(struct notifier_block *nfb, unsigned long action, void *hcpu)
 	case CPU_DEAD_FROZEN:
 		if (threshold_cpu_callback)
 			threshold_cpu_callback(action, cpu);
-		mce_sysdev_remove(cpu);
+		mce_device_remove(cpu);
 		break;
 	case CPU_DOWN_PREPARE:
 	case CPU_DOWN_PREPARE_FROZEN:
@@ -2079,7 +2161,7 @@ static __init void mce_init_banks(void)
 
 	for (i = 0; i < banks; i++) {
 		struct mce_bank *b = &mce_banks[i];
-		struct sysdev_attribute *a = &b->attr;
+		struct device_attribute *a = &b->attr;
 
 		sysfs_attr_init(&a->attr);
 		a->attr.name	= b->attrname;
@@ -2099,16 +2181,16 @@ static __init int mcheck_init_device(void)
 	if (!mce_available(&boot_cpu_data))
 		return -EIO;
 
-	zalloc_cpumask_var(&mce_sysdev_initialized, GFP_KERNEL);
+	zalloc_cpumask_var(&mce_device_initialized, GFP_KERNEL);
 
 	mce_init_banks();
 
-	err = sysdev_class_register(&mce_sysdev_class);
+	err = subsys_system_register(&mce_subsys, NULL);
 	if (err)
 		return err;
 
 	for_each_online_cpu(i) {
-		err = mce_sysdev_create(i);
+		err = mce_device_create(i);
 		if (err)
 			return err;
 	}

@@ -18,6 +18,7 @@
 #include <linux/kernel.h>
 #include <linux/errno.h>
 #include <linux/init.h>
+#include <linux/prefetch.h>
 #include <linux/usb.h>
 #include <linux/irq.h>
 #include <linux/platform_device.h>
@@ -55,6 +56,7 @@ u8 tusb_get_revision(struct musb *musb)
 
 	return rev;
 }
+EXPORT_SYMBOL_GPL(tusb_get_revision);
 
 static int tusb_print_revision(struct musb *musb)
 {

@@ -12,7 +12,7 @@
 #include <linux/mutex.h>
 #include <linux/exportfs.h>
 #include <linux/writeback.h>
-#include <linux/buffer_head.h>
+#include <linux/buffer_head.h> /* sync_mapping_buffers */
 
 #include <asm/uaccess.h>
 
@@ -490,7 +490,7 @@ int simple_fill_super(struct super_block *s, unsigned long magic,
 	inode->i_atime = inode->i_mtime = inode->i_ctime = CURRENT_TIME;
 	inode->i_op = &simple_dir_inode_operations;
 	inode->i_fop = &simple_dir_operations;
-	inode->i_nlink = 2;
+	set_nlink(inode, 2);
 	root = d_alloc_root(inode);
 	if (!root) {
 		iput(inode);
@@ -510,8 +510,10 @@ int simple_fill_super(struct super_block *s, unsigned long magic,
 		if (!dentry)
 			goto out;
 		inode = new_inode(s);
-		if (!inode)
+		if (!inode) {
+			dput(dentry);
 			goto out;
+		}
 		inode->i_mode = S_IFREG | files->mode;
 		inode->i_atime = inode->i_mtime = inode->i_ctime = CURRENT_TIME;
 		inode->i_fop = files->ops;

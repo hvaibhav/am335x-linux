@@ -19,7 +19,6 @@
 
 #include <linux/device.h>
 #include <linux/kernel.h>
-#include <linux/module.h>
 #include <linux/fs.h>
 #include <linux/init.h>
 #include <asm/uaccess.h>
@@ -474,7 +473,6 @@ static const struct file_operations rtlx_fops = {
 
 static struct irqaction rtlx_irq = {
 	.handler	= rtlx_interrupt,
-	.flags		= IRQF_DISABLED,
 	.name		= "RTLX",
 };
 

@@ -40,8 +40,6 @@
 #include <linux/smp.h>
 #include <linux/spinlock.h>
 #include <linux/delay.h>
-#include <linux/moduleparam.h>
-#include <linux/stat.h>
 #include <linux/dma-mapping.h>
 #include <linux/slab.h>
 
@@ -634,6 +632,7 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 	u16			len;
 	u16			csr = musb_readw(epio, MUSB_RXCSR);
 	struct musb_hw_ep	*hw_ep = &musb->endpoints[epnum];
+	u8			use_mode_1;
 
 	if (hw_ep->is_shared_fifo)
 		musb_ep = &hw_ep->ep_in;
@@ -683,6 +682,18 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 
 	if (csr & MUSB_RXCSR_RXPKTRDY) {
 		len = musb_readw(epio, MUSB_RXCOUNT);
+
+		/*
+		 * Enable Mode 1 on RX transfers only when short_not_ok flag
+		 * is set. Currently short_not_ok flag is set only from
+		 * file_storage and f_mass_storage drivers
+		 */
+
+		if (request->short_not_ok && len == musb_ep->packet_sz)
+			use_mode_1 = 1;
+		else
+			use_mode_1 = 0;
+
 		if (request->actual < request->length) {
 #ifdef CONFIG_USB_INVENTRA_DMA
 			if (is_buffer_mapped(req)) {
@@ -704,7 +715,7 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 	 * most these gadgets, end of is signified either by a short packet,
 	 * or filling the last byte of the buffer.  (Sending extra data in
 	 * that last pckate should trigger an overflow fault.)  But in mode 1,
-	 * we don't get DMA completion interrrupt for short packets.
+	 * we don't get DMA completion interrupt for short packets.
 	 *
 	 * Theoretically, we could enable DMAReq irq (MUSB_RXCSR_DMAMODE = 1),
 	 * to get endpoint interrupt on every DMA req, but that didn't seem
@@ -714,37 +725,41 @@ static void rxstate(struct musb *musb, struct musb_request *req)
 	 * then becomes usable as a runtime "use mode 1" hint...
 	 */
 
-				csr |= MUSB_RXCSR_DMAENAB;
-#ifdef USE_MODE1
-				csr |= MUSB_RXCSR_AUTOCLEAR;
-				/* csr |= MUSB_RXCSR_DMAMODE; */
-
-				/* this special sequence (enabling and then
-				 * disabling MUSB_RXCSR_DMAMODE) is required
-				 * to get DMAReq to activate
-				 */
-				musb_writew(epio, MUSB_RXCSR,
-					csr | MUSB_RXCSR_DMAMODE);
-#else
-				if (!musb_ep->hb_mult &&
-					musb_ep->hw_ep->rx_double_buffered)
+				/* Experimental: Mode1 works with mass storage use cases */
+				if (use_mode_1) {
 					csr |= MUSB_RXCSR_AUTOCLEAR;
-#endif
-				musb_writew(epio, MUSB_RXCSR, csr);
+					musb_writew(epio, MUSB_RXCSR, csr);
+					csr |= MUSB_RXCSR_DMAENAB;
+					musb_writew(epio, MUSB_RXCSR, csr);
+
+					/*
+					 * this special sequence (enabling and then
+					 * disabling MUSB_RXCSR_DMAMODE) is required
+					 * to get DMAReq to activate
+					 */
+					musb_writew(epio, MUSB_RXCSR,
+						csr | MUSB_RXCSR_DMAMODE);
+					musb_writew(epio, MUSB_RXCSR, csr);
+
+				} else {
+					if (!musb_ep->hb_mult &&
+						musb_ep->hw_ep->rx_double_buffered)
+						csr |= MUSB_RXCSR_AUTOCLEAR;
+					csr |= MUSB_RXCSR_DMAENAB;
+					musb_writew(epio, MUSB_RXCSR, csr);
+				}
 
 				if (request->actual < request->length) {
 					int transfer_size = 0;
-#ifdef USE_MODE1
-					transfer_size = min(request->length - request->actual,
-							channel->max_len);
-#else
-					transfer_size = min(request->length - request->actual,
-							(unsigned)len);
-#endif
-					if (transfer_size <= musb_ep->packet_sz)
-						musb_ep->dma->desired_mode = 0;
-					else
+					if (use_mode_1) {
+						transfer_size = min(request->length - request->actual,
+								channel->max_len);
 						musb_ep->dma->desired_mode = 1;
+					} else {
+						transfer_size = min(request->length - request->actual,
+								(unsigned)len);
+						musb_ep->dma->desired_mode = 0;
+					}
 
 					use_dma = c->channel_program(
 							channel,
@@ -1020,7 +1035,7 @@ static int musb_gadget_enable(struct usb_ep *ep,
 		goto fail;
 
 	/* REVISIT this rules out high bandwidth periodic transfers */
-	tmp = le16_to_cpu(desc->wMaxPacketSize);
+	tmp = usb_endpoint_maxp(desc);
 	if (tmp & ~0x07ff) {
 		int ok;
 
@@ -1698,6 +1713,8 @@ static int musb_gadget_pullup(struct usb_gadget *gadget, int is_on)
 
 	is_on = !!is_on;
 
+	pm_runtime_get_sync(musb->controller);
+
 	/* NOTE: this assumes we are sensing vbus; we'd rather
 	 * not pullup unless the B-session is active.
 	 */
@@ -1707,6 +1724,9 @@ static int musb_gadget_pullup(struct usb_gadget *gadget, int is_on)
 		musb_pullup(musb, is_on);
 	}
 	spin_unlock_irqrestore(&musb->lock, flags);
+
+	pm_runtime_put(musb->controller);
+
 	return 0;
 }
 
@@ -1822,7 +1842,7 @@ int __init musb_gadget_setup(struct musb *musb)
 	 */
 
 	musb->g.ops = &musb_gadget_operations;
-	musb->g.is_dualspeed = 1;
+	musb->g.max_speed = USB_SPEED_HIGH;
 	musb->g.speed = USB_SPEED_UNKNOWN;
 
 	/* this "gadget" abstracts/virtualizes the controller */
@@ -1851,6 +1871,7 @@ int __init musb_gadget_setup(struct musb *musb)
 
 	return 0;
 err:
+	musb->g.dev.parent = NULL;
 	device_unregister(&musb->g.dev);
 	return status;
 }
@@ -1858,7 +1879,8 @@ err:
 void musb_gadget_cleanup(struct musb *musb)
 {
 	usb_del_gadget_udc(&musb->g);
-	device_unregister(&musb->g.dev);
+	if (musb->g.dev.parent)
+		device_unregister(&musb->g.dev);
 }
 
 /*
@@ -1879,7 +1901,7 @@ static int musb_gadget_start(struct usb_gadget *g,
 	unsigned long		flags;
 	int			retval = -EINVAL;
 
-	if (driver->speed != USB_SPEED_HIGH)
+	if (driver->max_speed < USB_SPEED_HIGH)
 		goto err0;
 
 	pm_runtime_get_sync(musb->controller);
@@ -1975,10 +1997,6 @@ static void stop_activity(struct musb *musb, struct usb_gadget_driver *driver)
 					nuke(&hw_ep->ep_out, -ESHUTDOWN);
 			}
 		}
-
-		spin_unlock(&musb->lock);
-		driver->disconnect(&musb->g);
-		spin_lock(&musb->lock);
 	}
 }
 

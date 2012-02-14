@@ -162,19 +162,21 @@ void print_header(void)
 
 void dump_cnt(struct counters *cnt)
 {
-	fprintf(stderr, "package: %d ", cnt->pkg);
-	fprintf(stderr, "core:: %d ", cnt->core);
-	fprintf(stderr, "CPU: %d ", cnt->cpu);
-	fprintf(stderr, "TSC: %016llX\n", cnt->tsc);
-	fprintf(stderr, "c3: %016llX\n", cnt->c3);
-	fprintf(stderr, "c6: %016llX\n", cnt->c6);
-	fprintf(stderr, "c7: %016llX\n", cnt->c7);
-	fprintf(stderr, "aperf: %016llX\n", cnt->aperf);
-	fprintf(stderr, "pc2: %016llX\n", cnt->pc2);
-	fprintf(stderr, "pc3: %016llX\n", cnt->pc3);
-	fprintf(stderr, "pc6: %016llX\n", cnt->pc6);
-	fprintf(stderr, "pc7: %016llX\n", cnt->pc7);
-	fprintf(stderr, "msr0x%x: %016llX\n", extra_msr_offset, cnt->extra_msr);
+	if (!cnt)
+		return;
+	if (cnt->pkg) fprintf(stderr, "package: %d ", cnt->pkg);
+	if (cnt->core) fprintf(stderr, "core:: %d ", cnt->core);
+	if (cnt->cpu) fprintf(stderr, "CPU: %d ", cnt->cpu);
+	if (cnt->tsc) fprintf(stderr, "TSC: %016llX\n", cnt->tsc);
+	if (cnt->c3) fprintf(stderr, "c3: %016llX\n", cnt->c3);
+	if (cnt->c6) fprintf(stderr, "c6: %016llX\n", cnt->c6);
+	if (cnt->c7) fprintf(stderr, "c7: %016llX\n", cnt->c7);
+	if (cnt->aperf) fprintf(stderr, "aperf: %016llX\n", cnt->aperf);
+	if (cnt->pc2) fprintf(stderr, "pc2: %016llX\n", cnt->pc2);
+	if (cnt->pc3) fprintf(stderr, "pc3: %016llX\n", cnt->pc3);
+	if (cnt->pc6) fprintf(stderr, "pc6: %016llX\n", cnt->pc6);
+	if (cnt->pc7) fprintf(stderr, "pc7: %016llX\n", cnt->pc7);
+	if (cnt->extra_msr) fprintf(stderr, "msr0x%x: %016llX\n", extra_msr_offset, cnt->extra_msr);
 }
 
 void dump_list(struct counters *cnt)
@@ -809,6 +811,8 @@ int has_nehalem_turbo_ratio_limit(unsigned int family, unsigned int model)
 	case 0x2C:	/* Westmere EP - Gulftown */
 	case 0x2A:	/* SNB */
 	case 0x2D:	/* SNB Xeon */
+	case 0x3A:	/* IVB */
+	case 0x3D:	/* IVB Xeon */
 		return 1;
 	case 0x2E:	/* Nehalem-EX Xeon - Beckton */
 	case 0x2F:	/* Westmere-EX Xeon - Eagleton */

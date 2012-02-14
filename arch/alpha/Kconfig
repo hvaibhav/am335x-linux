@@ -51,7 +51,7 @@ config GENERIC_CMOS_UPDATE
         def_bool y
 
 config GENERIC_GPIO
-	def_bool y
+	bool
 
 config ZONE_DMA
 	bool
@@ -69,10 +69,6 @@ config NEED_SG_DMA_LENGTH
 config GENERIC_ISA_DMA
 	bool
 	default y
-
-config GENERIC_IOMAP
-	bool
-	default n
 
 source "init/Kconfig"
 source "kernel/Kconfig.freezer"
@@ -319,6 +315,7 @@ config ISA_DMA_API
 config PCI
 	bool
 	depends on !ALPHA_JENSEN
+	select GENERIC_PCI_IOMAP
 	default y
 	help
 	  Find out whether you have a PCI motherboard. PCI is the name of a
@@ -444,11 +441,6 @@ config ALPHA_EV67
 	help
 	  Is this a machine based on the EV67 core?  If in doubt, select N here
 	  and the machine will be treated as an EV6.
-
-config ALPHA_EV7
-	bool
-	depends on ALPHA_MARVEL
-	default y
 
 config ALPHA_MCPCIA
 	bool

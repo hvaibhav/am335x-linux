@@ -137,7 +137,7 @@ nf_nat_fn(unsigned int hooknum,
 				return ret;
 		} else
 			pr_debug("Already setup manip %s for ct %p\n",
-				 maniptype == IP_NAT_MANIP_SRC ? "SRC" : "DST",
+				 maniptype == NF_NAT_MANIP_SRC ? "SRC" : "DST",
 				 ct);
 		break;
 
@@ -284,7 +284,7 @@ static int __init nf_nat_standalone_init(void)
 
 #ifdef CONFIG_XFRM
 	BUG_ON(ip_nat_decode_session != NULL);
-	rcu_assign_pointer(ip_nat_decode_session, nat_decode_session);
+	RCU_INIT_POINTER(ip_nat_decode_session, nat_decode_session);
 #endif
 	ret = nf_nat_rule_init();
 	if (ret < 0) {
@@ -302,7 +302,7 @@ static int __init nf_nat_standalone_init(void)
 	nf_nat_rule_cleanup();
  cleanup_decode_session:
 #ifdef CONFIG_XFRM
-	rcu_assign_pointer(ip_nat_decode_session, NULL);
+	RCU_INIT_POINTER(ip_nat_decode_session, NULL);
 	synchronize_net();
 #endif
 	return ret;
@@ -313,7 +313,7 @@ static void __exit nf_nat_standalone_fini(void)
 	nf_unregister_hooks(nf_nat_ops, ARRAY_SIZE(nf_nat_ops));
 	nf_nat_rule_cleanup();
 #ifdef CONFIG_XFRM
-	rcu_assign_pointer(ip_nat_decode_session, NULL);
+	RCU_INIT_POINTER(ip_nat_decode_session, NULL);
 	synchronize_net();
 #endif
 	/* Conntrack caches are unregistered in nf_conntrack_cleanup */

@@ -52,7 +52,7 @@
 #include <linux/pci.h>
 #include <linux/slab.h>
 #include <linux/gameport.h>
-#include <linux/moduleparam.h>
+#include <linux/module.h>
 #include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <sound/core.h>
@@ -79,7 +79,7 @@ MODULE_SUPPORTED_DEVICE("{{ESS,ES1938},"
 
 static int index[SNDRV_CARDS] = SNDRV_DEFAULT_IDX;	/* Index 0-MAX */
 static char *id[SNDRV_CARDS] = SNDRV_DEFAULT_STR;	/* ID for this card */
-static int enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
+static bool enable[SNDRV_CARDS] = SNDRV_DEFAULT_ENABLE_PNP;	/* Enable this card */
 
 module_param_array(index, int, NULL, 0444);
 MODULE_PARM_DESC(index, "Index value for ESS Solo-1 soundcard.");
@@ -1854,8 +1854,9 @@ static int __devinit snd_es1938_probe(struct pci_dev *pci,
 		}
 	}
 	if (snd_mpu401_uart_new(card, 0, MPU401_HW_MPU401,
-				chip->mpu_port, MPU401_INFO_INTEGRATED,
-				chip->irq, 0, &chip->rmidi) < 0) {
+				chip->mpu_port,
+				MPU401_INFO_INTEGRATED | MPU401_INFO_IRQ_HOOK,
+				-1, &chip->rmidi) < 0) {
 		printk(KERN_ERR "es1938: unable to initialize MPU-401\n");
 	} else {
 		// this line is vital for MIDI interrupt handling on ess-solo1

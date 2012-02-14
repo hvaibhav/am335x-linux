@@ -22,16 +22,16 @@
 
 static int jffs2_readdir (struct file *, void *, filldir_t);
 
-static int jffs2_create (struct inode *,struct dentry *,int,
+static int jffs2_create (struct inode *,struct dentry *,umode_t,
 			 struct nameidata *);
 static struct dentry *jffs2_lookup (struct inode *,struct dentry *,
 				    struct nameidata *);
 static int jffs2_link (struct dentry *,struct inode *,struct dentry *);
 static int jffs2_unlink (struct inode *,struct dentry *);
 static int jffs2_symlink (struct inode *,struct dentry *,const char *);
-static int jffs2_mkdir (struct inode *,struct dentry *,int);
+static int jffs2_mkdir (struct inode *,struct dentry *,umode_t);
 static int jffs2_rmdir (struct inode *,struct dentry *);
-static int jffs2_mknod (struct inode *,struct dentry *,int,dev_t);
+static int jffs2_mknod (struct inode *,struct dentry *,umode_t,dev_t);
 static int jffs2_rename (struct inode *, struct dentry *,
 			 struct inode *, struct dentry *);
 
@@ -169,8 +169,8 @@ static int jffs2_readdir(struct file *filp, void *dirent, filldir_t filldir)
 /***********************************************************************/
 
 
-static int jffs2_create(struct inode *dir_i, struct dentry *dentry, int mode,
-			struct nameidata *nd)
+static int jffs2_create(struct inode *dir_i, struct dentry *dentry,
+			umode_t mode, struct nameidata *nd)
 {
 	struct jffs2_raw_inode *ri;
 	struct jffs2_inode_info *f, *dir_f;
@@ -245,7 +245,7 @@ static int jffs2_unlink(struct inode *dir_i, struct dentry *dentry)
 	ret = jffs2_do_unlink(c, dir_f, dentry->d_name.name,
 			      dentry->d_name.len, dead_f, now);
 	if (dead_f->inocache)
-		dentry->d_inode->i_nlink = dead_f->inocache->pino_nlink;
+		set_nlink(dentry->d_inode, dead_f->inocache->pino_nlink);
 	if (!ret)
 		dir_i->i_mtime = dir_i->i_ctime = ITIME(now);
 	return ret;
@@ -278,7 +278,7 @@ static int jffs2_link (struct dentry *old_dentry, struct inode *dir_i, struct de
 
 	if (!ret) {
 		mutex_lock(&f->sem);
-		old_dentry->d_inode->i_nlink = ++f->inocache->pino_nlink;
+		set_nlink(old_dentry->d_inode, ++f->inocache->pino_nlink);
 		mutex_unlock(&f->sem);
 		d_instantiate(dentry, old_dentry->d_inode);
 		dir_i->i_mtime = dir_i->i_ctime = ITIME(now);
@@ -450,7 +450,7 @@ static int jffs2_symlink (struct inode *dir_i, struct dentry *dentry, const char
 }
 
 
-static int jffs2_mkdir (struct inode *dir_i, struct dentry *dentry, int mode)
+static int jffs2_mkdir (struct inode *dir_i, struct dentry *dentry, umode_t mode)
 {
 	struct jffs2_inode_info *f, *dir_f;
 	struct jffs2_sb_info *c;
@@ -497,7 +497,7 @@ static int jffs2_mkdir (struct inode *dir_i, struct dentry *dentry, int mode)
 	f = JFFS2_INODE_INFO(inode);
 
 	/* Directories get nlink 2 at start */
-	inode->i_nlink = 2;
+	set_nlink(inode, 2);
 	/* but ic->pino_nlink is the parent ino# */
 	f->inocache->pino_nlink = dir_i->i_ino;
 
@@ -618,7 +618,7 @@ static int jffs2_rmdir (struct inode *dir_i, struct dentry *dentry)
 	return ret;
 }
 
-static int jffs2_mknod (struct inode *dir_i, struct dentry *dentry, int mode, dev_t rdev)
+static int jffs2_mknod (struct inode *dir_i, struct dentry *dentry, umode_t mode, dev_t rdev)
 {
 	struct jffs2_inode_info *f, *dir_f;
 	struct jffs2_sb_info *c;

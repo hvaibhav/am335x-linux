@@ -150,7 +150,7 @@ static ssize_t show_status(struct qib_pportdata *ppd, char *buf)
  * For userland compatibility, these offsets must remain fixed.
  * They are strings for QIB_STATUS_*
  */
-static const char *qib_status_str[] = {
+static const char * const qib_status_str[] = {
 	"Initted",
 	"",
 	"",
@@ -515,8 +515,7 @@ static ssize_t show_nfreectxts(struct device *device,
 	struct qib_devdata *dd = dd_from_dev(dev);
 
 	/* Return the number of free user ports (contexts) available. */
-	return scnprintf(buf, PAGE_SIZE, "%u\n", dd->cfgctxts -
-		dd->first_user_ctxt - (u32)qib_stats.sps_ctxts);
+	return scnprintf(buf, PAGE_SIZE, "%u\n", dd->freectxts);
 }
 
 static ssize_t show_serial(struct device *device,

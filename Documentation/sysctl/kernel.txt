@@ -24,6 +24,7 @@ show up in /proc/sys/kernel:
 - bootloader_type	     [ X86 only ]
 - bootloader_version	     [ X86 only ]
 - callhome		     [ S390 only ]
+- cap_last_cap
 - core_pattern
 - core_pipe_limit
 - core_uses_pid
@@ -48,6 +49,7 @@ show up in /proc/sys/kernel:
 - panic
 - panic_on_oops
 - panic_on_unrecovered_nmi
+- panic_on_stackoverflow
 - pid_max
 - powersave-nap               [ PPC only ]
 - printk
@@ -152,6 +154,13 @@ nothing happens in case of a kernel panic. If this value is set to "1"
 the complete kernel oops message is send to the IBM customer service
 organization in case the mainframe the Linux operating system is running
 on has a service contract with IBM.
+
+==============================================================
+
+cap_last_cap
+
+Highest valid capability of the running kernel.  Exports
+CAP_LAST_CAP from the kernel.
 
 ==============================================================
 
@@ -385,11 +394,32 @@ Controls the kernel's behaviour when an oops or BUG is encountered.
 
 ==============================================================
 
+panic_on_stackoverflow:
+
+Controls the kernel's behavior when detecting the overflows of
+kernel, IRQ and exception stacks except a user stack.
+This file shows up if CONFIG_DEBUG_STACKOVERFLOW is enabled.
+
+0: try to continue operation.
+
+1: panic immediately.
+
+==============================================================
+
+
 pid_max:
 
 PID allocation wrap value.  When the kernel's next PID value
 reaches this value, it wraps back to a minimum PID value.
 PIDs of value pid_max or larger are not allocated.
+
+==============================================================
+
+ns_last_pid:
+
+The last pid allocated in the current (the one task using this sysctl
+lives in) pid namespace. When selecting a pid for a next task on fork
+kernel tries to allocate a number starting from this one.
 
 ==============================================================
 
@@ -571,6 +601,8 @@ can be ORed together:
         instead of using the one provided by the hardware.
  512 - A kernel warning has occurred.
 1024 - A module from drivers/staging was loaded.
+2048 - The system is working around a severe firmware bug.
+4096 - An out-of-tree module has been loaded.
 
 ==============================================================
 

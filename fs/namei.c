@@ -36,6 +36,7 @@
 #include <asm/uaccess.h>
 
 #include "internal.h"
+#include "mount.h"
 
 /* [Feb-1997 T. Schoebel-Theuer]
  * Fundamental changes in the pathname lookup mechanisms (namei)
@@ -137,21 +138,21 @@ static int do_getname(const char __user *filename, char *page)
 	return retval;
 }
 
-static char *getname_flags(const char __user * filename, int flags)
+static char *getname_flags(const char __user *filename, int flags, int *empty)
 {
-	char *tmp, *result;
+	char *result = __getname();
+	int retval;
 
-	result = ERR_PTR(-ENOMEM);
-	tmp = __getname();
-	if (tmp)  {
-		int retval = do_getname(filename, tmp);
+	if (!result)
+		return ERR_PTR(-ENOMEM);
 
-		result = tmp;
-		if (retval < 0) {
-			if (retval != -ENOENT || !(flags & LOOKUP_EMPTY)) {
-				__putname(tmp);
-				result = ERR_PTR(retval);
-			}
+	retval = do_getname(filename, result);
+	if (retval < 0) {
+		if (retval == -ENOENT && empty)
+			*empty = 1;
+		if (retval != -ENOENT || !(flags & LOOKUP_EMPTY)) {
+			__putname(result);
+			return ERR_PTR(retval);
 		}
 	}
 	audit_getname(result);
@@ -160,7 +161,7 @@ static char *getname_flags(const char __user * filename, int flags)
 
 char *getname(const char __user * filename)
 {
-	return getname_flags(filename, 0);
+	return getname_flags(filename, 0, 0);
 }
 
 #ifdef CONFIG_AUDITSYSCALL
@@ -221,13 +222,11 @@ static int check_acl(struct inode *inode, int mask)
 }
 
 /*
- * This does basic POSIX ACL permission checking
+ * This does the basic permission checking
  */
 static int acl_permission_check(struct inode *inode, int mask)
 {
 	unsigned int mode = inode->i_mode;
-
-	mask &= MAY_READ | MAY_WRITE | MAY_EXEC | MAY_NOT_BLOCK;
 
 	if (current_user_ns() != inode_userns(inode))
 		goto other_perms;
@@ -257,7 +256,7 @@ other_perms:
 /**
  * generic_permission -  check for access rights on a Posix-like filesystem
  * @inode:	inode to check access rights for
- * @mask:	right to check for (%MAY_READ, %MAY_WRITE, %MAY_EXEC)
+ * @mask:	right to check for (%MAY_READ, %MAY_WRITE, %MAY_EXEC, ...)
  *
  * Used to check for read/write/execute permissions on a file.
  * We use "fsuid" for this, letting us set arbitrary permissions
@@ -273,7 +272,7 @@ int generic_permission(struct inode *inode, int mask)
 	int ret;
 
 	/*
-	 * Do the basic POSIX ACL permission checks.
+	 * Do the basic permission checks.
 	 */
 	ret = acl_permission_check(inode, mask);
 	if (ret != -EACCES)
@@ -331,12 +330,14 @@ static inline int do_inode_permission(struct inode *inode, int mask)
 /**
  * inode_permission  -  check for access rights to a given inode
  * @inode:	inode to check permission on
- * @mask:	right to check for (%MAY_READ, %MAY_WRITE, %MAY_EXEC)
+ * @mask:	right to check for (%MAY_READ, %MAY_WRITE, %MAY_EXEC, ...)
  *
  * Used to check for read/write/execute permissions on an inode.
  * We use "fsuid" for this, letting us set arbitrary permissions
  * for filesystem access without changing the "normal" uids which
  * are used for other things.
+ *
+ * When checking for MAY_APPEND, MAY_WRITE must also be set in @mask.
  */
 int inode_permission(struct inode *inode, int mask)
 {
@@ -674,36 +675,38 @@ follow_link(struct path *link, struct nameidata *nd, void **p)
 
 static int follow_up_rcu(struct path *path)
 {
-	struct vfsmount *parent;
+	struct mount *mnt = real_mount(path->mnt);
+	struct mount *parent;
 	struct dentry *mountpoint;
 
-	parent = path->mnt->mnt_parent;
-	if (parent == path->mnt)
+	parent = mnt->mnt_parent;
+	if (&parent->mnt == path->mnt)
 		return 0;
-	mountpoint = path->mnt->mnt_mountpoint;
+	mountpoint = mnt->mnt_mountpoint;
 	path->dentry = mountpoint;
-	path->mnt = parent;
+	path->mnt = &parent->mnt;
 	return 1;
 }
 
 int follow_up(struct path *path)
 {
-	struct vfsmount *parent;
+	struct mount *mnt = real_mount(path->mnt);
+	struct mount *parent;
 	struct dentry *mountpoint;
 
 	br_read_lock(vfsmount_lock);
-	parent = path->mnt->mnt_parent;
-	if (parent == path->mnt) {
+	parent = mnt->mnt_parent;
+	if (&parent->mnt == path->mnt) {
 		br_read_unlock(vfsmount_lock);
 		return 0;
 	}
-	mntget(parent);
-	mountpoint = dget(path->mnt->mnt_mountpoint);
+	mntget(&parent->mnt);
+	mountpoint = dget(mnt->mnt_mountpoint);
 	br_read_unlock(vfsmount_lock);
 	dput(path->dentry);
 	path->dentry = mountpoint;
 	mntput(path->mnt);
-	path->mnt = parent;
+	path->mnt = &parent->mnt;
 	return 1;
 }
 
@@ -721,31 +724,22 @@ static int follow_automount(struct path *path, unsigned flags,
 	if (!path->dentry->d_op || !path->dentry->d_op->d_automount)
 		return -EREMOTE;
 
-	/* We don't want to mount if someone supplied AT_NO_AUTOMOUNT
-	 * and this is the terminal part of the path.
+	/* We don't want to mount if someone's just doing a stat -
+	 * unless they're stat'ing a directory and appended a '/' to
+	 * the name.
+	 *
+	 * We do, however, want to mount if someone wants to open or
+	 * create a file of any type under the mountpoint, wants to
+	 * traverse through the mountpoint or wants to open the
+	 * mounted directory.  Also, autofs may mark negative dentries
+	 * as being automount points.  These will need the attentions
+	 * of the daemon to instantiate them before they can be used.
 	 */
-	if ((flags & LOOKUP_NO_AUTOMOUNT) && !(flags & LOOKUP_PARENT))
-		return -EISDIR; /* we actually want to stop here */
+	if (!(flags & (LOOKUP_PARENT | LOOKUP_DIRECTORY |
+		     LOOKUP_OPEN | LOOKUP_CREATE | LOOKUP_AUTOMOUNT)) &&
+	    path->dentry->d_inode)
+		return -EISDIR;
 
-	/*
-	 * We don't want to mount if someone's just doing a stat and they've
-	 * set AT_SYMLINK_NOFOLLOW - unless they're stat'ing a directory and
-	 * appended a '/' to the name.
-	 */
-	if (!(flags & LOOKUP_FOLLOW)) {
-		/* We do, however, want to mount if someone wants to open or
-		 * create a file of any type under the mountpoint, wants to
-		 * traverse through the mountpoint or wants to open the mounted
-		 * directory.
-		 * Also, autofs may mark negative dentries as being automount
-		 * points.  These will need the attentions of the daemon to
-		 * instantiate them before they can be used.
-		 */
-		if (!(flags & (LOOKUP_PARENT | LOOKUP_DIRECTORY |
-			     LOOKUP_OPEN | LOOKUP_CREATE)) &&
-		    path->dentry->d_inode)
-			return -EISDIR;
-	}
 	current->total_link_count++;
 	if (current->total_link_count >= 40)
 		return -ELOOP;
@@ -859,7 +853,7 @@ static int follow_managed(struct path *path, unsigned flags)
 		mntput(path->mnt);
 	if (ret == -EISDIR)
 		ret = 0;
-	return ret;
+	return ret < 0 ? ret : need_mntput;
 }
 
 int follow_down_one(struct path *path)
@@ -891,7 +885,7 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 			       struct inode **inode)
 {
 	for (;;) {
-		struct vfsmount *mounted;
+		struct mount *mounted;
 		/*
 		 * Don't forget we might have a non-mountpoint managed dentry
 		 * that wants to block transit.
@@ -905,8 +899,9 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 		mounted = __lookup_mnt(path->mnt, path->dentry, 1);
 		if (!mounted)
 			break;
-		path->mnt = mounted;
-		path->dentry = mounted->mnt_root;
+		path->mnt = &mounted->mnt;
+		path->dentry = mounted->mnt.mnt_root;
+		nd->flags |= LOOKUP_JUMPED;
 		nd->seq = read_seqcount_begin(&path->dentry->d_seq);
 		/*
 		 * Update the inode too. We don't need to re-check the
@@ -921,12 +916,12 @@ static bool __follow_mount_rcu(struct nameidata *nd, struct path *path,
 static void follow_mount_rcu(struct nameidata *nd)
 {
 	while (d_mountpoint(nd->path.dentry)) {
-		struct vfsmount *mounted;
+		struct mount *mounted;
 		mounted = __lookup_mnt(nd->path.mnt, nd->path.dentry, 1);
 		if (!mounted)
 			break;
-		nd->path.mnt = mounted;
-		nd->path.dentry = mounted->mnt_root;
+		nd->path.mnt = &mounted->mnt;
+		nd->path.dentry = mounted->mnt.mnt_root;
 		nd->seq = read_seqcount_begin(&nd->path.dentry->d_seq);
 	}
 }
@@ -1220,6 +1215,8 @@ retry:
 		path_put_conditional(path, nd);
 		return err;
 	}
+	if (err)
+		nd->flags |= LOOKUP_JUMPED;
 	*inode = path->dentry->d_inode;
 	return 0;
 }
@@ -1807,11 +1804,11 @@ struct dentry *lookup_one_len(const char *name, struct dentry *base, int len)
 	return __lookup_hash(&this, base, NULL);
 }
 
-int user_path_at(int dfd, const char __user *name, unsigned flags,
-		 struct path *path)
+int user_path_at_empty(int dfd, const char __user *name, unsigned flags,
+		 struct path *path, int *empty)
 {
 	struct nameidata nd;
-	char *tmp = getname_flags(name, flags);
+	char *tmp = getname_flags(name, flags, empty);
 	int err = PTR_ERR(tmp);
 	if (!IS_ERR(tmp)) {
 
@@ -1823,6 +1820,12 @@ int user_path_at(int dfd, const char __user *name, unsigned flags,
 			*path = nd.path;
 	}
 	return err;
+}
+
+int user_path_at(int dfd, const char __user *name, unsigned flags,
+		 struct path *path)
+{
+	return user_path_at_empty(dfd, name, flags, path, 0);
 }
 
 static int user_path_parent(int dfd, const char __user *path,
@@ -1974,7 +1977,7 @@ void unlock_rename(struct dentry *p1, struct dentry *p2)
 	}
 }
 
-int vfs_create(struct inode *dir, struct dentry *dentry, int mode,
+int vfs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 		struct nameidata *nd)
 {
 	int error = may_create(dir, dentry);
@@ -2044,10 +2047,7 @@ static int may_open(struct path *path, int acc_mode, int flag)
 	if (flag & O_NOATIME && !inode_owner_or_capable(inode))
 		return -EPERM;
 
-	/*
-	 * Ensure there are no outstanding leases on the file.
-	 */
-	return break_lease(inode, flag);
+	return 0;
 }
 
 static int handle_truncate(struct file *filp)
@@ -2150,6 +2150,10 @@ static struct file *do_last(struct nameidata *nd, struct path *path,
 	}
 
 	/* create side of things */
+	/*
+	 * This will *only* deal with leaving RCU mode - LOOKUP_JUMPED has been
+	 * cleared when we got to the last component we are about to look up
+	 */
 	error = complete_walk(nd);
 	if (error)
 		return ERR_PTR(error);
@@ -2174,7 +2178,7 @@ static struct file *do_last(struct nameidata *nd, struct path *path,
 
 	/* Negative dentry, just create the file */
 	if (!dentry->d_inode) {
-		int mode = op->mode;
+		umode_t mode = op->mode;
 		if (!IS_POSIXACL(dir->d_inode))
 			mode &= ~current_umask();
 		/*
@@ -2218,6 +2222,9 @@ static struct file *do_last(struct nameidata *nd, struct path *path,
 	if (error < 0)
 		goto exit_dput;
 
+	if (error)
+		nd->flags |= LOOKUP_JUMPED;
+
 	error = -ENOENT;
 	if (!path->dentry->d_inode)
 		goto exit_dput;
@@ -2227,6 +2234,10 @@ static struct file *do_last(struct nameidata *nd, struct path *path,
 
 	path_to_nameidata(path, nd);
 	nd->inode = path->dentry->d_inode;
+	/* Why this, you ask?  _Now_ we might have grown LOOKUP_JUMPED... */
+	error = complete_walk(nd);
+	if (error)
+		goto exit;
 	error = -EISDIR;
 	if (S_ISDIR(nd->inode->i_mode))
 		goto exit;
@@ -2434,7 +2445,7 @@ struct dentry *user_path_create(int dfd, const char __user *pathname, struct pat
 }
 EXPORT_SYMBOL(user_path_create);
 
-int vfs_mknod(struct inode *dir, struct dentry *dentry, int mode, dev_t dev)
+int vfs_mknod(struct inode *dir, struct dentry *dentry, umode_t mode, dev_t dev)
 {
 	int error = may_create(dir, dentry);
 
@@ -2462,7 +2473,7 @@ int vfs_mknod(struct inode *dir, struct dentry *dentry, int mode, dev_t dev)
 	return error;
 }
 
-static int may_mknod(mode_t mode)
+static int may_mknod(umode_t mode)
 {
 	switch (mode & S_IFMT) {
 	case S_IFREG:
@@ -2479,7 +2490,7 @@ static int may_mknod(mode_t mode)
 	}
 }
 
-SYSCALL_DEFINE4(mknodat, int, dfd, const char __user *, filename, int, mode,
+SYSCALL_DEFINE4(mknodat, int, dfd, const char __user *, filename, umode_t, mode,
 		unsigned, dev)
 {
 	struct dentry *dentry;
@@ -2526,12 +2537,12 @@ out_dput:
 	return error;
 }
 
-SYSCALL_DEFINE3(mknod, const char __user *, filename, int, mode, unsigned, dev)
+SYSCALL_DEFINE3(mknod, const char __user *, filename, umode_t, mode, unsigned, dev)
 {
 	return sys_mknodat(AT_FDCWD, filename, mode, dev);
 }
 
-int vfs_mkdir(struct inode *dir, struct dentry *dentry, int mode)
+int vfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 {
 	int error = may_create(dir, dentry);
 
@@ -2552,7 +2563,7 @@ int vfs_mkdir(struct inode *dir, struct dentry *dentry, int mode)
 	return error;
 }
 
-SYSCALL_DEFINE3(mkdirat, int, dfd, const char __user *, pathname, int, mode)
+SYSCALL_DEFINE3(mkdirat, int, dfd, const char __user *, pathname, umode_t, mode)
 {
 	struct dentry *dentry;
 	struct path path;
@@ -2580,7 +2591,7 @@ out_dput:
 	return error;
 }
 
-SYSCALL_DEFINE2(mkdir, const char __user *, pathname, int, mode)
+SYSCALL_DEFINE2(mkdir, const char __user *, pathname, umode_t, mode)
 {
 	return sys_mkdirat(AT_FDCWD, pathname, mode);
 }
@@ -2619,6 +2630,7 @@ int vfs_rmdir(struct inode *dir, struct dentry *dentry)
 	if (!dir->i_op->rmdir)
 		return -EPERM;
 
+	dget(dentry);
 	mutex_lock(&dentry->d_inode->i_mutex);
 
 	error = -EBUSY;
@@ -2639,6 +2651,7 @@ int vfs_rmdir(struct inode *dir, struct dentry *dentry)
 
 out:
 	mutex_unlock(&dentry->d_inode->i_mutex);
+	dput(dentry);
 	if (!error)
 		d_delete(dentry);
 	return error;
@@ -3028,6 +3041,7 @@ static int vfs_rename_dir(struct inode *old_dir, struct dentry *old_dentry,
 	if (error)
 		return error;
 
+	dget(new_dentry);
 	if (target)
 		mutex_lock(&target->i_mutex);
 
@@ -3048,6 +3062,7 @@ static int vfs_rename_dir(struct inode *old_dir, struct dentry *old_dentry,
 out:
 	if (target)
 		mutex_unlock(&target->i_mutex);
+	dput(new_dentry);
 	if (!error)
 		if (!(old_dir->i_sb->s_type->fs_flags & FS_RENAME_DOES_D_MOVE))
 			d_move(old_dentry,new_dentry);

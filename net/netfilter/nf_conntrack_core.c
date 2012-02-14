@@ -67,6 +67,7 @@ DEFINE_PER_CPU(struct nf_conn, nf_conntrack_untracked);
 EXPORT_PER_CPU_SYMBOL(nf_conntrack_untracked);
 
 unsigned int nf_conntrack_hash_rnd __read_mostly;
+EXPORT_SYMBOL_GPL(nf_conntrack_hash_rnd);
 
 static u32 hash_conntrack_raw(const struct nf_conntrack_tuple *tuple, u16 zone)
 {
@@ -661,7 +662,6 @@ __nf_conntrack_alloc(struct net *net, u16 zone,
 	 */
 	ct = kmem_cache_alloc(net->ct.nf_conntrack_cachep, gfp);
 	if (ct == NULL) {
-		pr_debug("nf_conntrack_alloc: Can't alloc conntrack.\n");
 		atomic_dec(&net->ct.count);
 		return ERR_PTR(-ENOMEM);
 	}
@@ -749,10 +749,8 @@ init_conntrack(struct net *net, struct nf_conn *tmpl,
 
 	ct = __nf_conntrack_alloc(net, zone, tuple, &repl_tuple, GFP_ATOMIC,
 				  hash);
-	if (IS_ERR(ct)) {
-		pr_debug("Can't allocate conntrack.\n");
+	if (IS_ERR(ct))
 		return (struct nf_conntrack_tuple_hash *)ct;
-	}
 
 	if (!l4proto->new(ct, skb, dataoff)) {
 		nf_conntrack_free(ct);
@@ -1047,10 +1045,8 @@ acct:
 
 		acct = nf_conn_acct_find(ct);
 		if (acct) {
-			spin_lock_bh(&ct->lock);
-			acct[CTINFO2DIR(ctinfo)].packets++;
-			acct[CTINFO2DIR(ctinfo)].bytes += skb->len;
-			spin_unlock_bh(&ct->lock);
+			atomic64_inc(&acct[CTINFO2DIR(ctinfo)].packets);
+			atomic64_add(skb->len, &acct[CTINFO2DIR(ctinfo)].bytes);
 		}
 	}
 }
@@ -1066,11 +1062,9 @@ bool __nf_ct_kill_acct(struct nf_conn *ct,
 
 		acct = nf_conn_acct_find(ct);
 		if (acct) {
-			spin_lock_bh(&ct->lock);
-			acct[CTINFO2DIR(ctinfo)].packets++;
-			acct[CTINFO2DIR(ctinfo)].bytes +=
-				skb->len - skb_network_offset(skb);
-			spin_unlock_bh(&ct->lock);
+			atomic64_inc(&acct[CTINFO2DIR(ctinfo)].packets);
+			atomic64_add(skb->len - skb_network_offset(skb),
+				     &acct[CTINFO2DIR(ctinfo)].bytes);
 		}
 	}
 
@@ -1090,7 +1084,7 @@ static struct nf_ct_ext_type nf_ct_zone_extend __read_mostly = {
 };
 #endif
 
-#if defined(CONFIG_NF_CT_NETLINK) || defined(CONFIG_NF_CT_NETLINK_MODULE)
+#if IS_ENABLED(CONFIG_NF_CT_NETLINK)
 
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_conntrack.h>
@@ -1317,7 +1311,7 @@ static void nf_conntrack_cleanup_net(struct net *net)
 void nf_conntrack_cleanup(struct net *net)
 {
 	if (net_eq(net, &init_net))
-		rcu_assign_pointer(ip_ct_attach, NULL);
+		RCU_INIT_POINTER(ip_ct_attach, NULL);
 
 	/* This makes sure all current packets have passed through
 	   netfilter framework.  Roll on, two-stage module
@@ -1327,7 +1321,7 @@ void nf_conntrack_cleanup(struct net *net)
 	nf_conntrack_cleanup_net(net);
 
 	if (net_eq(net, &init_net)) {
-		rcu_assign_pointer(nf_ct_destroy, NULL);
+		RCU_INIT_POINTER(nf_ct_destroy, NULL);
 		nf_conntrack_cleanup_init_net();
 	}
 }
@@ -1345,8 +1339,7 @@ void *nf_ct_alloc_hashtable(unsigned int *sizep, int nulls)
 					get_order(sz));
 	if (!hash) {
 		printk(KERN_WARNING "nf_conntrack: falling back to vmalloc.\n");
-		hash = __vmalloc(sz, GFP_KERNEL | __GFP_HIGHMEM | __GFP_ZERO,
-				 PAGE_KERNEL);
+		hash = vzalloc(sz);
 	}
 
 	if (hash && nulls)
@@ -1576,11 +1569,11 @@ int nf_conntrack_init(struct net *net)
 
 	if (net_eq(net, &init_net)) {
 		/* For use by REJECT target */
-		rcu_assign_pointer(ip_ct_attach, nf_conntrack_attach);
-		rcu_assign_pointer(nf_ct_destroy, destroy_conntrack);
+		RCU_INIT_POINTER(ip_ct_attach, nf_conntrack_attach);
+		RCU_INIT_POINTER(nf_ct_destroy, destroy_conntrack);
 
 		/* Howto get NAT offsets */
-		rcu_assign_pointer(nf_ct_nat_offset, NULL);
+		RCU_INIT_POINTER(nf_ct_nat_offset, NULL);
 	}
 	return 0;
 

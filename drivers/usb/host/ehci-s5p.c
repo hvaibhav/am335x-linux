@@ -14,8 +14,6 @@
 
 #include <linux/clk.h>
 #include <linux/platform_device.h>
-#include <mach/regs-pmu.h>
-#include <plat/cpu.h>
 #include <plat/ehci.h>
 #include <plat/usb-phy.h>
 
@@ -86,6 +84,7 @@ static int __devinit s5p_ehci_probe(struct platform_device *pdev)
 		goto fail_hcd;
 	}
 
+	s5p_ehci->hcd = hcd;
 	s5p_ehci->clk = clk_get(&pdev->dev, "usbhost");
 
 	if (IS_ERR(s5p_ehci->clk)) {
@@ -135,7 +134,9 @@ static int __devinit s5p_ehci_probe(struct platform_device *pdev)
 	/* cache this readonly data; minimize chip reads */
 	ehci->hcs_params = readl(&ehci->caps->hcs_params);
 
-	err = usb_add_hcd(hcd, irq, IRQF_DISABLED | IRQF_SHARED);
+	ehci_reset(ehci);
+
+	err = usb_add_hcd(hcd, irq, IRQF_SHARED);
 	if (err) {
 		dev_err(&pdev->dev, "Failed to add USB HCD\n");
 		goto fail;
@@ -269,7 +270,7 @@ static int s5p_ehci_resume(struct device *dev)
 	/* here we "know" root ports should always stay powered */
 	ehci_port_power(ehci, 1);
 
-	hcd->state = HC_STATE_SUSPENDED;
+	ehci->rh_state = EHCI_RH_SUSPENDED;
 
 	return 0;
 }

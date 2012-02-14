@@ -17,6 +17,7 @@
  * published by the Free Software Foundation.
  */
 
+#include <linux/module.h>
 #include <linux/interrupt.h>
 #include <linux/clk.h>
 #include <linux/io.h>
@@ -25,7 +26,7 @@
 #include <linux/slab.h>
 #include <linux/pm_runtime.h>
 
-#include <plat/common.h>
+#include "common.h"
 
 #include "pm.h"
 #include "smartreflex.h"
@@ -62,6 +63,7 @@ static LIST_HEAD(sr_list);
 
 static struct omap_sr_class_data *sr_class;
 static struct omap_sr_pmic_data *sr_pmic_data;
+static struct dentry		*sr_dbg_dir;
 
 static inline void sr_write_reg(struct omap_sr *sr, unsigned offset, u32 value)
 {
@@ -137,7 +139,7 @@ static irqreturn_t sr_interrupt(int irq, void *data)
 		sr_write_reg(sr_info, ERRCONFIG_V1, status);
 	} else if (sr_info->ip_type == SR_TYPE_V2) {
 		/* Read the status bits */
-		sr_read_reg(sr_info, IRQSTATUS);
+		status = sr_read_reg(sr_info, IRQSTATUS);
 
 		/* Clear them by writing back */
 		sr_write_reg(sr_info, IRQSTATUS, status);
@@ -247,7 +249,7 @@ static void sr_stop_vddautocomp(struct omap_sr *sr)
  * driver register and sr device intializtion API's. Only one call
  * will ultimately succeed.
  *
- * Currently this function registers interrrupt handler for a particular SR
+ * Currently this function registers interrupt handler for a particular SR
  * if smartreflex class driver is already registered and has
  * requested for interrupts and the SR interrupt line in present.
  */
@@ -621,7 +623,7 @@ void sr_disable(struct voltagedomain *voltdm)
 			sr_v2_disable(sr);
 	}
 
-	pm_runtime_put_sync(&sr->pdev->dev);
+	pm_runtime_put_sync_suspend(&sr->pdev->dev);
 }
 
 /**
@@ -826,9 +828,10 @@ static int __init omap_sr_probe(struct platform_device *pdev)
 	struct omap_sr *sr_info = kzalloc(sizeof(struct omap_sr), GFP_KERNEL);
 	struct omap_sr_data *pdata = pdev->dev.platform_data;
 	struct resource *mem, *irq;
-	struct dentry *vdd_dbg_dir, *nvalue_dir;
+	struct dentry *nvalue_dir;
 	struct omap_volt_data *volt_data;
 	int i, ret = 0;
+	char *name;
 
 	if (!sr_info) {
 		dev_err(&pdev->dev, "%s: unable to allocate sr_info\n",
@@ -860,6 +863,7 @@ static int __init omap_sr_probe(struct platform_device *pdev)
 	irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
 
 	pm_runtime_enable(&pdev->dev);
+	pm_runtime_irq_safe(&pdev->dev);
 
 	sr_info->pdev = pdev;
 	sr_info->srid = pdev->id;
@@ -893,23 +897,30 @@ static int __init omap_sr_probe(struct platform_device *pdev)
 		ret = sr_late_init(sr_info);
 		if (ret) {
 			pr_warning("%s: Error in SR late init\n", __func__);
-			return ret;
+			goto err_iounmap;
 		}
 	}
 
 	dev_info(&pdev->dev, "%s: SmartReflex driver initialized\n", __func__);
-
-	/*
-	 * If the voltage domain debugfs directory is not created, do
-	 * not try to create rest of the debugfs entries.
-	 */
-	vdd_dbg_dir = omap_voltage_get_dbgdir(sr_info->voltdm);
-	if (!vdd_dbg_dir) {
-		ret = -EINVAL;
-		goto err_iounmap;
+	if (!sr_dbg_dir) {
+		sr_dbg_dir = debugfs_create_dir("smartreflex", NULL);
+		if (!sr_dbg_dir) {
+			ret = PTR_ERR(sr_dbg_dir);
+			pr_err("%s:sr debugfs dir creation failed(%d)\n",
+				__func__, ret);
+			goto err_iounmap;
+		}
 	}
 
-	sr_info->dbg_dir = debugfs_create_dir("smartreflex", vdd_dbg_dir);
+	name = kasprintf(GFP_KERNEL, "sr_%s", sr_info->voltdm->name);
+	if (!name) {
+		dev_err(&pdev->dev, "%s: Unable to alloc debugfs name\n",
+			__func__);
+		ret = -ENOMEM;
+		goto err_iounmap;
+	}
+	sr_info->dbg_dir = debugfs_create_dir(name, sr_dbg_dir);
+	kfree(name);
 	if (IS_ERR(sr_info->dbg_dir)) {
 		dev_err(&pdev->dev, "%s: Unable to create debugfs directory\n",
 			__func__);

@@ -16,6 +16,7 @@
  */
 
 #include <linux/err.h>
+#include <linux/io.h>
 #include <linux/irq.h>
 #include <linux/interrupt.h>
 #include <linux/kernel.h>
@@ -180,7 +181,7 @@ static struct resource jz4740_battery_resources[] = {
 	},
 };
 
-const struct mfd_cell jz4740_adc_cells[] = {
+static struct mfd_cell jz4740_adc_cells[] = {
 	{
 		.id = 0,
 		.name = "jz4740-hwmon",
@@ -273,7 +274,7 @@ static int __devinit jz4740_adc_probe(struct platform_device *pdev)
 	ct->regs.ack = JZ_REG_ADC_STATUS;
 	ct->chip.irq_mask = irq_gc_mask_set_bit;
 	ct->chip.irq_unmask = irq_gc_mask_clr_bit;
-	ct->chip.irq_ack = irq_gc_ack;
+	ct->chip.irq_ack = irq_gc_ack_set_bit;
 
 	irq_setup_generic_chip(gc, IRQ_MSK(5), 0, 0, IRQ_NOPROBE | IRQ_LEVEL);
 
@@ -328,7 +329,7 @@ static int __devexit jz4740_adc_remove(struct platform_device *pdev)
 	return 0;
 }
 
-struct platform_driver jz4740_adc_driver = {
+static struct platform_driver jz4740_adc_driver = {
 	.probe	= jz4740_adc_probe,
 	.remove = __devexit_p(jz4740_adc_remove),
 	.driver = {
@@ -337,17 +338,7 @@ struct platform_driver jz4740_adc_driver = {
 	},
 };
 
-static int __init jz4740_adc_init(void)
-{
-	return platform_driver_register(&jz4740_adc_driver);
-}
-module_init(jz4740_adc_init);
-
-static void __exit jz4740_adc_exit(void)
-{
-	platform_driver_unregister(&jz4740_adc_driver);
-}
-module_exit(jz4740_adc_exit);
+module_platform_driver(jz4740_adc_driver);
 
 MODULE_DESCRIPTION("JZ4740 SoC ADC driver");
 MODULE_AUTHOR("Lars-Peter Clausen <lars@metafoo.de>");

@@ -54,35 +54,46 @@ static struct usbhs_pkt_handle usbhsf_null_handler = {
 };
 
 void usbhs_pkt_push(struct usbhs_pipe *pipe, struct usbhs_pkt *pkt,
-		    struct usbhs_pkt_handle *handler,
-		    void *buf, int len, int zero)
+		    void (*done)(struct usbhs_priv *priv,
+				 struct usbhs_pkt *pkt),
+		    void *buf, int len, int zero, int sequence)
 {
 	struct usbhs_priv *priv = usbhs_pipe_to_priv(pipe);
 	struct device *dev = usbhs_priv_to_dev(priv);
 	unsigned long flags;
 
+	if (!done) {
+		dev_err(dev, "no done function\n");
+		return;
+	}
+
 	/********************  spin lock ********************/
 	usbhs_lock(priv, flags);
 
-	if (!handler) {
+	if (!pipe->handler) {
 		dev_err(dev, "no handler function\n");
-		handler = &usbhsf_null_handler;
+		pipe->handler = &usbhsf_null_handler;
 	}
 
 	list_del_init(&pkt->node);
 	list_add_tail(&pkt->node, &pipe->list);
 
+	/*
+	 * each pkt must hold own handler.
+	 * because handler might be changed by its situation.
+	 * dma handler -> pio handler.
+	 */
 	pkt->pipe	= pipe;
 	pkt->buf	= buf;
-	pkt->handler	= handler;
+	pkt->handler	= pipe->handler;
 	pkt->length	= len;
 	pkt->zero	= zero;
 	pkt->actual	= 0;
+	pkt->done	= done;
+	pkt->sequence	= sequence;
 
 	usbhs_unlock(priv, flags);
 	/********************  spin unlock ******************/
-
-	usbhs_pkt_start(pipe);
 }
 
 static void __usbhsf_pkt_del(struct usbhs_pkt *pkt)
@@ -118,10 +129,15 @@ struct usbhs_pkt *usbhs_pkt_pop(struct usbhs_pipe *pipe, struct usbhs_pkt *pkt)
 	return pkt;
 }
 
-int __usbhs_pkt_handler(struct usbhs_pipe *pipe, int type)
+enum {
+	USBHSF_PKT_PREPARE,
+	USBHSF_PKT_TRY_RUN,
+	USBHSF_PKT_DMA_DONE,
+};
+
+static int usbhsf_pkt_handler(struct usbhs_pipe *pipe, int type)
 {
 	struct usbhs_priv *priv = usbhs_pipe_to_priv(pipe);
-	struct usbhs_pipe_info *info = usbhs_priv_to_pipeinfo(priv);
 	struct usbhs_pkt *pkt;
 	struct device *dev = usbhs_priv_to_dev(priv);
 	int (*func)(struct usbhs_pkt *pkt, int *is_done);
@@ -161,11 +177,16 @@ __usbhs_pkt_handler_end:
 	/********************  spin unlock ******************/
 
 	if (is_done) {
-		info->done(pkt);
+		pkt->done(priv, pkt);
 		usbhs_pkt_start(pipe);
 	}
 
 	return ret;
+}
+
+void usbhs_pkt_start(struct usbhs_pipe *pipe)
+{
+	usbhsf_pkt_handler(pipe, USBHSF_PKT_PREPARE);
 }
 
 /*
@@ -276,8 +297,12 @@ static int usbhsf_fifo_select(struct usbhs_pipe *pipe,
 	    usbhsf_fifo_is_busy(fifo))
 		return -EBUSY;
 
-	if (usbhs_pipe_is_dcp(pipe))
+	if (usbhs_pipe_is_dcp(pipe)) {
 		base |= (1 == write) << 5;	/* ISEL */
+
+		if (usbhs_mod_is_host(priv))
+			usbhs_dcp_dir_for_host(pipe, write);
+	}
 
 	/* "base" will be used below  */
 	usbhs_write(priv, fifo->sel, base | MBW_32);
@@ -297,6 +322,151 @@ static int usbhsf_fifo_select(struct usbhs_pipe *pipe,
 }
 
 /*
+ *		DCP status stage
+ */
+static int usbhs_dcp_dir_switch_to_write(struct usbhs_pkt *pkt, int *is_done)
+{
+	struct usbhs_pipe *pipe = pkt->pipe;
+	struct usbhs_priv *priv = usbhs_pipe_to_priv(pipe);
+	struct usbhs_fifo *fifo = usbhsf_get_cfifo(priv); /* CFIFO */
+	struct device *dev = usbhs_priv_to_dev(priv);
+	int ret;
+
+	usbhs_pipe_disable(pipe);
+
+	ret = usbhsf_fifo_select(pipe, fifo, 1);
+	if (ret < 0) {
+		dev_err(dev, "%s() faile\n", __func__);
+		return ret;
+	}
+
+	usbhs_pipe_sequence_data1(pipe); /* DATA1 */
+
+	usbhsf_fifo_clear(pipe, fifo);
+	usbhsf_send_terminator(pipe, fifo);
+
+	usbhsf_fifo_unselect(pipe, fifo);
+
+	usbhsf_tx_irq_ctrl(pipe, 1);
+	usbhs_pipe_enable(pipe);
+
+	return ret;
+}
+
+static int usbhs_dcp_dir_switch_to_read(struct usbhs_pkt *pkt, int *is_done)
+{
+	struct usbhs_pipe *pipe = pkt->pipe;
+	struct usbhs_priv *priv = usbhs_pipe_to_priv(pipe);
+	struct usbhs_fifo *fifo = usbhsf_get_cfifo(priv); /* CFIFO */
+	struct device *dev = usbhs_priv_to_dev(priv);
+	int ret;
+
+	usbhs_pipe_disable(pipe);
+
+	ret = usbhsf_fifo_select(pipe, fifo, 0);
+	if (ret < 0) {
+		dev_err(dev, "%s() fail\n", __func__);
+		return ret;
+	}
+
+	usbhs_pipe_sequence_data1(pipe); /* DATA1 */
+	usbhsf_fifo_clear(pipe, fifo);
+
+	usbhsf_fifo_unselect(pipe, fifo);
+
+	usbhsf_rx_irq_ctrl(pipe, 1);
+	usbhs_pipe_enable(pipe);
+
+	return ret;
+
+}
+
+static int usbhs_dcp_dir_switch_done(struct usbhs_pkt *pkt, int *is_done)
+{
+	struct usbhs_pipe *pipe = pkt->pipe;
+
+	if (pkt->handler == &usbhs_dcp_status_stage_in_handler)
+		usbhsf_tx_irq_ctrl(pipe, 0);
+	else
+		usbhsf_rx_irq_ctrl(pipe, 0);
+
+	pkt->actual = pkt->length;
+	*is_done = 1;
+
+	return 0;
+}
+
+struct usbhs_pkt_handle usbhs_dcp_status_stage_in_handler = {
+	.prepare = usbhs_dcp_dir_switch_to_write,
+	.try_run = usbhs_dcp_dir_switch_done,
+};
+
+struct usbhs_pkt_handle usbhs_dcp_status_stage_out_handler = {
+	.prepare = usbhs_dcp_dir_switch_to_read,
+	.try_run = usbhs_dcp_dir_switch_done,
+};
+
+/*
+ *		DCP data stage (push)
+ */
+static int usbhsf_dcp_data_stage_try_push(struct usbhs_pkt *pkt, int *is_done)
+{
+	struct usbhs_pipe *pipe = pkt->pipe;
+
+	usbhs_pipe_sequence_data1(pipe); /* DATA1 */
+
+	/*
+	 * change handler to PIO push
+	 */
+	pkt->handler = &usbhs_fifo_pio_push_handler;
+
+	return pkt->handler->prepare(pkt, is_done);
+}
+
+struct usbhs_pkt_handle usbhs_dcp_data_stage_out_handler = {
+	.prepare = usbhsf_dcp_data_stage_try_push,
+};
+
+/*
+ *		DCP data stage (pop)
+ */
+static int usbhsf_dcp_data_stage_prepare_pop(struct usbhs_pkt *pkt,
+					     int *is_done)
+{
+	struct usbhs_pipe *pipe = pkt->pipe;
+	struct usbhs_priv *priv = usbhs_pipe_to_priv(pipe);
+	struct usbhs_fifo *fifo = usbhsf_get_cfifo(priv);
+
+	if (usbhs_pipe_is_busy(pipe))
+		return 0;
+
+	/*
+	 * prepare pop for DCP should
+	 *  - change DCP direction,
+	 *  - clear fifo
+	 *  - DATA1
+	 */
+	usbhs_pipe_disable(pipe);
+
+	usbhs_pipe_sequence_data1(pipe); /* DATA1 */
+
+	usbhsf_fifo_select(pipe, fifo, 0);
+	usbhsf_fifo_clear(pipe, fifo);
+	usbhsf_fifo_unselect(pipe, fifo);
+
+	/*
+	 * change handler to PIO pop
+	 */
+	pkt->handler = &usbhs_fifo_pio_pop_handler;
+
+	return pkt->handler->prepare(pkt, is_done);
+}
+
+struct usbhs_pkt_handle usbhs_dcp_data_stage_in_handler = {
+	.prepare = usbhsf_dcp_data_stage_prepare_pop,
+};
+
+/*
  *		PIO push handler
  */
 static int usbhsf_pio_try_push(struct usbhs_pkt *pkt, int *is_done)
@@ -311,6 +481,9 @@ static int usbhsf_pio_try_push(struct usbhs_pkt *pkt, int *is_done)
 	int total_len;
 	int i, ret, len;
 	int is_short;
+
+	usbhs_pipe_data_sequence(pipe, pkt->sequence);
+	pkt->sequence = -1; /* -1 sequence will be ignored */
 
 	ret = usbhsf_fifo_select(pipe, fifo, 1);
 	if (ret < 0)
@@ -415,6 +588,8 @@ static int usbhsf_prepare_pop(struct usbhs_pkt *pkt, int *is_done)
 	/*
 	 * pipe enable to prepare packet receive
 	 */
+	usbhs_pipe_data_sequence(pipe, pkt->sequence);
+	pkt->sequence = -1; /* -1 sequence will be ignored */
 
 	usbhs_pipe_enable(pipe);
 	usbhsf_rx_irq_ctrl(pipe, 1);
@@ -452,12 +627,27 @@ static int usbhsf_pio_try_pop(struct usbhs_pkt *pkt, int *is_done)
 	total_len	= len;
 
 	/*
+	 * update actual length first here to decide disable pipe.
+	 * if this pipe keeps BUF status and all data were popped,
+	 * then, next interrupt/token will be issued again
+	 */
+	pkt->actual += total_len;
+
+	if ((pkt->actual == pkt->length) ||	/* receive all data */
+	    (total_len < maxp)) {		/* short packet */
+		*is_done = 1;
+		usbhsf_rx_irq_ctrl(pipe, 0);
+		usbhs_pipe_disable(pipe);	/* disable pipe first */
+	}
+
+	/*
 	 * Buffer clear if Zero-Length packet
 	 *
 	 * see
 	 * "Operation" - "FIFO Buffer Memory" - "FIFO Port Function"
 	 */
 	if (0 == rcv_len) {
+		pkt->zero = 1;
 		usbhsf_fifo_clear(pipe, fifo);
 		goto usbhs_fifo_read_end;
 	}
@@ -481,16 +671,7 @@ static int usbhsf_pio_try_pop(struct usbhs_pkt *pkt, int *is_done)
 		buf[i] = (data >> ((i & 0x03) * 8)) & 0xff;
 	}
 
-	pkt->actual += total_len;
-
 usbhs_fifo_read_end:
-	if ((pkt->actual == pkt->length) ||	/* receive all data */
-	    (total_len < maxp)) {		/* short packet */
-		*is_done = 1;
-		usbhsf_rx_irq_ctrl(pipe, 0);
-		usbhs_pipe_disable(pipe);
-	}
-
 	dev_dbg(dev, "  recv %d (%d/ %d/ %d/ %d)\n",
 		usbhs_pipe_number(pipe),
 		pkt->length, pkt->actual, *is_done, pkt->zero);
@@ -591,10 +772,10 @@ static void usbhsf_dma_prepare_tasklet(unsigned long data)
 	struct dma_async_tx_descriptor *desc;
 	struct dma_chan *chan = usbhsf_dma_chan_get(fifo, pkt);
 	struct device *dev = usbhs_priv_to_dev(priv);
-	enum dma_data_direction dir;
+	enum dma_transfer_direction dir;
 	dma_cookie_t cookie;
 
-	dir = usbhs_pipe_is_dir_in(pipe) ? DMA_FROM_DEVICE : DMA_TO_DEVICE;
+	dir = usbhs_pipe_is_dir_in(pipe) ? DMA_DEV_TO_MEM : DMA_MEM_TO_DEV;
 
 	sg_init_table(&sg, 1);
 	sg_set_page(&sg, virt_to_page(pkt->dma),
@@ -646,7 +827,7 @@ static int usbhsf_dma_prepare_push(struct usbhs_pkt *pkt, int *is_done)
 	if (len % 4) /* 32bit alignment */
 		goto usbhsf_pio_prepare_push;
 
-	if (((u32)pkt->buf + pkt->actual) & 0x7) /* 8byte alignment */
+	if ((uintptr_t)(pkt->buf + pkt->actual) & 0x7) /* 8byte alignment */
 		goto usbhsf_pio_prepare_push;
 
 	/* get enable DMA fifo */
@@ -723,7 +904,7 @@ static int usbhsf_dma_try_pop(struct usbhs_pkt *pkt, int *is_done)
 	if (!fifo)
 		goto usbhsf_pio_prepare_pop;
 
-	if (((u32)pkt->buf + pkt->actual) & 0x7) /* 8byte alignment */
+	if ((uintptr_t)(pkt->buf + pkt->actual) & 0x7) /* 8byte alignment */
 		goto usbhsf_pio_prepare_pop;
 
 	ret = usbhsf_fifo_select(pipe, fifo, 0);
@@ -884,7 +1065,7 @@ static int usbhsf_irq_empty(struct usbhs_priv *priv,
 		if (!(irq_state->bempsts & (1 << i)))
 			continue;
 
-		ret = usbhs_pkt_run(pipe);
+		ret = usbhsf_pkt_handler(pipe, USBHSF_PKT_TRY_RUN);
 		if (ret < 0)
 			dev_err(dev, "irq_empty run_error %d : %d\n", i, ret);
 	}
@@ -914,7 +1095,7 @@ static int usbhsf_irq_ready(struct usbhs_priv *priv,
 		if (!(irq_state->brdysts & (1 << i)))
 			continue;
 
-		ret = usbhs_pkt_run(pipe);
+		ret = usbhsf_pkt_handler(pipe, USBHSF_PKT_TRY_RUN);
 		if (ret < 0)
 			dev_err(dev, "irq_ready run_error %d : %d\n", i, ret);
 	}
@@ -929,7 +1110,7 @@ static void usbhsf_dma_complete(void *arg)
 	struct device *dev = usbhs_priv_to_dev(priv);
 	int ret;
 
-	ret = usbhs_pkt_dmadone(pipe);
+	ret = usbhsf_pkt_handler(pipe, USBHSF_PKT_DMA_DONE);
 	if (ret < 0)
 		dev_err(dev, "dma_complete run_error %d : %d\n",
 			usbhs_pipe_number(pipe), ret);

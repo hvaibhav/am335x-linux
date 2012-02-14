@@ -342,7 +342,7 @@ static int imx_ssi_trigger(struct snd_pcm_substream *substream, int cmd,
 	return 0;
 }
 
-static struct snd_soc_dai_ops imx_ssi_pcm_dai_ops = {
+static const struct snd_soc_dai_ops imx_ssi_pcm_dai_ops = {
 	.hw_params	= imx_ssi_hw_params,
 	.set_fmt	= imx_ssi_set_dai_fmt,
 	.set_clkdiv	= imx_ssi_set_dai_clkdiv,
@@ -357,8 +357,8 @@ int snd_imx_pcm_mmap(struct snd_pcm_substream *substream,
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	int ret;
 
-	ret = dma_mmap_coherent(NULL, vma, runtime->dma_area,
-			runtime->dma_addr, runtime->dma_bytes);
+	ret = dma_mmap_writecombine(substream->pcm->card->dev, vma,
+		runtime->dma_area, runtime->dma_addr, runtime->dma_bytes);
 
 	pr_debug("%s: ret: %d %p 0x%08x 0x%08x\n", __func__, ret,
 			runtime->dma_area,
@@ -391,7 +391,6 @@ static u64 imx_pcm_dmamask = DMA_BIT_MASK(32);
 int imx_pcm_new(struct snd_soc_pcm_runtime *rtd)
 {
 	struct snd_card *card = rtd->card->snd_card;
-	struct snd_soc_dai *dai = rtd->cpu_dai;
 	struct snd_pcm *pcm = rtd->pcm;
 	int ret = 0;
 
@@ -399,14 +398,14 @@ int imx_pcm_new(struct snd_soc_pcm_runtime *rtd)
 		card->dev->dma_mask = &imx_pcm_dmamask;
 	if (!card->dev->coherent_dma_mask)
 		card->dev->coherent_dma_mask = DMA_BIT_MASK(32);
-	if (dai->driver->playback.channels_min) {
+	if (pcm->streams[SNDRV_PCM_STREAM_PLAYBACK].substream) {
 		ret = imx_pcm_preallocate_dma_buffer(pcm,
 			SNDRV_PCM_STREAM_PLAYBACK);
 		if (ret)
 			goto out;
 	}
 
-	if (dai->driver->capture.channels_min) {
+	if (pcm->streams[SNDRV_PCM_STREAM_CAPTURE].substream) {
 		ret = imx_pcm_preallocate_dma_buffer(pcm,
 			SNDRV_PCM_STREAM_CAPTURE);
 		if (ret)
@@ -758,18 +757,7 @@ static struct platform_driver imx_ssi_driver = {
 	},
 };
 
-static int __init imx_ssi_init(void)
-{
-	return platform_driver_register(&imx_ssi_driver);
-}
-
-static void __exit imx_ssi_exit(void)
-{
-	platform_driver_unregister(&imx_ssi_driver);
-}
-
-module_init(imx_ssi_init);
-module_exit(imx_ssi_exit);
+module_platform_driver(imx_ssi_driver);
 
 /* Module information */
 MODULE_AUTHOR("Sascha Hauer, <s.hauer@pengutronix.de>");

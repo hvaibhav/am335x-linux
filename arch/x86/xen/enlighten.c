@@ -77,8 +77,8 @@ EXPORT_SYMBOL_GPL(xen_domain_type);
 
 unsigned long *machine_to_phys_mapping = (void *)MACH2PHYS_VIRT_START;
 EXPORT_SYMBOL(machine_to_phys_mapping);
-unsigned int   machine_to_phys_order;
-EXPORT_SYMBOL(machine_to_phys_order);
+unsigned long  machine_to_phys_nr;
+EXPORT_SYMBOL(machine_to_phys_nr);
 
 struct start_info *xen_start_info;
 EXPORT_SYMBOL_GPL(xen_start_info);
@@ -251,6 +251,7 @@ static void __init xen_init_cpuid_mask(void)
 			~((1 << X86_FEATURE_APIC) |  /* disable local APIC */
 			  (1 << X86_FEATURE_ACPI));  /* disable ACPI */
 	ax = 1;
+	cx = 0;
 	xen_cpuid(&ax, &bx, &cx, &dx);
 
 	xsave_mask =
@@ -951,6 +952,10 @@ static const struct pv_info xen_info __initconst = {
 	.paravirt_enabled = 1,
 	.shared_kernel_pmd = 0,
 
+#ifdef CONFIG_X86_64
+	.extra_user_64bit_cs = FLAT_USER_CS64,
+#endif
+
 	.name = "Xen",
 };
 
@@ -1210,8 +1215,6 @@ asmlinkage void __init xen_start_kernel(void)
 	local_irq_disable();
 	early_boot_irqs_disabled = true;
 
-	memblock_init();
-
 	xen_raw_console_write("mapping kernel into physical memory\n");
 	pgd = xen_setup_kernel_pagetable(pgd, xen_start_info->nr_pages);
 	xen_ident_map_ISA();
@@ -1351,7 +1354,7 @@ static int __cpuinit xen_hvm_cpu_notify(struct notifier_block *self,
 	int cpu = (long)hcpu;
 	switch (action) {
 	case CPU_UP_PREPARE:
-		per_cpu(xen_vcpu, cpu) = &HYPERVISOR_shared_info->vcpu_info[cpu];
+		xen_vcpu_setup(cpu);
 		if (xen_have_vector_callback)
 			xen_init_lock_cpu(cpu);
 		break;
@@ -1381,7 +1384,6 @@ static void __init xen_hvm_guest_init(void)
 	xen_hvm_smp_init();
 	register_cpu_notifier(&xen_hvm_cpu_notifier);
 	xen_unplug_emulated_devices();
-	have_vcpu_info_placement = 0;
 	x86_init.irqs.intr_init = xen_init_IRQ;
 	xen_hvm_init_time_ops();
 	xen_hvm_init_mmu_ops();

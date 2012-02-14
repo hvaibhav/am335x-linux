@@ -91,9 +91,10 @@ static struct sys_timer iq81340mc_timer = {
 
 MACHINE_START(IQ81340MC, "Intel IQ81340MC")
 	/* Maintainer: Dan Williams <dan.j.williams@intel.com> */
-	.boot_params    = 0x00000100,
+	.atag_offset    = 0x100,
 	.map_io         = iop13xx_map_io,
 	.init_irq       = iop13xx_init_irq,
 	.timer          = &iq81340mc_timer,
 	.init_machine   = iq81340mc_init,
+	.restart	= iop13xx_restart,
 MACHINE_END

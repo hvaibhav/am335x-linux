@@ -355,6 +355,7 @@ struct dasd_discipline {
 	int (*reload) (struct dasd_device *);
 
 	int (*get_uid) (struct dasd_device *, struct dasd_uid *);
+	void (*kick_validate) (struct dasd_device *);
 };
 
 extern struct dasd_discipline *dasd_diag_discipline_pointer;
@@ -455,6 +456,7 @@ struct dasd_device {
 	struct work_struct kick_work;
 	struct work_struct restore_device;
 	struct work_struct reload_device;
+	struct work_struct kick_validate;
 	struct timer_list timer;
 
 	debug_info_t *debug_area;
@@ -516,6 +518,7 @@ struct dasd_block {
 					 */
 #define DASD_FLAG_IS_RESERVED	7	/* The device is reserved */
 #define DASD_FLAG_LOCK_STOLEN	8	/* The device lock was stolen */
+#define DASD_FLAG_SUSPENDED	9	/* The device was suspended */
 
 
 void dasd_put_device_wake(struct dasd_device *);
@@ -643,6 +646,7 @@ struct dasd_ccw_req *
 dasd_smalloc_request(int , int, int, struct dasd_device *);
 void dasd_kfree_request(struct dasd_ccw_req *, struct dasd_device *);
 void dasd_sfree_request(struct dasd_ccw_req *, struct dasd_device *);
+void dasd_wakeup_cb(struct dasd_ccw_req *, void *);
 
 static inline int
 dasd_kmalloc_set_cda(struct ccw1 *ccw, void *cda, struct dasd_device *device)

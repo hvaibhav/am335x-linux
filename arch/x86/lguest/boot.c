@@ -56,6 +56,7 @@
 #include <linux/lguest_launcher.h>
 #include <linux/virtio_console.h>
 #include <linux/pm.h>
+#include <linux/export.h>
 #include <asm/apic.h>
 #include <asm/lguest.h>
 #include <asm/paravirt.h>
@@ -70,6 +71,7 @@
 #include <asm/i387.h>
 #include <asm/stackprotector.h>
 #include <asm/reboot.h>		/* for struct machine_ops */
+#include <asm/kvm_para.h>
 
 /*G:010
  * Welcome to the Guest!
@@ -455,6 +457,15 @@ static void lguest_cpuid(unsigned int *ax, unsigned int *bx,
 		*ax &= 0xFFFFF0FF;
 		*ax |= 0x00000500;
 		break;
+
+	/*
+	 * This is used to detect if we're running under KVM.  We might be,
+	 * but that's a Host matter, not us.  So say we're not.
+	 */
+	case KVM_CPUID_SIGNATURE:
+		*bx = *cx = *dx = 0;
+		break;
+
 	/*
 	 * 0x80000000 returns the highest Extended Function, so we futureproof
 	 * like we do above by limiting it to known fields.
@@ -845,18 +856,23 @@ static void __init lguest_init_IRQ(void)
 }
 
 /*
- * With CONFIG_SPARSE_IRQ, interrupt descriptors are allocated as-needed, so
- * rather than set them in lguest_init_IRQ we are called here every time an
- * lguest device needs an interrupt.
- *
- * FIXME: irq_alloc_desc_at() can fail due to lack of memory, we should
- * pass that up!
+ * Interrupt descriptors are allocated as-needed, but low-numbered ones are
+ * reserved by the generic x86 code.  So we ignore irq_alloc_desc_at if it
+ * tells us the irq is already used: other errors (ie. ENOMEM) we take
+ * seriously.
  */
-void lguest_setup_irq(unsigned int irq)
+int lguest_setup_irq(unsigned int irq)
 {
-	irq_alloc_desc_at(irq, 0);
+	int err;
+
+	/* Returns -ve error or vector number. */
+	err = irq_alloc_desc_at(irq, 0);
+	if (err < 0 && err != -EEXIST)
+		return err;
+
 	irq_set_chip_and_handler_name(irq, &lguest_irq_controller,
 				      handle_level_irq, "level");
+	return 0;
 }
 
 /*

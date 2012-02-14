@@ -90,10 +90,14 @@ struct atmel_isi {
 	struct isi_dma_desc		dma_desc[MAX_BUFFER_NUM];
 
 	struct completion		complete;
+	/* ISI peripherial clock */
 	struct clk			*pclk;
+	/* ISI_MCK, feed to camera sensor to generate pixel clock */
+	struct clk			*mck;
 	unsigned int			irq;
 
 	struct isi_platform_data	*pdata;
+	u16				width_flags;	/* max 12 bits */
 
 	struct list_head		video_buffer_list;
 	struct frame_buffer		*active;
@@ -248,9 +252,9 @@ static int atmel_isi_wait_status(struct atmel_isi *isi, int wait_reset)
 /* ------------------------------------------------------------------
 	Videobuf operations
    ------------------------------------------------------------------*/
-static int queue_setup(struct vb2_queue *vq, unsigned int *nbuffers,
-				unsigned int *nplanes, unsigned long sizes[],
-				void *alloc_ctxs[])
+static int queue_setup(struct vb2_queue *vq, const struct v4l2_format *fmt,
+				unsigned int *nbuffers, unsigned int *nplanes,
+				unsigned int sizes[], void *alloc_ctxs[])
 {
 	struct soc_camera_device *icd = soc_camera_from_vb2q(vq);
 	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
@@ -341,7 +345,7 @@ static int buffer_prepare(struct vb2_buffer *vb)
 
 			/* Initialize the dma descriptor */
 			desc->p_fbd->fb_address =
-					vb2_dma_contig_plane_paddr(vb, 0);
+					vb2_dma_contig_plane_dma_addr(vb, 0);
 			desc->p_fbd->next_fbd_address = 0;
 			set_dma_ctrl(desc->p_fbd, ISI_DMA_CTRL_WB);
 
@@ -404,12 +408,13 @@ static void buffer_queue(struct vb2_buffer *vb)
 
 	if (isi->active == NULL) {
 		isi->active = buf;
-		start_dma(isi, buf);
+		if (vb2_is_streaming(vb->vb2_queue))
+			start_dma(isi, buf);
 	}
 	spin_unlock_irqrestore(&isi->lock, flags);
 }
 
-static int start_streaming(struct vb2_queue *vq)
+static int start_streaming(struct vb2_queue *vq, unsigned int count)
 {
 	struct soc_camera_device *icd = soc_camera_from_vb2q(vq);
 	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
@@ -431,17 +436,26 @@ static int start_streaming(struct vb2_queue *vq)
 	ret = wait_event_interruptible(isi->vsync_wq,
 				       isi->state != ISI_STATE_IDLE);
 	if (ret)
-		return ret;
+		goto err;
 
-	if (isi->state != ISI_STATE_READY)
-		return -EIO;
+	if (isi->state != ISI_STATE_READY) {
+		ret = -EIO;
+		goto err;
+	}
 
 	spin_lock_irq(&isi->lock);
 	isi->state = ISI_STATE_WAIT_SOF;
 	isi_writel(isi, ISI_INTDIS, ISI_SR_VSYNC);
+	if (count)
+		start_dma(isi, isi->active);
 	spin_unlock_irq(&isi->lock);
 
 	return 0;
+err:
+	isi->active = NULL;
+	isi->sequence = 0;
+	INIT_LIST_HEAD(&isi->video_buffer_list);
+	return ret;
 }
 
 /* abort streaming and wait for last buffer */
@@ -637,50 +651,42 @@ static bool isi_camera_packing_supported(const struct soc_mbus_pixelfmt *fmt)
 		 fmt->packing == SOC_MBUS_PACKING_EXTEND16);
 }
 
-static unsigned long make_bus_param(struct atmel_isi *isi)
-{
-	unsigned long flags;
-	/*
-	 * Platform specified synchronization and pixel clock polarities are
-	 * only a recommendation and are only used during probing. Atmel ISI
-	 * camera interface only works in master mode, i.e., uses HSYNC and
-	 * VSYNC signals from the sensor
-	 */
-	flags = SOCAM_MASTER |
-		SOCAM_HSYNC_ACTIVE_HIGH |
-		SOCAM_HSYNC_ACTIVE_LOW |
-		SOCAM_VSYNC_ACTIVE_HIGH |
-		SOCAM_VSYNC_ACTIVE_LOW |
-		SOCAM_PCLK_SAMPLE_RISING |
-		SOCAM_PCLK_SAMPLE_FALLING |
-		SOCAM_DATA_ACTIVE_HIGH;
-
-	if (isi->pdata->data_width_flags & ISI_DATAWIDTH_10)
-		flags |= SOCAM_DATAWIDTH_10;
-
-	if (isi->pdata->data_width_flags & ISI_DATAWIDTH_8)
-		flags |= SOCAM_DATAWIDTH_8;
-
-	if (flags & SOCAM_DATAWIDTH_MASK)
-		return flags;
-
-	return 0;
-}
+#define ISI_BUS_PARAM (V4L2_MBUS_MASTER |	\
+		V4L2_MBUS_HSYNC_ACTIVE_HIGH |	\
+		V4L2_MBUS_HSYNC_ACTIVE_LOW |	\
+		V4L2_MBUS_VSYNC_ACTIVE_HIGH |	\
+		V4L2_MBUS_VSYNC_ACTIVE_LOW |	\
+		V4L2_MBUS_PCLK_SAMPLE_RISING |	\
+		V4L2_MBUS_PCLK_SAMPLE_FALLING |	\
+		V4L2_MBUS_DATA_ACTIVE_HIGH)
 
 static int isi_camera_try_bus_param(struct soc_camera_device *icd,
 				    unsigned char buswidth)
 {
+	struct v4l2_subdev *sd = soc_camera_to_subdev(icd);
 	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
 	struct atmel_isi *isi = ici->priv;
-	unsigned long camera_flags;
+	struct v4l2_mbus_config cfg = {.type = V4L2_MBUS_PARALLEL,};
+	unsigned long common_flags;
 	int ret;
 
-	camera_flags = icd->ops->query_bus_param(icd);
-	ret = soc_camera_bus_param_compatible(camera_flags,
-					make_bus_param(isi));
-	if (!ret)
-		return -EINVAL;
-	return 0;
+	ret = v4l2_subdev_call(sd, video, g_mbus_config, &cfg);
+	if (!ret) {
+		common_flags = soc_mbus_config_compatible(&cfg,
+							  ISI_BUS_PARAM);
+		if (!common_flags) {
+			dev_warn(icd->parent,
+				 "Flags incompatible: camera 0x%x, host 0x%x\n",
+				 cfg.flags, ISI_BUS_PARAM);
+			return -EINVAL;
+		}
+	} else if (ret != -ENOIOCTLCMD) {
+		return ret;
+	}
+
+	if ((1 << (buswidth - 1)) & isi->width_flags)
+		return 0;
+	return -EINVAL;
 }
 
 
@@ -763,6 +769,12 @@ static int isi_camera_add_device(struct soc_camera_device *icd)
 	if (ret)
 		return ret;
 
+	ret = clk_enable(isi->mck);
+	if (ret) {
+		clk_disable(isi->pclk);
+		return ret;
+	}
+
 	isi->icd = icd;
 	dev_dbg(icd->parent, "Atmel ISI Camera driver attached to camera %d\n",
 		 icd->devnum);
@@ -776,6 +788,7 @@ static void isi_camera_remove_device(struct soc_camera_device *icd)
 
 	BUG_ON(icd != isi->icd);
 
+	clk_disable(isi->mck);
 	clk_disable(isi->pclk);
 	isi->icd = NULL;
 
@@ -800,66 +813,78 @@ static int isi_camera_querycap(struct soc_camera_host *ici,
 	return 0;
 }
 
-static int isi_camera_set_bus_param(struct soc_camera_device *icd, u32 pixfmt)
+static int isi_camera_set_bus_param(struct soc_camera_device *icd)
 {
+	struct v4l2_subdev *sd = soc_camera_to_subdev(icd);
 	struct soc_camera_host *ici = to_soc_camera_host(icd->parent);
 	struct atmel_isi *isi = ici->priv;
-	unsigned long bus_flags, camera_flags, common_flags;
+	struct v4l2_mbus_config cfg = {.type = V4L2_MBUS_PARALLEL,};
+	unsigned long common_flags;
 	int ret;
 	u32 cfg1 = 0;
 
-	camera_flags = icd->ops->query_bus_param(icd);
-
-	bus_flags = make_bus_param(isi);
-	common_flags = soc_camera_bus_param_compatible(camera_flags, bus_flags);
-	dev_dbg(icd->parent, "Flags cam: 0x%lx host: 0x%lx common: 0x%lx\n",
-		camera_flags, bus_flags, common_flags);
-	if (!common_flags)
-		return -EINVAL;
+	ret = v4l2_subdev_call(sd, video, g_mbus_config, &cfg);
+	if (!ret) {
+		common_flags = soc_mbus_config_compatible(&cfg,
+							  ISI_BUS_PARAM);
+		if (!common_flags) {
+			dev_warn(icd->parent,
+				 "Flags incompatible: camera 0x%x, host 0x%x\n",
+				 cfg.flags, ISI_BUS_PARAM);
+			return -EINVAL;
+		}
+	} else if (ret != -ENOIOCTLCMD) {
+		return ret;
+	} else {
+		common_flags = ISI_BUS_PARAM;
+	}
+	dev_dbg(icd->parent, "Flags cam: 0x%x host: 0x%x common: 0x%lx\n",
+		cfg.flags, ISI_BUS_PARAM, common_flags);
 
 	/* Make choises, based on platform preferences */
-	if ((common_flags & SOCAM_HSYNC_ACTIVE_HIGH) &&
-	    (common_flags & SOCAM_HSYNC_ACTIVE_LOW)) {
+	if ((common_flags & V4L2_MBUS_HSYNC_ACTIVE_HIGH) &&
+	    (common_flags & V4L2_MBUS_HSYNC_ACTIVE_LOW)) {
 		if (isi->pdata->hsync_act_low)
-			common_flags &= ~SOCAM_HSYNC_ACTIVE_HIGH;
+			common_flags &= ~V4L2_MBUS_HSYNC_ACTIVE_HIGH;
 		else
-			common_flags &= ~SOCAM_HSYNC_ACTIVE_LOW;
+			common_flags &= ~V4L2_MBUS_HSYNC_ACTIVE_LOW;
 	}
 
-	if ((common_flags & SOCAM_VSYNC_ACTIVE_HIGH) &&
-	    (common_flags & SOCAM_VSYNC_ACTIVE_LOW)) {
+	if ((common_flags & V4L2_MBUS_VSYNC_ACTIVE_HIGH) &&
+	    (common_flags & V4L2_MBUS_VSYNC_ACTIVE_LOW)) {
 		if (isi->pdata->vsync_act_low)
-			common_flags &= ~SOCAM_VSYNC_ACTIVE_HIGH;
+			common_flags &= ~V4L2_MBUS_VSYNC_ACTIVE_HIGH;
 		else
-			common_flags &= ~SOCAM_VSYNC_ACTIVE_LOW;
+			common_flags &= ~V4L2_MBUS_VSYNC_ACTIVE_LOW;
 	}
 
-	if ((common_flags & SOCAM_PCLK_SAMPLE_RISING) &&
-	    (common_flags & SOCAM_PCLK_SAMPLE_FALLING)) {
+	if ((common_flags & V4L2_MBUS_PCLK_SAMPLE_RISING) &&
+	    (common_flags & V4L2_MBUS_PCLK_SAMPLE_FALLING)) {
 		if (isi->pdata->pclk_act_falling)
-			common_flags &= ~SOCAM_PCLK_SAMPLE_RISING;
+			common_flags &= ~V4L2_MBUS_PCLK_SAMPLE_RISING;
 		else
-			common_flags &= ~SOCAM_PCLK_SAMPLE_FALLING;
+			common_flags &= ~V4L2_MBUS_PCLK_SAMPLE_FALLING;
 	}
 
-	ret = icd->ops->set_bus_param(icd, common_flags);
-	if (ret < 0) {
-		dev_dbg(icd->parent, "Camera set_bus_param(%lx) returned %d\n",
+	cfg.flags = common_flags;
+	ret = v4l2_subdev_call(sd, video, s_mbus_config, &cfg);
+	if (ret < 0 && ret != -ENOIOCTLCMD) {
+		dev_dbg(icd->parent, "camera s_mbus_config(0x%lx) returned %d\n",
 			common_flags, ret);
 		return ret;
 	}
 
 	/* set bus param for ISI */
-	if (common_flags & SOCAM_HSYNC_ACTIVE_LOW)
+	if (common_flags & V4L2_MBUS_HSYNC_ACTIVE_LOW)
 		cfg1 |= ISI_CFG1_HSYNC_POL_ACTIVE_LOW;
-	if (common_flags & SOCAM_VSYNC_ACTIVE_LOW)
+	if (common_flags & V4L2_MBUS_VSYNC_ACTIVE_LOW)
 		cfg1 |= ISI_CFG1_VSYNC_POL_ACTIVE_LOW;
-	if (common_flags & SOCAM_PCLK_SAMPLE_FALLING)
+	if (common_flags & V4L2_MBUS_PCLK_SAMPLE_FALLING)
 		cfg1 |= ISI_CFG1_PIXCLK_POL_ACTIVE_FALLING;
 
 	if (isi->pdata->has_emb_sync)
 		cfg1 |= ISI_CFG1_EMB_SYNC;
-	if (isi->pdata->isi_full_mode)
+	if (isi->pdata->full_mode)
 		cfg1 |= ISI_CFG1_FULL_MODE;
 
 	isi_writel(isi, ISI_CTRL, ISI_CTRL_DIS);
@@ -897,6 +922,9 @@ static int __devexit atmel_isi_remove(struct platform_device *pdev)
 			isi->fb_descriptors_phys);
 
 	iounmap(isi->regs);
+	clk_unprepare(isi->mck);
+	clk_put(isi->mck);
+	clk_unprepare(isi->pclk);
 	clk_put(isi->pclk);
 	kfree(isi);
 
@@ -915,7 +943,7 @@ static int __devinit atmel_isi_probe(struct platform_device *pdev)
 	struct isi_platform_data *pdata;
 
 	pdata = dev->platform_data;
-	if (!pdata || !pdata->data_width_flags) {
+	if (!pdata || !pdata->data_width_flags || !pdata->mck_hz) {
 		dev_err(&pdev->dev,
 			"No config available for Atmel ISI\n");
 		return -EINVAL;
@@ -928,6 +956,10 @@ static int __devinit atmel_isi_probe(struct platform_device *pdev)
 	pclk = clk_get(&pdev->dev, "isi_clk");
 	if (IS_ERR(pclk))
 		return PTR_ERR(pclk);
+
+	ret = clk_prepare(pclk);
+	if (ret)
+		goto err_clk_prepare_pclk;
 
 	isi = kzalloc(sizeof(struct atmel_isi), GFP_KERNEL);
 	if (!isi) {
@@ -943,6 +975,23 @@ static int __devinit atmel_isi_probe(struct platform_device *pdev)
 	init_waitqueue_head(&isi->vsync_wq);
 	INIT_LIST_HEAD(&isi->video_buffer_list);
 	INIT_LIST_HEAD(&isi->dma_desc_head);
+
+	/* Get ISI_MCK, provided by programmable clock or external clock */
+	isi->mck = clk_get(dev, "isi_mck");
+	if (IS_ERR(isi->mck)) {
+		dev_err(dev, "Failed to get isi_mck\n");
+		ret = PTR_ERR(isi->mck);
+		goto err_clk_get;
+	}
+
+	ret = clk_prepare(isi->mck);
+	if (ret)
+		goto err_clk_prepare_mck;
+
+	/* Set ISI_MCK's frequency, it should be faster than pixel clock */
+	ret = clk_set_rate(isi->mck, pdata->mck_hz);
+	if (ret < 0)
+		goto err_set_mck_rate;
 
 	isi->p_fb_descriptors = dma_alloc_coherent(&pdev->dev,
 				sizeof(struct fbd) * MAX_BUFFER_NUM,
@@ -972,6 +1021,11 @@ static int __devinit atmel_isi_probe(struct platform_device *pdev)
 		ret = -ENOMEM;
 		goto err_ioremap;
 	}
+
+	if (pdata->data_width_flags & ISI_DATAWIDTH_8)
+		isi->width_flags = 1 << 7;
+	if (pdata->data_width_flags & ISI_DATAWIDTH_10)
+		isi->width_flags |= 1 << 9;
 
 	isi_writel(isi, ISI_CTRL, ISI_CTRL_DIS);
 
@@ -1014,9 +1068,16 @@ err_alloc_ctx:
 			isi->p_fb_descriptors,
 			isi->fb_descriptors_phys);
 err_alloc_descriptors:
+err_set_mck_rate:
+	clk_unprepare(isi->mck);
+err_clk_prepare_mck:
+	clk_put(isi->mck);
+err_clk_get:
 	kfree(isi);
 err_alloc_isi:
-	clk_put(isi->pclk);
+	clk_unprepare(pclk);
+err_clk_prepare_pclk:
+	clk_put(pclk);
 
 	return ret;
 }

@@ -70,6 +70,7 @@ struct pnfs_inval_markings {
 	spinlock_t	im_lock;
 	struct my_tree	im_tree;	/* Sectors that need LAYOUTCOMMIT */
 	sector_t	im_block_size;	/* Server blocksize in sectors */
+	struct list_head im_extents;	/* Short extents for INVAL->RW conversion */
 };
 
 struct pnfs_inval_tracking {
@@ -105,6 +106,7 @@ BL_INIT_INVAL_MARKS(struct pnfs_inval_markings *marks, sector_t blocksize)
 {
 	spin_lock_init(&marks->im_lock);
 	INIT_LIST_HEAD(&marks->im_tree.mtt_stub);
+	INIT_LIST_HEAD(&marks->im_extents);
 	marks->im_block_size = blocksize;
 	marks->im_tree.mtt_step_size = min((sector_t)PAGE_CACHE_SECTORS,
 					   blocksize);
@@ -150,7 +152,7 @@ BLK_LSEG2EXT(struct pnfs_layout_segment *lseg)
 }
 
 struct bl_dev_msg {
-	int status;
+	int32_t status;
 	uint32_t major, minor;
 };
 
@@ -169,8 +171,6 @@ extern wait_queue_head_t bl_wq;
 #define BL_DEVICE_REQUEST_ERR          0x2 /* User level process fails */
 
 /* blocklayoutdev.c */
-ssize_t bl_pipe_upcall(struct file *, struct rpc_pipe_msg *,
-		       char __user *, size_t);
 ssize_t bl_pipe_downcall(struct file *, const char __user *, size_t);
 void bl_pipe_destroy_msg(struct rpc_pipe_msg *);
 struct block_device *nfs4_blkdev_get(dev_t dev);
@@ -188,8 +188,7 @@ struct pnfs_block_extent *
 bl_find_get_extent(struct pnfs_block_layout *bl, sector_t isect,
 		struct pnfs_block_extent **cow_read);
 int bl_mark_sectors_init(struct pnfs_inval_markings *marks,
-			     sector_t offset, sector_t length,
-			     sector_t **pages);
+			     sector_t offset, sector_t length);
 void bl_put_extent(struct pnfs_block_extent *be);
 struct pnfs_block_extent *bl_alloc_extent(void);
 int bl_is_sector_init(struct pnfs_inval_markings *marks, sector_t isect);
@@ -202,6 +201,11 @@ void clean_pnfs_block_layoutupdate(struct pnfs_block_layout *bl,
 int bl_add_merge_extent(struct pnfs_block_layout *bl,
 			 struct pnfs_block_extent *new);
 int bl_mark_for_commit(struct pnfs_block_extent *be,
-			sector_t offset, sector_t length);
+			sector_t offset, sector_t length,
+			struct pnfs_block_short_extent *new);
+int bl_push_one_short_extent(struct pnfs_inval_markings *marks);
+struct pnfs_block_short_extent *
+bl_pop_one_short_extent(struct pnfs_inval_markings *marks);
+void bl_free_short_extents(struct pnfs_inval_markings *marks, int num_to_free);
 
 #endif /* FS_NFS_NFS4BLOCKLAYOUT_H */

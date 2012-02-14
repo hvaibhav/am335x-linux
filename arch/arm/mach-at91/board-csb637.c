@@ -20,6 +20,7 @@
 
 #include <linux/types.h>
 #include <linux/init.h>
+#include <linux/gpio.h>
 #include <linux/mm.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
@@ -35,7 +36,6 @@
 
 #include <mach/hardware.h>
 #include <mach/board.h>
-#include <mach/gpio.h>
 
 #include "generic.h"
 
@@ -52,13 +52,15 @@ static void __init csb637_init_early(void)
 	at91_set_serial_console(0);
 }
 
-static struct at91_eth_data __initdata csb637_eth_data = {
+static struct macb_platform_data __initdata csb637_eth_data = {
 	.phy_irq_pin	= AT91_PIN_PC0,
 	.is_rmii	= 0,
 };
 
 static struct at91_usbh_data __initdata csb637_usbh_data = {
 	.ports		= 2,
+	.vbus_pin	= {-EINVAL, -EINVAL},
+	.overcurrent_pin= {-EINVAL, -EINVAL},
 };
 
 static struct at91_udc_data __initdata csb637_udc_data = {

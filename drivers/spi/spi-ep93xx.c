@@ -24,6 +24,7 @@
 #include <linux/dmaengine.h>
 #include <linux/bitops.h>
 #include <linux/interrupt.h>
+#include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/workqueue.h>
 #include <linux/sched.h>
@@ -550,6 +551,7 @@ ep93xx_spi_dma_prepare(struct ep93xx_spi *espi, enum dma_data_direction dir)
 	struct dma_async_tx_descriptor *txd;
 	enum dma_slave_buswidth buswidth;
 	struct dma_slave_config conf;
+	enum dma_transfer_direction slave_dirn;
 	struct scatterlist *sg;
 	struct sg_table *sgt;
 	struct dma_chan *chan;
@@ -572,6 +574,7 @@ ep93xx_spi_dma_prepare(struct ep93xx_spi *espi, enum dma_data_direction dir)
 
 		conf.src_addr = espi->sspdr_phys;
 		conf.src_addr_width = buswidth;
+		slave_dirn = DMA_DEV_TO_MEM;
 	} else {
 		chan = espi->dma_tx;
 		buf = t->tx_buf;
@@ -579,6 +582,7 @@ ep93xx_spi_dma_prepare(struct ep93xx_spi *espi, enum dma_data_direction dir)
 
 		conf.dst_addr = espi->sspdr_phys;
 		conf.dst_addr_width = buswidth;
+		slave_dirn = DMA_MEM_TO_DEV;
 	}
 
 	ret = dmaengine_slave_config(chan, &conf);
@@ -630,7 +634,7 @@ ep93xx_spi_dma_prepare(struct ep93xx_spi *espi, enum dma_data_direction dir)
 		return ERR_PTR(-ENOMEM);
 
 	txd = chan->device->device_prep_slave_sg(chan, sgt->sgl, nents,
-						 dir, DMA_CTRL_ACK);
+						 slave_dirn, DMA_CTRL_ACK);
 	if (!txd) {
 		dma_unmap_sg(chan->device->dev, sgt->sgl, sgt->nents, dir);
 		return ERR_PTR(-ENOMEM);
@@ -978,7 +982,7 @@ static int ep93xx_spi_setup_dma(struct ep93xx_spi *espi)
 	dma_cap_set(DMA_SLAVE, mask);
 
 	espi->dma_rx_data.port = EP93XX_DMA_SSP;
-	espi->dma_rx_data.direction = DMA_FROM_DEVICE;
+	espi->dma_rx_data.direction = DMA_DEV_TO_MEM;
 	espi->dma_rx_data.name = "ep93xx-spi-rx";
 
 	espi->dma_rx = dma_request_channel(mask, ep93xx_spi_dma_filter,
@@ -989,7 +993,7 @@ static int ep93xx_spi_setup_dma(struct ep93xx_spi *espi)
 	}
 
 	espi->dma_tx_data.port = EP93XX_DMA_SSP;
-	espi->dma_tx_data.direction = DMA_TO_DEVICE;
+	espi->dma_tx_data.direction = DMA_MEM_TO_DEV;
 	espi->dma_tx_data.name = "ep93xx-spi-tx";
 
 	espi->dma_tx = dma_request_channel(mask, ep93xx_spi_dma_filter,
@@ -1025,7 +1029,7 @@ static void ep93xx_spi_release_dma(struct ep93xx_spi *espi)
 		free_page((unsigned long)espi->zeropage);
 }
 
-static int __init ep93xx_spi_probe(struct platform_device *pdev)
+static int __devinit ep93xx_spi_probe(struct platform_device *pdev)
 {
 	struct spi_master *master;
 	struct ep93xx_spi_info *info;
@@ -1150,7 +1154,7 @@ fail_release_master:
 	return error;
 }
 
-static int __exit ep93xx_spi_remove(struct platform_device *pdev)
+static int __devexit ep93xx_spi_remove(struct platform_device *pdev)
 {
 	struct spi_master *master = platform_get_drvdata(pdev);
 	struct ep93xx_spi *espi = spi_master_get_devdata(master);
@@ -1196,20 +1200,10 @@ static struct platform_driver ep93xx_spi_driver = {
 		.name	= "ep93xx-spi",
 		.owner	= THIS_MODULE,
 	},
-	.remove		= __exit_p(ep93xx_spi_remove),
+	.probe		= ep93xx_spi_probe,
+	.remove		= __devexit_p(ep93xx_spi_remove),
 };
-
-static int __init ep93xx_spi_init(void)
-{
-	return platform_driver_probe(&ep93xx_spi_driver, ep93xx_spi_probe);
-}
-module_init(ep93xx_spi_init);
-
-static void __exit ep93xx_spi_exit(void)
-{
-	platform_driver_unregister(&ep93xx_spi_driver);
-}
-module_exit(ep93xx_spi_exit);
+module_platform_driver(ep93xx_spi_driver);
 
 MODULE_DESCRIPTION("EP93xx SPI Controller driver");
 MODULE_AUTHOR("Mika Westerberg <mika.westerberg@iki.fi>");

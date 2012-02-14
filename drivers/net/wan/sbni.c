@@ -155,7 +155,7 @@ static int  emancipate( struct net_device * );
 static const char  version[] =
 	"Granch SBNI12 driver ver 5.0.1  Jun 22 2001  Denis I.Timofeev.\n";
 
-static int  skip_pci_probe	__initdata = 0;
+static bool skip_pci_probe	__initdata = false;
 static int  scandone	__initdata = 0;
 static int  num		__initdata = 0;
 
@@ -212,7 +212,7 @@ static const struct net_device_ops sbni_netdev_ops = {
 	.ndo_open		= sbni_open,
 	.ndo_stop		= sbni_close,
 	.ndo_start_xmit		= sbni_start_xmit,
-	.ndo_set_multicast_list	= set_multicast_list,
+	.ndo_set_rx_mode	= set_multicast_list,
 	.ndo_do_ioctl		= sbni_ioctl,
 	.ndo_change_mtu		= eth_change_mtu,
 	.ndo_set_mac_address 	= eth_mac_addr,

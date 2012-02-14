@@ -545,13 +545,12 @@ static ssize_t lm8323_pwm_store_time(struct device *dev,
 {
 	struct led_classdev *led_cdev = dev_get_drvdata(dev);
 	struct lm8323_pwm *pwm = cdev_to_pwm(led_cdev);
-	int ret;
-	unsigned long time;
+	int ret, time;
 
-	ret = strict_strtoul(buf, 10, &time);
+	ret = kstrtoint(buf, 10, &time);
 	/* Numbers only, please. */
 	if (ret)
-		return -EINVAL;
+		return ret;
 
 	pwm->fade_time = time;
 
@@ -613,9 +612,9 @@ static ssize_t lm8323_set_disable(struct device *dev,
 {
 	struct lm8323_chip *lm = dev_get_drvdata(dev);
 	int ret;
-	unsigned long i;
+	unsigned int i;
 
-	ret = strict_strtoul(buf, 10, &i);
+	ret = kstrtouint(buf, 10, &i);
 
 	mutex_lock(&lm->lock);
 	lm->kp_enabled = !i;
@@ -788,7 +787,7 @@ static int __devexit lm8323_remove(struct i2c_client *client)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 /*
  * We don't need to explicitly suspend the chip, as it already switches off
  * when there's no activity.

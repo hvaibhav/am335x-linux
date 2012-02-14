@@ -68,9 +68,13 @@
  */
 
 #include <linux/kernel.h>
+#include <linux/bootmem.h>
+#include <linux/swap.h>
 #include <linux/mm.h>
 #include <linux/mman.h>
+#include <linux/module.h>
 #include <linux/workqueue.h>
+#include <linux/device.h>
 #include <xen/balloon.h>
 #include <xen/tmem.h>
 #include <xen/xen.h>
@@ -91,6 +95,15 @@ static unsigned int selfballoon_uphysteresis __read_mostly = 1;
 
 /* In HZ, controls frequency of worker invocation. */
 static unsigned int selfballoon_interval __read_mostly = 5;
+
+/*
+ * Minimum usable RAM in MB for selfballooning target for balloon.
+ * If non-zero, it is added to totalreserve_pages and self-ballooning
+ * will not balloon below the sum.  If zero, a piecewise linear function
+ * is calculated as a minimum and added to totalreserve_pages.  Note that
+ * setting this value indiscriminately may cause OOMs and crashes.
+ */
+static unsigned int selfballoon_min_usable_mb;
 
 static void selfballoon_process(struct work_struct *work);
 static DECLARE_DELAYED_WORK(selfballoon_worker, selfballoon_process);
@@ -188,20 +201,23 @@ static int __init xen_selfballooning_setup(char *s)
 __setup("selfballooning", xen_selfballooning_setup);
 #endif /* CONFIG_FRONTSWAP */
 
+#define MB2PAGES(mb)	((mb) << (20 - PAGE_SHIFT))
+
 /*
  * Use current balloon size, the goal (vm_committed_as), and hysteresis
  * parameters to set a new target balloon size
  */
 static void selfballoon_process(struct work_struct *work)
 {
-	unsigned long cur_pages, goal_pages, tgt_pages;
+	unsigned long cur_pages, goal_pages, tgt_pages, floor_pages;
+	unsigned long useful_pages;
 	bool reset_timer = false;
 
 	if (xen_selfballooning_enabled) {
-		cur_pages = balloon_stats.current_pages;
+		cur_pages = totalram_pages;
 		tgt_pages = cur_pages; /* default is no change */
 		goal_pages = percpu_counter_read_positive(&vm_committed_as) +
-			balloon_stats.current_pages - totalram_pages;
+				totalreserve_pages;
 #ifdef CONFIG_FRONTSWAP
 		/* allow space for frontswap pages to be repatriated */
 		if (frontswap_selfshrinking && frontswap_enabled)
@@ -216,7 +232,26 @@ static void selfballoon_process(struct work_struct *work)
 				((goal_pages - cur_pages) /
 				  selfballoon_uphysteresis);
 		/* else if cur_pages == goal_pages, no change */
-		balloon_set_new_target(tgt_pages);
+		useful_pages = max_pfn - totalreserve_pages;
+		if (selfballoon_min_usable_mb != 0)
+			floor_pages = totalreserve_pages +
+					MB2PAGES(selfballoon_min_usable_mb);
+		/* piecewise linear function ending in ~3% slope */
+		else if (useful_pages < MB2PAGES(16))
+			floor_pages = max_pfn; /* not worth ballooning */
+		else if (useful_pages < MB2PAGES(64))
+			floor_pages = totalreserve_pages + MB2PAGES(16) +
+					((useful_pages - MB2PAGES(16)) >> 1);
+		else if (useful_pages < MB2PAGES(512))
+			floor_pages = totalreserve_pages + MB2PAGES(40) +
+					((useful_pages - MB2PAGES(40)) >> 3);
+		else /* useful_pages >= MB2PAGES(512) */
+			floor_pages = totalreserve_pages + MB2PAGES(99) +
+					((useful_pages - MB2PAGES(99)) >> 5);
+		if (tgt_pages < floor_pages)
+			tgt_pages = floor_pages;
+		balloon_set_new_target(tgt_pages +
+			balloon_stats.current_pages - totalram_pages);
 		reset_timer = true;
 	}
 #ifdef CONFIG_FRONTSWAP
@@ -232,21 +267,20 @@ static void selfballoon_process(struct work_struct *work)
 
 #ifdef CONFIG_SYSFS
 
-#include <linux/sysdev.h>
 #include <linux/capability.h>
 
 #define SELFBALLOON_SHOW(name, format, args...)				\
-	static ssize_t show_##name(struct sys_device *dev,	\
-					   struct sysdev_attribute *attr, \
-					   char *buf) \
+	static ssize_t show_##name(struct device *dev,	\
+					  struct device_attribute *attr, \
+					  char *buf) \
 	{ \
 		return sprintf(buf, format, ##args); \
 	}
 
 SELFBALLOON_SHOW(selfballooning, "%d\n", xen_selfballooning_enabled);
 
-static ssize_t store_selfballooning(struct sys_device *dev,
-			    struct sysdev_attribute *attr,
+static ssize_t store_selfballooning(struct device *dev,
+			    struct device_attribute *attr,
 			    const char *buf,
 			    size_t count)
 {
@@ -269,13 +303,13 @@ static ssize_t store_selfballooning(struct sys_device *dev,
 	return count;
 }
 
-static SYSDEV_ATTR(selfballooning, S_IRUGO | S_IWUSR,
+static DEVICE_ATTR(selfballooning, S_IRUGO | S_IWUSR,
 		   show_selfballooning, store_selfballooning);
 
 SELFBALLOON_SHOW(selfballoon_interval, "%d\n", selfballoon_interval);
 
-static ssize_t store_selfballoon_interval(struct sys_device *dev,
-					  struct sysdev_attribute *attr,
+static ssize_t store_selfballoon_interval(struct device *dev,
+					  struct device_attribute *attr,
 					  const char *buf,
 					  size_t count)
 {
@@ -291,13 +325,13 @@ static ssize_t store_selfballoon_interval(struct sys_device *dev,
 	return count;
 }
 
-static SYSDEV_ATTR(selfballoon_interval, S_IRUGO | S_IWUSR,
+static DEVICE_ATTR(selfballoon_interval, S_IRUGO | S_IWUSR,
 		   show_selfballoon_interval, store_selfballoon_interval);
 
 SELFBALLOON_SHOW(selfballoon_downhys, "%d\n", selfballoon_downhysteresis);
 
-static ssize_t store_selfballoon_downhys(struct sys_device *dev,
-					 struct sysdev_attribute *attr,
+static ssize_t store_selfballoon_downhys(struct device *dev,
+					 struct device_attribute *attr,
 					 const char *buf,
 					 size_t count)
 {
@@ -313,14 +347,14 @@ static ssize_t store_selfballoon_downhys(struct sys_device *dev,
 	return count;
 }
 
-static SYSDEV_ATTR(selfballoon_downhysteresis, S_IRUGO | S_IWUSR,
+static DEVICE_ATTR(selfballoon_downhysteresis, S_IRUGO | S_IWUSR,
 		   show_selfballoon_downhys, store_selfballoon_downhys);
 
 
 SELFBALLOON_SHOW(selfballoon_uphys, "%d\n", selfballoon_uphysteresis);
 
-static ssize_t store_selfballoon_uphys(struct sys_device *dev,
-				       struct sysdev_attribute *attr,
+static ssize_t store_selfballoon_uphys(struct device *dev,
+				       struct device_attribute *attr,
 				       const char *buf,
 				       size_t count)
 {
@@ -336,14 +370,39 @@ static ssize_t store_selfballoon_uphys(struct sys_device *dev,
 	return count;
 }
 
-static SYSDEV_ATTR(selfballoon_uphysteresis, S_IRUGO | S_IWUSR,
+static DEVICE_ATTR(selfballoon_uphysteresis, S_IRUGO | S_IWUSR,
 		   show_selfballoon_uphys, store_selfballoon_uphys);
+
+SELFBALLOON_SHOW(selfballoon_min_usable_mb, "%d\n",
+				selfballoon_min_usable_mb);
+
+static ssize_t store_selfballoon_min_usable_mb(struct device *dev,
+					       struct device_attribute *attr,
+					       const char *buf,
+					       size_t count)
+{
+	unsigned long val;
+	int err;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+	err = strict_strtoul(buf, 10, &val);
+	if (err || val == 0)
+		return -EINVAL;
+	selfballoon_min_usable_mb = val;
+	return count;
+}
+
+static DEVICE_ATTR(selfballoon_min_usable_mb, S_IRUGO | S_IWUSR,
+		   show_selfballoon_min_usable_mb,
+		   store_selfballoon_min_usable_mb);
+
 
 #ifdef CONFIG_FRONTSWAP
 SELFBALLOON_SHOW(frontswap_selfshrinking, "%d\n", frontswap_selfshrinking);
 
-static ssize_t store_frontswap_selfshrinking(struct sys_device *dev,
-					     struct sysdev_attribute *attr,
+static ssize_t store_frontswap_selfshrinking(struct device *dev,
+					     struct device_attribute *attr,
 					     const char *buf,
 					     size_t count)
 {
@@ -365,13 +424,13 @@ static ssize_t store_frontswap_selfshrinking(struct sys_device *dev,
 	return count;
 }
 
-static SYSDEV_ATTR(frontswap_selfshrinking, S_IRUGO | S_IWUSR,
+static DEVICE_ATTR(frontswap_selfshrinking, S_IRUGO | S_IWUSR,
 		   show_frontswap_selfshrinking, store_frontswap_selfshrinking);
 
 SELFBALLOON_SHOW(frontswap_inertia, "%d\n", frontswap_inertia);
 
-static ssize_t store_frontswap_inertia(struct sys_device *dev,
-				       struct sysdev_attribute *attr,
+static ssize_t store_frontswap_inertia(struct device *dev,
+				       struct device_attribute *attr,
 				       const char *buf,
 				       size_t count)
 {
@@ -388,13 +447,13 @@ static ssize_t store_frontswap_inertia(struct sys_device *dev,
 	return count;
 }
 
-static SYSDEV_ATTR(frontswap_inertia, S_IRUGO | S_IWUSR,
+static DEVICE_ATTR(frontswap_inertia, S_IRUGO | S_IWUSR,
 		   show_frontswap_inertia, store_frontswap_inertia);
 
 SELFBALLOON_SHOW(frontswap_hysteresis, "%d\n", frontswap_hysteresis);
 
-static ssize_t store_frontswap_hysteresis(struct sys_device *dev,
-					  struct sysdev_attribute *attr,
+static ssize_t store_frontswap_hysteresis(struct device *dev,
+					  struct device_attribute *attr,
 					  const char *buf,
 					  size_t count)
 {
@@ -410,20 +469,21 @@ static ssize_t store_frontswap_hysteresis(struct sys_device *dev,
 	return count;
 }
 
-static SYSDEV_ATTR(frontswap_hysteresis, S_IRUGO | S_IWUSR,
+static DEVICE_ATTR(frontswap_hysteresis, S_IRUGO | S_IWUSR,
 		   show_frontswap_hysteresis, store_frontswap_hysteresis);
 
 #endif /* CONFIG_FRONTSWAP */
 
 static struct attribute *selfballoon_attrs[] = {
-	&attr_selfballooning.attr,
-	&attr_selfballoon_interval.attr,
-	&attr_selfballoon_downhysteresis.attr,
-	&attr_selfballoon_uphysteresis.attr,
+	&dev_attr_selfballooning.attr,
+	&dev_attr_selfballoon_interval.attr,
+	&dev_attr_selfballoon_downhysteresis.attr,
+	&dev_attr_selfballoon_uphysteresis.attr,
+	&dev_attr_selfballoon_min_usable_mb.attr,
 #ifdef CONFIG_FRONTSWAP
-	&attr_frontswap_selfshrinking.attr,
-	&attr_frontswap_hysteresis.attr,
-	&attr_frontswap_inertia.attr,
+	&dev_attr_frontswap_selfshrinking.attr,
+	&dev_attr_frontswap_hysteresis.attr,
+	&dev_attr_frontswap_inertia.attr,
 #endif
 	NULL
 };
@@ -434,12 +494,12 @@ static struct attribute_group selfballoon_group = {
 };
 #endif
 
-int register_xen_selfballooning(struct sys_device *sysdev)
+int register_xen_selfballooning(struct device *dev)
 {
 	int error = -1;
 
 #ifdef CONFIG_SYSFS
-	error = sysfs_create_group(&sysdev->kobj, &selfballoon_group);
+	error = sysfs_create_group(&dev->kobj, &selfballoon_group);
 #endif
 	return error;
 }

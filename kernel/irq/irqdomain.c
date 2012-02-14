@@ -20,16 +20,20 @@ static DEFINE_MUTEX(irq_domain_mutex);
 void irq_domain_add(struct irq_domain *domain)
 {
 	struct irq_data *d;
-	int hwirq;
+	int hwirq, irq;
 
 	/*
 	 * This assumes that the irq_domain owner has already allocated
 	 * the irq_descs.  This block will be removed when support for dynamic
 	 * allocation of irq_descs is added to irq_domain.
 	 */
-	for (hwirq = 0; hwirq < domain->nr_irq; hwirq++) {
-		d = irq_get_irq_data(irq_domain_to_irq(domain, hwirq));
-		if (d || d->domain) {
+	irq_domain_for_each_irq(domain, hwirq, irq) {
+		d = irq_get_irq_data(irq);
+		if (!d) {
+			WARN(1, "error: assigning domain to non existant irq_desc");
+			return;
+		}
+		if (d->domain) {
 			/* things are broken; just report, don't clean up */
 			WARN(1, "error: irq_desc already assigned to a domain");
 			return;
@@ -50,15 +54,15 @@ void irq_domain_add(struct irq_domain *domain)
 void irq_domain_del(struct irq_domain *domain)
 {
 	struct irq_data *d;
-	int hwirq;
+	int hwirq, irq;
 
 	mutex_lock(&irq_domain_mutex);
 	list_del(&domain->list);
 	mutex_unlock(&irq_domain_mutex);
 
 	/* Clear the irq_domain assignments */
-	for (hwirq = 0; hwirq < domain->nr_irq; hwirq++) {
-		d = irq_get_irq_data(irq_domain_to_irq(domain, hwirq));
+	irq_domain_for_each_irq(domain, hwirq, irq) {
+		d = irq_get_irq_data(irq);
 		d->domain = NULL;
 	}
 }
@@ -131,6 +135,9 @@ int irq_domain_simple_dt_translate(struct irq_domain *d,
 		return -EINVAL;
 	if (intsize < 1)
 		return -EINVAL;
+	if (d->nr_irq && ((intspec[0] < d->hwirq_base) ||
+	    (intspec[0] >= d->hwirq_base + d->nr_irq)))
+		return -EINVAL;
 
 	*out_hwirq = intspec[0];
 	*out_type = IRQ_TYPE_NONE;
@@ -138,11 +145,6 @@ int irq_domain_simple_dt_translate(struct irq_domain *d,
 		*out_type = intspec[1] & IRQ_TYPE_SENSE_MASK;
 	return 0;
 }
-
-struct irq_domain_ops irq_domain_simple_ops = {
-	.dt_translate = irq_domain_simple_dt_translate,
-};
-EXPORT_SYMBOL_GPL(irq_domain_simple_ops);
 
 /**
  * irq_domain_create_simple() - Set up a 'simple' translation range
@@ -178,3 +180,10 @@ void irq_domain_generate_simple(const struct of_device_id *match,
 }
 EXPORT_SYMBOL_GPL(irq_domain_generate_simple);
 #endif /* CONFIG_OF_IRQ */
+
+struct irq_domain_ops irq_domain_simple_ops = {
+#ifdef CONFIG_OF_IRQ
+	.dt_translate = irq_domain_simple_dt_translate,
+#endif /* CONFIG_OF_IRQ */
+};
+EXPORT_SYMBOL_GPL(irq_domain_simple_ops);

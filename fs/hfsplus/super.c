@@ -344,6 +344,7 @@ static int hfsplus_fill_super(struct super_block *sb, void *data, int silent)
 	struct inode *root, *inode;
 	struct qstr str;
 	struct nls_table *nls = NULL;
+	u64 last_fs_block, last_fs_page;
 	int err;
 
 	err = -EINVAL;
@@ -399,9 +400,13 @@ static int hfsplus_fill_super(struct super_block *sb, void *data, int silent)
 	if (!sbi->rsrc_clump_blocks)
 		sbi->rsrc_clump_blocks = 1;
 
-	err = generic_check_addressable(sbi->alloc_blksz_shift,
-					sbi->total_blocks);
-	if (err) {
+	err = -EFBIG;
+	last_fs_block = sbi->total_blocks - 1;
+	last_fs_page = (last_fs_block << sbi->alloc_blksz_shift) >>
+			PAGE_CACHE_SHIFT;
+
+	if ((last_fs_block > (sector_t)(~0ULL) >> (sbi->alloc_blksz_shift - 9)) ||
+	    (last_fs_page > (pgoff_t)(~0ULL))) {
 		printk(KERN_ERR "hfs: filesystem size too large.\n");
 		goto out_free_vhdr;
 	}
@@ -494,9 +499,16 @@ static int hfsplus_fill_super(struct super_block *sb, void *data, int silent)
 		if (!sbi->hidden_dir) {
 			mutex_lock(&sbi->vh_mutex);
 			sbi->hidden_dir = hfsplus_new_inode(sb, S_IFDIR);
-			hfsplus_create_cat(sbi->hidden_dir->i_ino, root, &str,
-					   sbi->hidden_dir);
+			if (!sbi->hidden_dir) {
+				mutex_unlock(&sbi->vh_mutex);
+				err = -ENOMEM;
+				goto out_put_root;
+			}
+			err = hfsplus_create_cat(sbi->hidden_dir->i_ino, root,
+						 &str, sbi->hidden_dir);
 			mutex_unlock(&sbi->vh_mutex);
+			if (err)
+				goto out_put_hidden_dir;
 
 			hfsplus_mark_inode_dirty(sbi->hidden_dir,
 						 HFSPLUS_I_CAT_DIRTY);
@@ -525,8 +537,8 @@ out_close_cat_tree:
 out_close_ext_tree:
 	hfs_btree_close(sbi->ext_tree);
 out_free_vhdr:
-	kfree(sbi->s_vhdr);
-	kfree(sbi->s_backup_vhdr);
+	kfree(sbi->s_vhdr_buf);
+	kfree(sbi->s_backup_vhdr_buf);
 out_unload_nls:
 	unload_nls(sbi->nls);
 	unload_nls(nls);
@@ -553,7 +565,6 @@ static void hfsplus_i_callback(struct rcu_head *head)
 {
 	struct inode *inode = container_of(head, struct inode, i_rcu);
 
-	INIT_LIST_HEAD(&inode->i_dentry);
 	kmem_cache_free(hfsplus_inode_cachep, HFSPLUS_I(inode));
 }
 

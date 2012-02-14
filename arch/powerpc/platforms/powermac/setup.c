@@ -31,6 +31,7 @@
 #include <linux/stddef.h>
 #include <linux/unistd.h>
 #include <linux/ptrace.h>
+#include <linux/export.h>
 #include <linux/user.h>
 #include <linux/tty.h>
 #include <linux/string.h>
@@ -493,11 +494,15 @@ static int __init pmac_declare_of_platform_devices(void)
 		return -1;
 
 	np = of_find_node_by_name(NULL, "valkyrie");
-	if (np)
+	if (np) {
 		of_platform_device_create(np, "valkyrie", NULL);
+		of_node_put(np);
+	}
 	np = of_find_node_by_name(NULL, "platinum");
-	if (np)
+	if (np) {
 		of_platform_device_create(np, "platinum", NULL);
+		of_node_put(np);
+	}
         np = of_find_node_by_type(NULL, "smu");
         if (np) {
 		of_platform_device_create(np, "smu", NULL);

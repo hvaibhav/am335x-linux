@@ -4,12 +4,12 @@
  * Copyright (C) 2010 Stephane Duverger
  *
  * Released under the GPLv2.
- *
  */
 
 /* verbose messages */
 #include <linux/kernel.h>
 #include <linux/device.h>
+#include <linux/module.h>
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 
@@ -404,7 +404,7 @@ fail:
 
 static struct usb_gadget_driver dbgp_driver = {
 	.function = "dbgp",
-	.speed = USB_SPEED_HIGH,
+	.max_speed = USB_SPEED_HIGH,
 	.unbind = dbgp_unbind,
 	.setup = dbgp_setup,
 	.disconnect = dbgp_disconnect,

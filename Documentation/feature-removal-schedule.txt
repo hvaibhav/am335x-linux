@@ -85,17 +85,6 @@ Who:	Robin Getz <rgetz@blackfin.uclinux.org> & Matt Mackall <mpm@selenic.com>
 
 ---------------------------
 
-What:	Deprecated snapshot ioctls
-When:	2.6.36
-
-Why:	The ioctls in kernel/power/user.c were marked as deprecated long time
-	ago. Now they notify users about that so that they need to replace
-	their userspace. After some more time, remove them completely.
-
-Who:	Jiri Slaby <jirislaby@gmail.com>
-
----------------------------
-
 What:	The ieee80211_regdom module parameter
 When:	March 2010 / desktop catchup
 
@@ -130,41 +119,6 @@ Why:	Broken design for runtime control over driver power states, confusing
 	use it were broken.  Drivers should instead be exposing domain-specific
 	interfaces either to kernel or to userspace.
 Who:	Pavel Machek <pavel@ucw.cz>
-
----------------------------
-
-What:	sys_sysctl
-When:	September 2010
-Option: CONFIG_SYSCTL_SYSCALL
-Why:	The same information is available in a more convenient from
-	/proc/sys, and none of the sysctl variables appear to be
-	important performance wise.
-
-	Binary sysctls are a long standing source of subtle kernel
-	bugs and security issues.
-
-	When I looked several months ago all I could find after
-	searching several distributions were 5 user space programs and
-	glibc (which falls back to /proc/sys) using this syscall.
-
-	The man page for sysctl(2) documents it as unusable for user
-	space programs.
-
-	sysctl(2) is not generally ABI compatible to a 32bit user
-	space application on a 64bit and a 32bit kernel.
-
-	For the last several months the policy has been no new binary
-	sysctls and no one has put forward an argument to use them.
-
-	Binary sysctls issues seem to keep happening appearing so
-	properly deprecating them (with a warning to user space) and a
-	2 year grace warning period will mean eventually we can kill
-	them and end the pain.
-
-	In the mean time individual binary sysctls can be dealt with
-	in a piecewise fashion.
-
-Who:	Eric Biederman <ebiederm@xmission.com>
 
 ---------------------------
 
@@ -298,8 +252,7 @@ Who:	Ravikiran Thirumalai <kiran@scalex86.org>
 
 What:	Code that is now under CONFIG_WIRELESS_EXT_SYSFS
 	(in net/core/net-sysfs.c)
-When:	After the only user (hal) has seen a release with the patches
-	for enough time, probably some time in 2010.
+When:	3.5
 Why:	Over 1K .text/.data size reduction, data is available in other
 	ways (ioctls)
 Who:	Johannes Berg <johannes@sipsolutions.net>
@@ -397,15 +350,6 @@ Who: 	anybody or Florian Mickler <florian@mickler.org>
 
 ----------------------------
 
-What:	KVM paravirt mmu host support
-When:	January 2011
-Why:	The paravirt mmu host support is slower than non-paravirt mmu, both
-	on newer and older hardware.  It is already not exposed to the guest,
-	and kept only for live migration purposes.
-Who:	Avi Kivity <avi@redhat.com>
-
-----------------------------
-
 What:	iwlwifi 50XX module parameters
 When:	3.0
 Why:	The "..50" modules parameters were used to configure 5000 series and
@@ -495,75 +439,6 @@ Who:	Jean Delvare <khali@linux-fr.org>
 
 ----------------------------
 
-What:	Support for UVCIOC_CTRL_ADD in the uvcvideo driver
-When:	3.2
-Why:	The information passed to the driver by this ioctl is now queried
-	dynamically from the device.
-Who:	Laurent Pinchart <laurent.pinchart@ideasonboard.com>
-
-----------------------------
-
-What:	Support for UVCIOC_CTRL_MAP_OLD in the uvcvideo driver
-When:	3.2
-Why:	Used only by applications compiled against older driver versions.
-	Superseded by UVCIOC_CTRL_MAP which supports V4L2 menu controls.
-Who:	Laurent Pinchart <laurent.pinchart@ideasonboard.com>
-
-----------------------------
-
-What:	Support for UVCIOC_CTRL_GET and UVCIOC_CTRL_SET in the uvcvideo driver
-When:	3.2
-Why:	Superseded by the UVCIOC_CTRL_QUERY ioctl.
-Who:	Laurent Pinchart <laurent.pinchart@ideasonboard.com>
-
-----------------------------
-
-What:	Support for driver specific ioctls in the pwc driver (everything
-	defined in media/pwc-ioctl.h)
-When:	3.3
-Why:	This stems from the v4l1 era, with v4l2 everything can be done with
-	standardized v4l2 API calls
-Who:	Hans de Goede <hdegoede@redhat.com>
-
-----------------------------
-
-What:	Driver specific sysfs API in the pwc driver
-When:	3.3
-Why:	Setting pan/tilt should be done with v4l2 controls, like with other
-	cams. The button is available as a standard input device
-Who:	Hans de Goede <hdegoede@redhat.com>
-
-----------------------------
-
-What:	Driver specific use of pixfmt.priv in the pwc driver
-When:	3.3
-Why:	The .priv field never was intended for this, setting a framerate is
-	support using the standardized S_PARM ioctl
-Who:	Hans de Goede <hdegoede@redhat.com>
-
-----------------------------
-
-What:	Software emulation of arbritary resolutions in the pwc driver
-When:	3.3
-Why:	The pwc driver claims to support any resolution between 160x120
-	and 640x480, but emulates this by simply drawing a black border
-	around the image. Userspace can draw its own black border if it
-	really wants one.
-Who:	Hans de Goede <hdegoede@redhat.com>
-
-----------------------------
-
-What:	For VIDIOC_S_FREQUENCY the type field must match the device node's type.
-	If not, return -EINVAL.
-When:	3.2
-Why:	It makes no sense to switch the tuner to radio mode by calling
-	VIDIOC_S_FREQUENCY on a video node, or to switch the tuner to tv mode by
-	calling VIDIOC_S_FREQUENCY on a radio node. This is the first step of a
-	move to more consistent handling of tv and radio tuners.
-Who:	Hans Verkuil <hans.verkuil@cisco.com>
-
-----------------------------
-
 What:	Opening a radio device node will no longer automatically switch the
 	tuner mode from tv to radio.
 When:	3.3
@@ -592,3 +467,60 @@ Why:    In 3.0, we can now autodetect internal 3G device and already have
 	interface that was used by acer-wmi driver. It will replaced by
 	information log when acer-wmi initial.
 Who:    Lee, Chun-Yi <jlee@novell.com>
+
+---------------------------
+
+What:	/sys/devices/platform/_UDC_/udc/_UDC_/is_dualspeed file and
+	is_dualspeed line in /sys/devices/platform/ci13xxx_*/udc/device file.
+When:	3.8
+Why:	The is_dualspeed file is superseded by maximum_speed in the same
+	directory and is_dualspeed line in device file is superseded by
+	max_speed line in the same file.
+
+	The maximum_speed/max_speed specifies maximum speed supported by UDC.
+	To check if dualspeeed is supported, check if the value is >= 3.
+	Various possible speeds are defined in <linux/usb/ch9.h>.
+Who:	Michal Nazarewicz <mina86@mina86.com>
+
+----------------------------
+
+What:	The XFS nodelaylog mount option
+When:	3.3
+Why:	The delaylog mode that has been the default since 2.6.39 has proven
+	stable, and the old code is in the way of additional improvements in
+	the log code.
+Who:	Christoph Hellwig <hch@lst.de>
+
+----------------------------
+
+What:	iwlagn alias support
+When:	3.5
+Why:	The iwlagn module has been renamed iwlwifi.  The alias will be around
+	for backward compatibility for several cycles and then dropped.
+Who:	Don Fry <donald.h.fry@intel.com>
+
+----------------------------
+
+What:	pci_scan_bus_parented()
+When:	3.5
+Why:	The pci_scan_bus_parented() interface creates a new root bus.  The
+	bus is created with default resources (ioport_resource and
+	iomem_resource) that are always wrong, so we rely on arch code to
+	correct them later.  Callers of pci_scan_bus_parented() should
+	convert to using pci_scan_root_bus() so they can supply a list of
+	bus resources when the bus is created.
+Who:	Bjorn Helgaas <bhelgaas@google.com>
+
+----------------------------
+
+What:	The CAP9 SoC family will be removed
+When:	3.4
+Files:	arch/arm/mach-at91/at91cap9.c
+	arch/arm/mach-at91/at91cap9_devices.c
+	arch/arm/mach-at91/include/mach/at91cap9.h
+	arch/arm/mach-at91/include/mach/at91cap9_matrix.h
+	arch/arm/mach-at91/include/mach/at91cap9_ddrsdr.h
+	arch/arm/mach-at91/board-cap9adk.c
+Why:	The code is not actively maintained and platforms are now hard to find.
+Who:	Nicolas Ferre <nicolas.ferre@atmel.com>
+	Jean-Christophe PLAGNIOL-VILLARD <plagnioj@jcrosoft.com>

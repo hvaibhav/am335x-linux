@@ -568,7 +568,7 @@ int em28xx_audio_setup(struct em28xx *dev)
 	em28xx_warn("AC97 features = 0x%04x\n", feat);
 
 	/* Try to identify what audio processor we have */
-	if ((vid == 0xffffffff) && (feat == 0x6a90))
+	if (((vid == 0xffffffff) || (vid == 0x83847650)) && (feat == 0x6a90))
 		dev->audio_mode.ac97 = EM28XX_AC97_EM202;
 	else if ((vid >> 8) == 0x838476)
 		dev->audio_mode.ac97 = EM28XX_AC97_SIGMATEL;
@@ -1070,7 +1070,8 @@ int em28xx_init_isoc(struct em28xx *dev, int max_packets,
 			should also be using 'desc.bInterval'
 		 */
 		pipe = usb_rcvisocpipe(dev->udev,
-			dev->mode == EM28XX_ANALOG_MODE ? 0x82 : 0x84);
+				       dev->mode == EM28XX_ANALOG_MODE ?
+				       EM28XX_EP_ANALOG : EM28XX_EP_DIGITAL);
 
 		usb_fill_int_urb(urb, dev->udev, pipe,
 				 dev->isoc_ctl.transfer_buffer[i], sb_size,
@@ -1108,62 +1109,6 @@ int em28xx_init_isoc(struct em28xx *dev, int max_packets,
 }
 EXPORT_SYMBOL_GPL(em28xx_init_isoc);
 
-/* Determine the packet size for the DVB stream for the given device
-   (underlying value programmed into the eeprom) */
-int em28xx_isoc_dvb_max_packetsize(struct em28xx *dev)
-{
-	unsigned int chip_cfg2;
-	unsigned int packet_size;
-
-	switch (dev->chip_id) {
-	case CHIP_ID_EM2710:
-	case CHIP_ID_EM2750:
-	case CHIP_ID_EM2800:
-	case CHIP_ID_EM2820:
-	case CHIP_ID_EM2840:
-	case CHIP_ID_EM2860:
-		/* No DVB support */
-		return -EINVAL;
-	case CHIP_ID_EM2870:
-	case CHIP_ID_EM2883:
-		/* TS max packet size stored in bits 1-0 of R01 */
-		chip_cfg2 = em28xx_read_reg(dev, EM28XX_R01_CHIPCFG2);
-		switch (chip_cfg2 & EM28XX_CHIPCFG2_TS_PACKETSIZE_MASK) {
-		case EM28XX_CHIPCFG2_TS_PACKETSIZE_188:
-			packet_size = 188;
-			break;
-		case EM28XX_CHIPCFG2_TS_PACKETSIZE_376:
-			packet_size = 376;
-			break;
-		case EM28XX_CHIPCFG2_TS_PACKETSIZE_564:
-			packet_size = 564;
-			break;
-		case EM28XX_CHIPCFG2_TS_PACKETSIZE_752:
-			packet_size = 752;
-			break;
-		}
-		break;
-	case CHIP_ID_EM2874:
-		/*
-		 * FIXME: for now assumes 564 like it was before, but the
-		 * em2874 code should be added to return the proper value
-		 */
-		packet_size = 564;
-		break;
-	case CHIP_ID_EM2884:
-	case CHIP_ID_EM28174:
-	default:
-		/*
-		 * FIXME: same as em2874. 564 was enough for 22 Mbit DVB-T
-		 * but not enough for 44 Mbit DVB-C.
-		 */
-		packet_size = 752;
-	}
-
-	return packet_size;
-}
-EXPORT_SYMBOL_GPL(em28xx_isoc_dvb_max_packetsize);
-
 /*
  * em28xx_wake_i2c()
  * configure i2c attached devices
@@ -1184,25 +1129,6 @@ static LIST_HEAD(em28xx_devlist);
 static DEFINE_MUTEX(em28xx_devlist_mutex);
 
 /*
- * em28xx_realease_resources()
- * unregisters the v4l2,i2c and usb devices
- * called when the device gets disconected or at module unload
-*/
-void em28xx_remove_from_devlist(struct em28xx *dev)
-{
-	mutex_lock(&em28xx_devlist_mutex);
-	list_del(&dev->devlist);
-	mutex_unlock(&em28xx_devlist_mutex);
-};
-
-void em28xx_add_into_devlist(struct em28xx *dev)
-{
-	mutex_lock(&em28xx_devlist_mutex);
-	list_add_tail(&dev->devlist, &em28xx_devlist);
-	mutex_unlock(&em28xx_devlist_mutex);
-};
-
-/*
  * Extension interface
  */
 
@@ -1217,8 +1143,8 @@ int em28xx_register_extension(struct em28xx_ops *ops)
 	list_for_each_entry(dev, &em28xx_devlist, devlist) {
 		ops->init(dev);
 	}
-	printk(KERN_INFO "Em28xx: Initialized (%s) extension\n", ops->name);
 	mutex_unlock(&em28xx_devlist_mutex);
+	printk(KERN_INFO "Em28xx: Initialized (%s) extension\n", ops->name);
 	return 0;
 }
 EXPORT_SYMBOL(em28xx_register_extension);
@@ -1231,36 +1157,34 @@ void em28xx_unregister_extension(struct em28xx_ops *ops)
 	list_for_each_entry(dev, &em28xx_devlist, devlist) {
 		ops->fini(dev);
 	}
-	printk(KERN_INFO "Em28xx: Removed (%s) extension\n", ops->name);
 	list_del(&ops->next);
 	mutex_unlock(&em28xx_devlist_mutex);
+	printk(KERN_INFO "Em28xx: Removed (%s) extension\n", ops->name);
 }
 EXPORT_SYMBOL(em28xx_unregister_extension);
 
 void em28xx_init_extension(struct em28xx *dev)
 {
-	struct em28xx_ops *ops = NULL;
+	const struct em28xx_ops *ops = NULL;
 
 	mutex_lock(&em28xx_devlist_mutex);
-	if (!list_empty(&em28xx_extension_devlist)) {
-		list_for_each_entry(ops, &em28xx_extension_devlist, next) {
-			if (ops->init)
-				ops->init(dev);
-		}
+	list_add_tail(&dev->devlist, &em28xx_devlist);
+	list_for_each_entry(ops, &em28xx_extension_devlist, next) {
+		if (ops->init)
+			ops->init(dev);
 	}
 	mutex_unlock(&em28xx_devlist_mutex);
 }
 
 void em28xx_close_extension(struct em28xx *dev)
 {
-	struct em28xx_ops *ops = NULL;
+	const struct em28xx_ops *ops = NULL;
 
 	mutex_lock(&em28xx_devlist_mutex);
-	if (!list_empty(&em28xx_extension_devlist)) {
-		list_for_each_entry(ops, &em28xx_extension_devlist, next) {
-			if (ops->fini)
-				ops->fini(dev);
-		}
+	list_for_each_entry(ops, &em28xx_extension_devlist, next) {
+		if (ops->fini)
+			ops->fini(dev);
 	}
+	list_del(&dev->devlist);
 	mutex_unlock(&em28xx_devlist_mutex);
 }

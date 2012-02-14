@@ -138,7 +138,7 @@ struct cdc_ncm_ctx {
 static void cdc_ncm_tx_timeout(unsigned long arg);
 static const struct driver_info cdc_ncm_info;
 static struct usb_driver cdc_ncm_driver;
-static struct ethtool_ops cdc_ncm_ethtool_ops;
+static const struct ethtool_ops cdc_ncm_ethtool_ops;
 
 static const struct usb_device_id cdc_devs[] = {
 	{ USB_INTERFACE_INFO(USB_CLASS_COMM,
@@ -228,23 +228,40 @@ static u8 cdc_ncm_setup(struct cdc_ncm_ctx *ctx)
 	if (ctx->rx_max != le32_to_cpu(ctx->ncm_parm.dwNtbInMaxSize)) {
 
 		if (flags & USB_CDC_NCM_NCAP_NTB_INPUT_SIZE) {
-			struct usb_cdc_ncm_ndp_input_size ndp_in_sz;
-			err = usb_control_msg(ctx->udev,
-					usb_sndctrlpipe(ctx->udev, 0),
-					USB_CDC_SET_NTB_INPUT_SIZE,
-					USB_TYPE_CLASS | USB_DIR_OUT
-					 | USB_RECIP_INTERFACE,
-					0, iface_no, &ndp_in_sz, 8, 1000);
-		} else {
-			__le32 dwNtbInMaxSize = cpu_to_le32(ctx->rx_max);
-			err = usb_control_msg(ctx->udev,
-					usb_sndctrlpipe(ctx->udev, 0),
-					USB_CDC_SET_NTB_INPUT_SIZE,
-					USB_TYPE_CLASS | USB_DIR_OUT
-					 | USB_RECIP_INTERFACE,
-					0, iface_no, &dwNtbInMaxSize, 4, 1000);
-		}
+			struct usb_cdc_ncm_ndp_input_size *ndp_in_sz;
 
+			ndp_in_sz = kzalloc(sizeof(*ndp_in_sz), GFP_KERNEL);
+			if (!ndp_in_sz) {
+				err = -ENOMEM;
+				goto size_err;
+			}
+
+			err = usb_control_msg(ctx->udev,
+					usb_sndctrlpipe(ctx->udev, 0),
+					USB_CDC_SET_NTB_INPUT_SIZE,
+					USB_TYPE_CLASS | USB_DIR_OUT
+					 | USB_RECIP_INTERFACE,
+					0, iface_no, ndp_in_sz, 8, 1000);
+			kfree(ndp_in_sz);
+		} else {
+			__le32 *dwNtbInMaxSize;
+			dwNtbInMaxSize = kzalloc(sizeof(*dwNtbInMaxSize),
+					GFP_KERNEL);
+			if (!dwNtbInMaxSize) {
+				err = -ENOMEM;
+				goto size_err;
+			}
+			*dwNtbInMaxSize = cpu_to_le32(ctx->rx_max);
+
+			err = usb_control_msg(ctx->udev,
+					usb_sndctrlpipe(ctx->udev, 0),
+					USB_CDC_SET_NTB_INPUT_SIZE,
+					USB_TYPE_CLASS | USB_DIR_OUT
+					 | USB_RECIP_INTERFACE,
+					0, iface_no, dwNtbInMaxSize, 4, 1000);
+			kfree(dwNtbInMaxSize);
+		}
+size_err:
 		if (err < 0)
 			pr_debug("Setting NTB Input Size failed\n");
 	}
@@ -325,19 +342,29 @@ static u8 cdc_ncm_setup(struct cdc_ncm_ctx *ctx)
 
 	/* set Max Datagram Size (MTU) */
 	if (flags & USB_CDC_NCM_NCAP_MAX_DATAGRAM_SIZE) {
-		__le16 max_datagram_size;
+		__le16 *max_datagram_size;
 		u16 eth_max_sz = le16_to_cpu(ctx->ether_desc->wMaxSegmentSize);
+
+		max_datagram_size = kzalloc(sizeof(*max_datagram_size),
+				GFP_KERNEL);
+		if (!max_datagram_size) {
+			err = -ENOMEM;
+			goto max_dgram_err;
+		}
+
 		err = usb_control_msg(ctx->udev, usb_rcvctrlpipe(ctx->udev, 0),
 				USB_CDC_GET_MAX_DATAGRAM_SIZE,
 				USB_TYPE_CLASS | USB_DIR_IN
 				 | USB_RECIP_INTERFACE,
-				0, iface_no, &max_datagram_size,
+				0, iface_no, max_datagram_size,
 				2, 1000);
 		if (err < 0) {
 			pr_debug("GET_MAX_DATAGRAM_SIZE failed, use size=%u\n",
 						CDC_NCM_MIN_DATAGRAM_SIZE);
+			kfree(max_datagram_size);
 		} else {
-			ctx->max_datagram_size = le16_to_cpu(max_datagram_size);
+			ctx->max_datagram_size =
+				le16_to_cpu(*max_datagram_size);
 			/* Check Eth descriptor value */
 			if (eth_max_sz < CDC_NCM_MAX_DATAGRAM_SIZE) {
 				if (ctx->max_datagram_size > eth_max_sz)
@@ -360,8 +387,10 @@ static u8 cdc_ncm_setup(struct cdc_ncm_ctx *ctx)
 						USB_TYPE_CLASS | USB_DIR_OUT
 						 | USB_RECIP_INTERFACE,
 						0,
-						iface_no, &max_datagram_size,
+						iface_no, max_datagram_size,
 						2, 1000);
+			kfree(max_datagram_size);
+max_dgram_err:
 			if (err < 0)
 				pr_debug("SET_MAX_DATAGRAM_SIZE failed\n");
 		}
@@ -436,11 +465,9 @@ static int cdc_ncm_bind(struct usbnet *dev, struct usb_interface *intf)
 	int temp;
 	u8 iface_no;
 
-	ctx = kmalloc(sizeof(*ctx), GFP_KERNEL);
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (ctx == NULL)
 		return -ENODEV;
-
-	memset(ctx, 0, sizeof(*ctx));
 
 	init_timer(&ctx->tx_timer);
 	spin_lock_init(&ctx->mtx);
@@ -1193,7 +1220,7 @@ static struct usb_driver cdc_ncm_driver = {
 	.supports_autosuspend = 1,
 };
 
-static struct ethtool_ops cdc_ncm_ethtool_ops = {
+static const struct ethtool_ops cdc_ncm_ethtool_ops = {
 	.get_drvinfo = cdc_ncm_get_drvinfo,
 	.get_link = usbnet_get_link,
 	.get_msglevel = usbnet_get_msglevel,
@@ -1203,20 +1230,7 @@ static struct ethtool_ops cdc_ncm_ethtool_ops = {
 	.nway_reset = usbnet_nway_reset,
 };
 
-static int __init cdc_ncm_init(void)
-{
-	printk(KERN_INFO KBUILD_MODNAME ": " DRIVER_VERSION "\n");
-	return usb_register(&cdc_ncm_driver);
-}
-
-module_init(cdc_ncm_init);
-
-static void __exit cdc_ncm_exit(void)
-{
-	usb_deregister(&cdc_ncm_driver);
-}
-
-module_exit(cdc_ncm_exit);
+module_usb_driver(cdc_ncm_driver);
 
 MODULE_AUTHOR("Hans Petter Selasky");
 MODULE_DESCRIPTION("USB CDC NCM host driver");

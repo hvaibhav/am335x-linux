@@ -43,8 +43,6 @@
 #define TPS65912_REG_LDO9	12
 #define TPS65912_REG_LDO10	13
 
-#define TPS65912_MAX_REG_ID	TPS65912_REG_LDO_10
-
 /* Number of step-down converters available */
 #define TPS65912_NUM_DCDC	4
 
@@ -729,7 +727,7 @@ static __devinit int tps65912_probe(struct platform_device *pdev)
 		pmic->desc[i].owner = THIS_MODULE;
 		range = tps65912_get_range(pmic, i);
 		rdev = regulator_register(&pmic->desc[i],
-					tps65912->dev, reg_data, pmic);
+					tps65912->dev, reg_data, pmic, NULL);
 		if (IS_ERR(rdev)) {
 			dev_err(tps65912->dev,
 				"failed to register %s regulator\n",

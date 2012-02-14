@@ -25,7 +25,7 @@ struct ssb_sprom {
 	u8 et1phyaddr;		/* MII address for enet1 */
 	u8 et0mdcport;		/* MDIO for enet0 */
 	u8 et1mdcport;		/* MDIO for enet1 */
-	u8 board_rev;		/* Board revision number from SPROM. */
+	u16 board_rev;		/* Board revision number from SPROM. */
 	u8 country_code;	/* Country Code */
 	u16 leddc_on_time;	/* LED Powersave Duty Cycle On Count */
 	u16 leddc_off_time;	/* LED Powersave Duty Cycle Off Count */
@@ -93,6 +93,15 @@ struct ssb_sprom {
 			s8 a0, a1, a2, a3;
 		} ghz5;		/* 5GHz band */
 	} antenna_gain;
+
+	struct {
+		struct {
+			u8 tssipos, extpa_gain, pdet_range, tr_iso, antswlut;
+		} ghz2;
+		struct {
+			u8 tssipos, extpa_gain, pdet_range, tr_iso, antswlut;
+		} ghz5;
+	} fem;
 
 	/* TODO - add any parameters needed from rev 2, 3, 4, 5 or 8 SPROMs */
 };
@@ -231,10 +240,9 @@ struct ssb_driver {
 #define drv_to_ssb_drv(_drv) container_of(_drv, struct ssb_driver, drv)
 
 extern int __ssb_driver_register(struct ssb_driver *drv, struct module *owner);
-static inline int ssb_driver_register(struct ssb_driver *drv)
-{
-	return __ssb_driver_register(drv, THIS_MODULE);
-}
+#define ssb_driver_register(drv) \
+	__ssb_driver_register(drv, THIS_MODULE)
+
 extern void ssb_driver_unregister(struct ssb_driver *drv);
 
 

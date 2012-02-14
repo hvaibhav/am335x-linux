@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006 - 2009 Intel Corporation.  All rights reserved.
+ * Copyright (c) 2006 - 2011 Intel Corporation.  All rights reserved.
  *
  * This software is available to you under a choice of one of two
  * licenses.  You may choose to be licensed under the terms of the GNU
@@ -441,13 +441,13 @@ static int nes_nic_send(struct sk_buff *skb, struct net_device *netdev)
 		nesnic->tx_skb[nesnic->sq_head] = skb;
 		for (skb_fragment_index = 0; skb_fragment_index < skb_shinfo(skb)->nr_frags;
 				skb_fragment_index++) {
-			bus_address = pci_map_page( nesdev->pcidev,
-					skb_shinfo(skb)->frags[skb_fragment_index].page,
-					skb_shinfo(skb)->frags[skb_fragment_index].page_offset,
-					skb_shinfo(skb)->frags[skb_fragment_index].size,
-					PCI_DMA_TODEVICE);
+			skb_frag_t *frag =
+				&skb_shinfo(skb)->frags[skb_fragment_index];
+			bus_address = skb_frag_dma_map(&nesdev->pcidev->dev,
+						       frag, 0, skb_frag_size(frag),
+						       DMA_TO_DEVICE);
 			wqe_fragment_length[wqe_fragment_index] =
-					cpu_to_le16(skb_shinfo(skb)->frags[skb_fragment_index].size);
+					cpu_to_le16(skb_frag_size(&skb_shinfo(skb)->frags[skb_fragment_index]));
 			set_wqe_64bit_value(nic_sqe->wqe_words, NES_NIC_SQ_WQE_FRAG0_LOW_IDX+(2*wqe_fragment_index),
 				bus_address);
 			wqe_fragment_index++;
@@ -561,11 +561,12 @@ tso_sq_no_longer_full:
 			/* Map all the buffers */
 			for (tso_frag_count=0; tso_frag_count < skb_shinfo(skb)->nr_frags;
 					tso_frag_count++) {
-				tso_bus_address[tso_frag_count] = pci_map_page( nesdev->pcidev,
-						skb_shinfo(skb)->frags[tso_frag_count].page,
-						skb_shinfo(skb)->frags[tso_frag_count].page_offset,
-						skb_shinfo(skb)->frags[tso_frag_count].size,
-						PCI_DMA_TODEVICE);
+				skb_frag_t *frag =
+					&skb_shinfo(skb)->frags[tso_frag_count];
+				tso_bus_address[tso_frag_count] =
+					skb_frag_dma_map(&nesdev->pcidev->dev,
+							 frag, 0, skb_frag_size(frag),
+							 DMA_TO_DEVICE);
 			}
 
 			tso_frag_index = 0;
@@ -636,11 +637,11 @@ tso_sq_no_longer_full:
 				}
 				while (wqe_fragment_index < 5) {
 					wqe_fragment_length[wqe_fragment_index] =
-							cpu_to_le16(skb_shinfo(skb)->frags[tso_frag_index].size);
+							cpu_to_le16(skb_frag_size(&skb_shinfo(skb)->frags[tso_frag_index]));
 					set_wqe_64bit_value(nic_sqe->wqe_words, NES_NIC_SQ_WQE_FRAG0_LOW_IDX+(2*wqe_fragment_index),
 						(u64)tso_bus_address[tso_frag_index]);
 					wqe_fragment_index++;
-					tso_wqe_length += skb_shinfo(skb)->frags[tso_frag_index++].size;
+					tso_wqe_length += skb_frag_size(&skb_shinfo(skb)->frags[tso_frag_index++]);
 					if (wqe_fragment_index < 5)
 						wqe_fragment_length[wqe_fragment_index] = 0;
 					if (tso_frag_index == tso_frag_count)
@@ -1090,6 +1091,8 @@ static const char nes_ethtool_stringset[][ETH_GSTRING_LEN] = {
 	"LRO aggregated",
 	"LRO flushed",
 	"LRO no_desc",
+	"PAU CreateQPs",
+	"PAU DestroyQPs",
 };
 #define NES_ETHTOOL_STAT_COUNT  ARRAY_SIZE(nes_ethtool_stringset)
 
@@ -1305,6 +1308,8 @@ static void nes_netdev_get_ethtool_stats(struct net_device *netdev,
 	target_stat_values[++index] = nesvnic->lro_mgr.stats.aggregated;
 	target_stat_values[++index] = nesvnic->lro_mgr.stats.flushed;
 	target_stat_values[++index] = nesvnic->lro_mgr.stats.no_desc;
+	target_stat_values[++index] = atomic_read(&pau_qps_created);
+	target_stat_values[++index] = atomic_read(&pau_qps_destroyed);
 }
 
 /**
@@ -1584,7 +1589,7 @@ static const struct ethtool_ops nes_ethtool_ops = {
 	.set_pauseparam = nes_netdev_set_pauseparam,
 };
 
-static void nes_vlan_mode(struct net_device *netdev, struct nes_device *nesdev, u32 features)
+static void nes_vlan_mode(struct net_device *netdev, struct nes_device *nesdev, netdev_features_t features)
 {
 	struct nes_adapter *nesadapter = nesdev->nesadapter;
 	u32 u32temp;
@@ -1605,7 +1610,7 @@ static void nes_vlan_mode(struct net_device *netdev, struct nes_device *nesdev, 
 	spin_unlock_irqrestore(&nesadapter->phy_lock, flags);
 }
 
-static u32 nes_fix_features(struct net_device *netdev, u32 features)
+static netdev_features_t nes_fix_features(struct net_device *netdev, netdev_features_t features)
 {
 	/*
 	 * Since there is no support for separate rx/tx vlan accel
@@ -1619,7 +1624,7 @@ static u32 nes_fix_features(struct net_device *netdev, u32 features)
 	return features;
 }
 
-static int nes_set_features(struct net_device *netdev, u32 features)
+static int nes_set_features(struct net_device *netdev, netdev_features_t features)
 {
 	struct nes_vnic *nesvnic = netdev_priv(netdev);
 	struct nes_device *nesdev = nesvnic->nesdev;
@@ -1638,7 +1643,7 @@ static const struct net_device_ops nes_netdev_ops = {
 	.ndo_get_stats		= nes_netdev_get_stats,
 	.ndo_tx_timeout		= nes_netdev_tx_timeout,
 	.ndo_set_mac_address	= nes_netdev_set_mac_address,
-	.ndo_set_multicast_list = nes_netdev_set_multicast_list,
+	.ndo_set_rx_mode	= nes_netdev_set_multicast_list,
 	.ndo_change_mtu		= nes_netdev_change_mtu,
 	.ndo_validate_addr	= eth_validate_addr,
 	.ndo_fix_features	= nes_fix_features,

@@ -18,6 +18,7 @@
 #include <linux/led-lm3530.h>
 #include <linux/types.h>
 #include <linux/regulator/consumer.h>
+#include <linux/module.h>
 
 #define LM3530_LED_DEV "lcd-backlight"
 #define LM3530_NAME "lm3530-led"
@@ -163,8 +164,8 @@ static int lm3530_init_registers(struct lm3530_data *drvdata)
 
 	if (drvdata->mode == LM3530_BL_MODE_ALS) {
 		if (pltfm->als_vmax == 0) {
-			pltfm->als_vmin = als_vmin = 0;
-			pltfm->als_vmin = als_vmax = LM3530_ALS_WINDOW_mV;
+			pltfm->als_vmin = 0;
+			pltfm->als_vmax = LM3530_ALS_WINDOW_mV;
 		}
 
 		als_vmin = pltfm->als_vmin;
@@ -421,7 +422,6 @@ err_class_register:
 err_reg_init:
 	regulator_put(drvdata->regulator);
 err_regulator_get:
-	i2c_set_clientdata(client, NULL);
 	kfree(drvdata);
 err_out:
 	return err;
@@ -449,7 +449,7 @@ MODULE_DEVICE_TABLE(i2c, lm3530_id);
 
 static struct i2c_driver lm3530_i2c_driver = {
 	.probe = lm3530_probe,
-	.remove = lm3530_remove,
+	.remove = __devexit_p(lm3530_remove),
 	.id_table = lm3530_id,
 	.driver = {
 		.name = LM3530_NAME,
@@ -457,18 +457,7 @@ static struct i2c_driver lm3530_i2c_driver = {
 	},
 };
 
-static int __init lm3530_init(void)
-{
-	return i2c_add_driver(&lm3530_i2c_driver);
-}
-
-static void __exit lm3530_exit(void)
-{
-	i2c_del_driver(&lm3530_i2c_driver);
-}
-
-module_init(lm3530_init);
-module_exit(lm3530_exit);
+module_i2c_driver(lm3530_i2c_driver);
 
 MODULE_DESCRIPTION("Back Light driver for LM3530");
 MODULE_LICENSE("GPL v2");

@@ -50,7 +50,7 @@ module_param_named(def_disp, def_disp_name, charp, 0);
 MODULE_PARM_DESC(def_disp, "default display name");
 
 #ifdef DEBUG
-unsigned int dss_debug;
+bool dss_debug;
 module_param_named(debug, dss_debug, bool, 0644);
 #endif
 
@@ -145,6 +145,10 @@ static int dss_initialize_debugfs(void)
 	debugfs_create_file("venc", S_IRUGO, dss_debugfs_dir,
 			&venc_dump_regs, &dss_debug_fops);
 #endif
+#ifdef CONFIG_OMAP4_DSS_HDMI
+	debugfs_create_file("hdmi", S_IRUGO, dss_debugfs_dir,
+			&hdmi_dump_regs, &dss_debug_fops);
+#endif
 	return 0;
 }
 
@@ -173,6 +177,8 @@ static int omap_dss_probe(struct platform_device *pdev)
 	core.pdev = pdev;
 
 	dss_features_init();
+
+	dss_apply_init();
 
 	dss_init_overlay_managers(pdev);
 	dss_init_overlays(pdev);

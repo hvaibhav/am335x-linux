@@ -62,7 +62,7 @@ struct idmac_desc {
 
 	u32		des1;	/* Buffer sizes */
 #define IDMAC_SET_BUFFER1_SIZE(d, s) \
-	((d)->des1 = ((d)->des1 & 0x03ffc000) | ((s) & 0x3fff))
+	((d)->des1 = ((d)->des1 & 0x03ffe000) | ((s) & 0x1fff))
 
 	u32		des2;	/* buffer 1 physical address */
 
@@ -588,11 +588,11 @@ static void dw_mci_setup_bus(struct dw_mci_slot *slot)
 	mci_writel(host, CTYPE, (slot->ctype << slot->id));
 }
 
-static void dw_mci_start_request(struct dw_mci *host,
-				 struct dw_mci_slot *slot)
+static void __dw_mci_start_request(struct dw_mci *host,
+				   struct dw_mci_slot *slot,
+				   struct mmc_command *cmd)
 {
 	struct mmc_request *mrq;
-	struct mmc_command *cmd;
 	struct mmc_data	*data;
 	u32 cmdflags;
 
@@ -610,14 +610,13 @@ static void dw_mci_start_request(struct dw_mci *host,
 	host->completed_events = 0;
 	host->data_status = 0;
 
-	data = mrq->data;
+	data = cmd->data;
 	if (data) {
 		dw_mci_set_timeout(host);
 		mci_writel(host, BYTCNT, data->blksz*data->blocks);
 		mci_writel(host, BLKSIZ, data->blksz);
 	}
 
-	cmd = mrq->cmd;
 	cmdflags = dw_mci_prepare_command(slot->mmc, cmd);
 
 	/* this is the first command, send the initialization clock */
@@ -633,6 +632,16 @@ static void dw_mci_start_request(struct dw_mci *host,
 
 	if (mrq->stop)
 		host->stop_cmdr = dw_mci_prepare_command(slot->mmc, mrq->stop);
+}
+
+static void dw_mci_start_request(struct dw_mci *host,
+				 struct dw_mci_slot *slot)
+{
+	struct mmc_request *mrq = slot->mrq;
+	struct mmc_command *cmd;
+
+	cmd = mrq->sbc ? mrq->sbc : mrq->cmd;
+	__dw_mci_start_request(host, slot, cmd);
 }
 
 /* must be called with host->lock held */
@@ -698,12 +707,15 @@ static void dw_mci_set_ios(struct mmc_host *mmc, struct mmc_ios *ios)
 		break;
 	}
 
+	regs = mci_readl(slot->host, UHS_REG);
+
 	/* DDR mode set */
-	if (ios->ddr) {
-		regs = mci_readl(slot->host, UHS_REG);
+	if (ios->timing == MMC_TIMING_UHS_DDR50)
 		regs |= (0x1 << slot->id) << 16;
-		mci_writel(slot->host, UHS_REG, regs);
-	}
+	else
+		regs &= ~(0x1 << slot->id) << 16;
+
+	mci_writel(slot->host, UHS_REG, regs);
 
 	if (ios->clock) {
 		/*
@@ -764,11 +776,29 @@ static int dw_mci_get_cd(struct mmc_host *mmc)
 	return present;
 }
 
+static void dw_mci_enable_sdio_irq(struct mmc_host *mmc, int enb)
+{
+	struct dw_mci_slot *slot = mmc_priv(mmc);
+	struct dw_mci *host = slot->host;
+	u32 int_mask;
+
+	/* Enable/disable Slot Specific SDIO interrupt */
+	int_mask = mci_readl(host, INTMASK);
+	if (enb) {
+		mci_writel(host, INTMASK,
+			   (int_mask | (1 << SDMMC_INT_SDIO(slot->id))));
+	} else {
+		mci_writel(host, INTMASK,
+			   (int_mask & ~(1 << SDMMC_INT_SDIO(slot->id))));
+	}
+}
+
 static const struct mmc_host_ops dw_mci_ops = {
-	.request	= dw_mci_request,
-	.set_ios	= dw_mci_set_ios,
-	.get_ro		= dw_mci_get_ro,
-	.get_cd		= dw_mci_get_cd,
+	.request		= dw_mci_request,
+	.set_ios		= dw_mci_set_ios,
+	.get_ro			= dw_mci_get_ro,
+	.get_cd			= dw_mci_get_cd,
+	.enable_sdio_irq	= dw_mci_enable_sdio_irq,
 };
 
 static void dw_mci_request_end(struct dw_mci *host, struct mmc_request *mrq)
@@ -871,7 +901,14 @@ static void dw_mci_tasklet_func(unsigned long priv)
 			cmd = host->cmd;
 			host->cmd = NULL;
 			set_bit(EVENT_CMD_COMPLETE, &host->completed_events);
-			dw_mci_command_complete(host, host->mrq->cmd);
+			dw_mci_command_complete(host, cmd);
+			if (cmd == host->mrq->sbc && !cmd->error) {
+				prev_state = state = STATE_SENDING_CMD;
+				__dw_mci_start_request(host, host->cur_slot,
+						       host->mrq->cmd);
+				goto unlock;
+			}
+
 			if (!host->mrq->data || cmd->error) {
 				dw_mci_request_end(host, host->mrq);
 				goto unlock;
@@ -945,6 +982,12 @@ static void dw_mci_tasklet_func(unsigned long priv)
 			}
 
 			if (!data->stop) {
+				dw_mci_request_end(host, host->mrq);
+				goto unlock;
+			}
+
+			if (host->mrq->sbc && !data->error) {
+				data->stop->error = 0;
 				dw_mci_request_end(host, host->mrq);
 				goto unlock;
 			}
@@ -1025,7 +1068,8 @@ static void dw_mci_push_data16(struct dw_mci *host, void *buf, int cnt)
 		buf += len;
 		cnt -= len;
 		if (!sg_next(host->sg) || host->part_buf_count == 2) {
-			mci_writew(host, DATA, host->part_buf16);
+			mci_writew(host, DATA(host->data_offset),
+					host->part_buf16);
 			host->part_buf_count = 0;
 		}
 	}
@@ -1042,21 +1086,23 @@ static void dw_mci_push_data16(struct dw_mci *host, void *buf, int cnt)
 			cnt -= len;
 			/* push data from aligned buffer into fifo */
 			for (i = 0; i < items; ++i)
-				mci_writew(host, DATA, aligned_buf[i]);
+				mci_writew(host, DATA(host->data_offset),
+						aligned_buf[i]);
 		}
 	} else
 #endif
 	{
 		u16 *pdata = buf;
 		for (; cnt >= 2; cnt -= 2)
-			mci_writew(host, DATA, *pdata++);
+			mci_writew(host, DATA(host->data_offset), *pdata++);
 		buf = pdata;
 	}
 	/* put anything remaining in the part_buf */
 	if (cnt) {
 		dw_mci_set_part_bytes(host, buf, cnt);
 		if (!sg_next(host->sg))
-			mci_writew(host, DATA, host->part_buf16);
+			mci_writew(host, DATA(host->data_offset),
+					host->part_buf16);
 	}
 }
 
@@ -1071,7 +1117,8 @@ static void dw_mci_pull_data16(struct dw_mci *host, void *buf, int cnt)
 			int items = len >> 1;
 			int i;
 			for (i = 0; i < items; ++i)
-				aligned_buf[i] = mci_readw(host, DATA);
+				aligned_buf[i] = mci_readw(host,
+						DATA(host->data_offset));
 			/* memcpy from aligned buffer into output buffer */
 			memcpy(buf, aligned_buf, len);
 			buf += len;
@@ -1082,11 +1129,11 @@ static void dw_mci_pull_data16(struct dw_mci *host, void *buf, int cnt)
 	{
 		u16 *pdata = buf;
 		for (; cnt >= 2; cnt -= 2)
-			*pdata++ = mci_readw(host, DATA);
+			*pdata++ = mci_readw(host, DATA(host->data_offset));
 		buf = pdata;
 	}
 	if (cnt) {
-		host->part_buf16 = mci_readw(host, DATA);
+		host->part_buf16 = mci_readw(host, DATA(host->data_offset));
 		dw_mci_pull_final_bytes(host, buf, cnt);
 	}
 }
@@ -1099,7 +1146,8 @@ static void dw_mci_push_data32(struct dw_mci *host, void *buf, int cnt)
 		buf += len;
 		cnt -= len;
 		if (!sg_next(host->sg) || host->part_buf_count == 4) {
-			mci_writel(host, DATA, host->part_buf32);
+			mci_writel(host, DATA(host->data_offset),
+					host->part_buf32);
 			host->part_buf_count = 0;
 		}
 	}
@@ -1116,21 +1164,23 @@ static void dw_mci_push_data32(struct dw_mci *host, void *buf, int cnt)
 			cnt -= len;
 			/* push data from aligned buffer into fifo */
 			for (i = 0; i < items; ++i)
-				mci_writel(host, DATA, aligned_buf[i]);
+				mci_writel(host, DATA(host->data_offset),
+						aligned_buf[i]);
 		}
 	} else
 #endif
 	{
 		u32 *pdata = buf;
 		for (; cnt >= 4; cnt -= 4)
-			mci_writel(host, DATA, *pdata++);
+			mci_writel(host, DATA(host->data_offset), *pdata++);
 		buf = pdata;
 	}
 	/* put anything remaining in the part_buf */
 	if (cnt) {
 		dw_mci_set_part_bytes(host, buf, cnt);
 		if (!sg_next(host->sg))
-			mci_writel(host, DATA, host->part_buf32);
+			mci_writel(host, DATA(host->data_offset),
+						host->part_buf32);
 	}
 }
 
@@ -1145,7 +1195,8 @@ static void dw_mci_pull_data32(struct dw_mci *host, void *buf, int cnt)
 			int items = len >> 2;
 			int i;
 			for (i = 0; i < items; ++i)
-				aligned_buf[i] = mci_readl(host, DATA);
+				aligned_buf[i] = mci_readl(host,
+						DATA(host->data_offset));
 			/* memcpy from aligned buffer into output buffer */
 			memcpy(buf, aligned_buf, len);
 			buf += len;
@@ -1156,11 +1207,11 @@ static void dw_mci_pull_data32(struct dw_mci *host, void *buf, int cnt)
 	{
 		u32 *pdata = buf;
 		for (; cnt >= 4; cnt -= 4)
-			*pdata++ = mci_readl(host, DATA);
+			*pdata++ = mci_readl(host, DATA(host->data_offset));
 		buf = pdata;
 	}
 	if (cnt) {
-		host->part_buf32 = mci_readl(host, DATA);
+		host->part_buf32 = mci_readl(host, DATA(host->data_offset));
 		dw_mci_pull_final_bytes(host, buf, cnt);
 	}
 }
@@ -1173,7 +1224,8 @@ static void dw_mci_push_data64(struct dw_mci *host, void *buf, int cnt)
 		buf += len;
 		cnt -= len;
 		if (!sg_next(host->sg) || host->part_buf_count == 8) {
-			mci_writew(host, DATA, host->part_buf);
+			mci_writew(host, DATA(host->data_offset),
+					host->part_buf);
 			host->part_buf_count = 0;
 		}
 	}
@@ -1190,21 +1242,23 @@ static void dw_mci_push_data64(struct dw_mci *host, void *buf, int cnt)
 			cnt -= len;
 			/* push data from aligned buffer into fifo */
 			for (i = 0; i < items; ++i)
-				mci_writeq(host, DATA, aligned_buf[i]);
+				mci_writeq(host, DATA(host->data_offset),
+						aligned_buf[i]);
 		}
 	} else
 #endif
 	{
 		u64 *pdata = buf;
 		for (; cnt >= 8; cnt -= 8)
-			mci_writeq(host, DATA, *pdata++);
+			mci_writeq(host, DATA(host->data_offset), *pdata++);
 		buf = pdata;
 	}
 	/* put anything remaining in the part_buf */
 	if (cnt) {
 		dw_mci_set_part_bytes(host, buf, cnt);
 		if (!sg_next(host->sg))
-			mci_writeq(host, DATA, host->part_buf);
+			mci_writeq(host, DATA(host->data_offset),
+					host->part_buf);
 	}
 }
 
@@ -1219,7 +1273,8 @@ static void dw_mci_pull_data64(struct dw_mci *host, void *buf, int cnt)
 			int items = len >> 3;
 			int i;
 			for (i = 0; i < items; ++i)
-				aligned_buf[i] = mci_readq(host, DATA);
+				aligned_buf[i] = mci_readq(host,
+						DATA(host->data_offset));
 			/* memcpy from aligned buffer into output buffer */
 			memcpy(buf, aligned_buf, len);
 			buf += len;
@@ -1230,11 +1285,11 @@ static void dw_mci_pull_data64(struct dw_mci *host, void *buf, int cnt)
 	{
 		u64 *pdata = buf;
 		for (; cnt >= 8; cnt -= 8)
-			*pdata++ = mci_readq(host, DATA);
+			*pdata++ = mci_readq(host, DATA(host->data_offset));
 		buf = pdata;
 	}
 	if (cnt) {
-		host->part_buf = mci_readq(host, DATA);
+		host->part_buf = mci_readq(host, DATA(host->data_offset));
 		dw_mci_pull_final_bytes(host, buf, cnt);
 	}
 }
@@ -1406,6 +1461,7 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 	struct dw_mci *host = dev_id;
 	u32 status, pending;
 	unsigned int pass_count = 0;
+	int i;
 
 	do {
 		status = mci_readl(host, RINTSTS);
@@ -1475,6 +1531,15 @@ static irqreturn_t dw_mci_interrupt(int irq, void *dev_id)
 		if (pending & SDMMC_INT_CD) {
 			mci_writel(host, RINTSTS, SDMMC_INT_CD);
 			queue_work(dw_mci_card_workqueue, &host->card_work);
+		}
+
+		/* Handle SDIO Interrupts */
+		for (i = 0; i < host->num_slots; i++) {
+			struct dw_mci_slot *slot = host->slot[i];
+			if (pending & SDMMC_INT_SDIO(i)) {
+				mci_writel(host, RINTSTS, SDMMC_INT_SDIO(i));
+				mmc_signal_sdio_irq(slot->mmc);
+			}
 		}
 
 	} while (pass_count++ < 5);
@@ -1638,15 +1703,16 @@ static int __init dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 
 	if (host->pdata->caps)
 		mmc->caps = host->pdata->caps;
-	else
-		mmc->caps = 0;
+
+	if (host->pdata->caps2)
+		mmc->caps2 = host->pdata->caps2;
 
 	if (host->pdata->get_bus_wd)
 		if (host->pdata->get_bus_wd(slot->id) >= 4)
 			mmc->caps |= MMC_CAP_4_BIT_DATA;
 
 	if (host->pdata->quirks & DW_MCI_QUIRK_HIGHSPEED)
-		mmc->caps |= MMC_CAP_SD_HIGHSPEED;
+		mmc->caps |= MMC_CAP_SD_HIGHSPEED | MMC_CAP_MMC_HIGHSPEED;
 
 #ifdef CONFIG_MMC_DW_IDMAC
 	mmc->max_segs = host->ring_size;
@@ -1673,7 +1739,7 @@ static int __init dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 
 	host->vmmc = regulator_get(mmc_dev(mmc), "vmmc");
 	if (IS_ERR(host->vmmc)) {
-		printk(KERN_INFO "%s: no vmmc regulator found\n", mmc_hostname(mmc));
+		pr_info("%s: no vmmc regulator found\n", mmc_hostname(mmc));
 		host->vmmc = NULL;
 	} else
 		regulator_enable(host->vmmc);
@@ -1883,7 +1949,7 @@ static int dw_mci_probe(struct platform_device *pdev)
 		 * should put it in the platform data.
 		 */
 		fifo_size = mci_readl(host, FIFOTH);
-		fifo_size = 1 + ((fifo_size >> 16) & 0x7ff);
+		fifo_size = 1 + ((fifo_size >> 16) & 0xfff);
 	} else {
 		fifo_size = host->pdata->fifo_depth;
 	}
@@ -1922,6 +1988,18 @@ static int dw_mci_probe(struct platform_device *pdev)
 			goto err_init_slot;
 		}
 	}
+
+	/*
+	 * In 2.40a spec, Data offset is changed.
+	 * Need to check the version-id and set data-offset for DATA register.
+	 */
+	host->verid = SDMMC_GET_VERID(mci_readl(host, VERID));
+	dev_info(&pdev->dev, "Version ID is %04x\n", host->verid);
+
+	if (host->verid < DW_MMC_240A)
+		host->data_offset = DATA_OFFSET;
+	else
+		host->data_offset = DATA_240A_OFFSET;
 
 	/*
 	 * Enable interrupts for command done, data over, data empty, card det,
@@ -2010,14 +2088,14 @@ static int __exit dw_mci_remove(struct platform_device *pdev)
 	return 0;
 }
 
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 /*
  * TODO: we should probably disable the clock to the card in the suspend path.
  */
-static int dw_mci_suspend(struct platform_device *pdev, pm_message_t mesg)
+static int dw_mci_suspend(struct device *dev)
 {
 	int i, ret;
-	struct dw_mci *host = platform_get_drvdata(pdev);
+	struct dw_mci *host = dev_get_drvdata(dev);
 
 	for (i = 0; i < host->num_slots; i++) {
 		struct dw_mci_slot *slot = host->slot[i];
@@ -2040,10 +2118,10 @@ static int dw_mci_suspend(struct platform_device *pdev, pm_message_t mesg)
 	return 0;
 }
 
-static int dw_mci_resume(struct platform_device *pdev)
+static int dw_mci_resume(struct device *dev)
 {
 	int i, ret;
-	struct dw_mci *host = platform_get_drvdata(pdev);
+	struct dw_mci *host = dev_get_drvdata(dev);
 
 	if (host->vmmc)
 		regulator_enable(host->vmmc);
@@ -2051,7 +2129,7 @@ static int dw_mci_resume(struct platform_device *pdev)
 	if (host->dma_ops->init)
 		host->dma_ops->init(host);
 
-	if (!mci_wait_reset(&pdev->dev, host)) {
+	if (!mci_wait_reset(dev, host)) {
 		ret = -ENODEV;
 		return ret;
 	}
@@ -2079,14 +2157,15 @@ static int dw_mci_resume(struct platform_device *pdev)
 #else
 #define dw_mci_suspend	NULL
 #define dw_mci_resume	NULL
-#endif /* CONFIG_PM */
+#endif /* CONFIG_PM_SLEEP */
+
+static SIMPLE_DEV_PM_OPS(dw_mci_pmops, dw_mci_suspend, dw_mci_resume);
 
 static struct platform_driver dw_mci_driver = {
 	.remove		= __exit_p(dw_mci_remove),
-	.suspend	= dw_mci_suspend,
-	.resume		= dw_mci_resume,
 	.driver		= {
 		.name		= "dw_mmc",
+		.pm		= &dw_mci_pmops,
 	},
 };
 

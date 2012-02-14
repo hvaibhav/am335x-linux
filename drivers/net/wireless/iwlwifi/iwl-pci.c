@@ -60,13 +60,16 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  *****************************************************************************/
+#include <linux/module.h>
 #include <linux/pci.h>
 #include <linux/pci-aspm.h>
 
 #include "iwl-bus.h"
-#include "iwl-agn.h"
-#include "iwl-core.h"
 #include "iwl-io.h"
+#include "iwl-shared.h"
+#include "iwl-trans.h"
+#include "iwl-csr.h"
+#include "iwl-cfg.h"
 
 /* PCI registers */
 #define PCI_CFG_RETRY_TIMEOUT	0x041
@@ -91,6 +94,7 @@ static u16 iwl_pciexp_link_ctrl(struct iwl_bus *bus)
 {
 	int pos;
 	u16 pci_lnk_ctl;
+
 	struct pci_dev *pci_dev = IWL_BUS_GET_PCI_DEV(bus);
 
 	pos = pci_pcie_cap(pci_dev);
@@ -120,30 +124,31 @@ static void iwl_pci_apm_config(struct iwl_bus *bus)
 	if ((lctl & PCI_CFG_LINK_CTRL_VAL_L1_EN) ==
 				PCI_CFG_LINK_CTRL_VAL_L1_EN) {
 		/* L1-ASPM enabled; disable(!) L0S */
-		iwl_set_bit(bus->drv_data, CSR_GIO_REG,
+		iwl_set_bit(bus, CSR_GIO_REG,
 				CSR_GIO_REG_VAL_L0S_ENABLED);
 		dev_printk(KERN_INFO, bus->dev, "L1 Enabled; Disabling L0S\n");
 	} else {
 		/* L1-ASPM disabled; enable(!) L0S */
-		iwl_clear_bit(bus->drv_data, CSR_GIO_REG,
+		iwl_clear_bit(bus, CSR_GIO_REG,
 				CSR_GIO_REG_VAL_L0S_ENABLED);
 		dev_printk(KERN_INFO, bus->dev, "L1 Disabled; Enabling L0S\n");
 	}
 }
 
-static void iwl_pci_set_drv_data(struct iwl_bus *bus, void *drv_data)
-{
-	bus->drv_data = drv_data;
-	pci_set_drvdata(IWL_BUS_GET_PCI_DEV(bus), drv_data);
-}
-
-static void iwl_pci_get_hw_id(struct iwl_bus *bus, char buf[],
+static void iwl_pci_get_hw_id_string(struct iwl_bus *bus, char buf[],
 			      int buf_len)
 {
 	struct pci_dev *pci_dev = IWL_BUS_GET_PCI_DEV(bus);
 
 	snprintf(buf, buf_len, "PCI ID: 0x%04X:0x%04X", pci_dev->device,
 		 pci_dev->subsystem_device);
+}
+
+static u32 iwl_pci_get_hw_id(struct iwl_bus *bus)
+{
+	struct pci_dev *pci_dev = IWL_BUS_GET_PCI_DEV(bus);
+
+	return (pci_dev->device << 16) + pci_dev->subsystem_device;
 }
 
 static void iwl_pci_write8(struct iwl_bus *bus, u32 ofs, u8 val)
@@ -162,10 +167,10 @@ static u32 iwl_pci_read32(struct iwl_bus *bus, u32 ofs)
 	return val;
 }
 
-static struct iwl_bus_ops pci_ops = {
+static const struct iwl_bus_ops bus_ops_pci = {
 	.get_pm_support = iwl_pci_is_pm_supported,
 	.apm_config = iwl_pci_apm_config,
-	.set_drv_data = iwl_pci_set_drv_data,
+	.get_hw_id_string = iwl_pci_get_hw_id_string,
 	.get_hw_id = iwl_pci_get_hw_id,
 	.write8 = iwl_pci_write8,
 	.write32 = iwl_pci_write32,
@@ -256,6 +261,11 @@ static DEFINE_PCI_DEVICE_TABLE(iwl_hw_card_ids) = {
 	{IWL_PCI_DEVICE(0x0082, 0x1326, iwl6005_2abg_cfg)},
 	{IWL_PCI_DEVICE(0x0085, 0x1311, iwl6005_2agn_cfg)},
 	{IWL_PCI_DEVICE(0x0085, 0x1316, iwl6005_2abg_cfg)},
+	{IWL_PCI_DEVICE(0x0082, 0xC020, iwl6005_2agn_sff_cfg)},
+	{IWL_PCI_DEVICE(0x0085, 0xC220, iwl6005_2agn_sff_cfg)},
+	{IWL_PCI_DEVICE(0x0082, 0x1341, iwl6005_2agn_d_cfg)},
+	{IWL_PCI_DEVICE(0x0082, 0x1304, iwl6005_2agn_cfg)},/* low 5GHz active */
+	{IWL_PCI_DEVICE(0x0082, 0x1305, iwl6005_2agn_cfg)},/* high 5GHz active */
 
 /* 6x30 Series */
 	{IWL_PCI_DEVICE(0x008A, 0x5305, iwl1030_bgn_cfg)},
@@ -325,44 +335,28 @@ static DEFINE_PCI_DEVICE_TABLE(iwl_hw_card_ids) = {
 	{IWL_PCI_DEVICE(0x0890, 0x4022, iwl2000_2bgn_cfg)},
 	{IWL_PCI_DEVICE(0x0891, 0x4222, iwl2000_2bgn_cfg)},
 	{IWL_PCI_DEVICE(0x0890, 0x4422, iwl2000_2bgn_cfg)},
-	{IWL_PCI_DEVICE(0x0890, 0x4026, iwl2000_2bg_cfg)},
-	{IWL_PCI_DEVICE(0x0891, 0x4226, iwl2000_2bg_cfg)},
-	{IWL_PCI_DEVICE(0x0890, 0x4426, iwl2000_2bg_cfg)},
+	{IWL_PCI_DEVICE(0x0890, 0x4822, iwl2000_2bgn_d_cfg)},
 
 /* 2x30 Series */
 	{IWL_PCI_DEVICE(0x0887, 0x4062, iwl2030_2bgn_cfg)},
 	{IWL_PCI_DEVICE(0x0888, 0x4262, iwl2030_2bgn_cfg)},
 	{IWL_PCI_DEVICE(0x0887, 0x4462, iwl2030_2bgn_cfg)},
-	{IWL_PCI_DEVICE(0x0887, 0x4066, iwl2030_2bg_cfg)},
-	{IWL_PCI_DEVICE(0x0888, 0x4266, iwl2030_2bg_cfg)},
-	{IWL_PCI_DEVICE(0x0887, 0x4466, iwl2030_2bg_cfg)},
 
 /* 6x35 Series */
 	{IWL_PCI_DEVICE(0x088E, 0x4060, iwl6035_2agn_cfg)},
 	{IWL_PCI_DEVICE(0x088F, 0x4260, iwl6035_2agn_cfg)},
 	{IWL_PCI_DEVICE(0x088E, 0x4460, iwl6035_2agn_cfg)},
-	{IWL_PCI_DEVICE(0x088E, 0x4064, iwl6035_2abg_cfg)},
-	{IWL_PCI_DEVICE(0x088F, 0x4264, iwl6035_2abg_cfg)},
-	{IWL_PCI_DEVICE(0x088E, 0x4464, iwl6035_2abg_cfg)},
-	{IWL_PCI_DEVICE(0x088E, 0x4066, iwl6035_2bg_cfg)},
-	{IWL_PCI_DEVICE(0x088F, 0x4266, iwl6035_2bg_cfg)},
-	{IWL_PCI_DEVICE(0x088E, 0x4466, iwl6035_2bg_cfg)},
 
 /* 105 Series */
 	{IWL_PCI_DEVICE(0x0894, 0x0022, iwl105_bgn_cfg)},
 	{IWL_PCI_DEVICE(0x0895, 0x0222, iwl105_bgn_cfg)},
 	{IWL_PCI_DEVICE(0x0894, 0x0422, iwl105_bgn_cfg)},
-	{IWL_PCI_DEVICE(0x0894, 0x0026, iwl105_bg_cfg)},
-	{IWL_PCI_DEVICE(0x0895, 0x0226, iwl105_bg_cfg)},
-	{IWL_PCI_DEVICE(0x0894, 0x0426, iwl105_bg_cfg)},
+	{IWL_PCI_DEVICE(0x0894, 0x0822, iwl105_bgn_d_cfg)},
 
 /* 135 Series */
 	{IWL_PCI_DEVICE(0x0892, 0x0062, iwl135_bgn_cfg)},
 	{IWL_PCI_DEVICE(0x0893, 0x0262, iwl135_bgn_cfg)},
 	{IWL_PCI_DEVICE(0x0892, 0x0462, iwl135_bgn_cfg)},
-	{IWL_PCI_DEVICE(0x0892, 0x0066, iwl135_bg_cfg)},
-	{IWL_PCI_DEVICE(0x0893, 0x0266, iwl135_bg_cfg)},
-	{IWL_PCI_DEVICE(0x0892, 0x0466, iwl135_bg_cfg)},
 
 	{0}
 };
@@ -386,6 +380,8 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	pci_bus = IWL_BUS_GET_PCI_BUS(bus);
 	pci_bus->pci_dev = pdev;
+
+	pci_set_drvdata(pdev, bus);
 
 	/* W/A - seems to solve weird behavior. We need to remove this if we
 	 * don't want to stay in L1 all the time. This wastes a lot of power */
@@ -442,10 +438,9 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pci_write_config_byte(pdev, PCI_CFG_RETRY_TIMEOUT, 0x00);
 
 	err = pci_enable_msi(pdev);
-	if (err) {
-		dev_printk(KERN_ERR, &pdev->dev, "pci_enable_msi failed");
-		goto out_iounmap;
-	}
+	if (err)
+		dev_printk(KERN_ERR, &pdev->dev,
+			"pci_enable_msi failed(0X%x)", err);
 
 	/* TODO: Move this away, not needed if not MSI */
 	/* enable rfkill interrupt: hw bug w/a */
@@ -457,16 +452,15 @@ static int iwl_pci_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	bus->dev = &pdev->dev;
 	bus->irq = pdev->irq;
-	bus->ops = &pci_ops;
+	bus->ops = &bus_ops_pci;
 
-	err = iwl_probe(bus, cfg);
+	err = iwl_probe(bus, &trans_ops_pcie, cfg);
 	if (err)
 		goto out_disable_msi;
 	return 0;
 
 out_disable_msi:
 	pci_disable_msi(pdev);
-out_iounmap:
 	pci_iounmap(pdev, pci_bus->hw_base);
 out_pci_release_regions:
 	pci_set_drvdata(pdev, NULL);
@@ -478,48 +472,45 @@ out_no_pci:
 	return err;
 }
 
-static void iwl_pci_down(struct iwl_bus *bus)
+static void __devexit iwl_pci_remove(struct pci_dev *pdev)
 {
-	struct iwl_pci_bus *pci_bus = (struct iwl_pci_bus *) bus->bus_specific;
+	struct iwl_bus *bus = pci_get_drvdata(pdev);
+	struct iwl_pci_bus *pci_bus = IWL_BUS_GET_PCI_BUS(bus);
+	struct pci_dev *pci_dev = IWL_BUS_GET_PCI_DEV(bus);
+	struct iwl_shared *shrd = bus->shrd;
 
-	pci_disable_msi(pci_bus->pci_dev);
-	pci_iounmap(pci_bus->pci_dev, pci_bus->hw_base);
-	pci_release_regions(pci_bus->pci_dev);
-	pci_disable_device(pci_bus->pci_dev);
-	pci_set_drvdata(pci_bus->pci_dev, NULL);
+	iwl_remove(shrd->priv);
+
+	pci_disable_msi(pci_dev);
+	pci_iounmap(pci_dev, pci_bus->hw_base);
+	pci_release_regions(pci_dev);
+	pci_disable_device(pci_dev);
+	pci_set_drvdata(pci_dev, NULL);
 
 	kfree(bus);
 }
 
-static void __devexit iwl_pci_remove(struct pci_dev *pdev)
-{
-	struct iwl_priv *priv = pci_get_drvdata(pdev);
-	void *bus_specific = priv->bus->bus_specific;
-
-	iwl_remove(priv);
-
-	iwl_pci_down(bus_specific);
-}
-
-#ifdef CONFIG_PM
+#ifdef CONFIG_PM_SLEEP
 
 static int iwl_pci_suspend(struct device *device)
 {
 	struct pci_dev *pdev = to_pci_dev(device);
-	struct iwl_priv *priv = pci_get_drvdata(pdev);
+	struct iwl_bus *bus = pci_get_drvdata(pdev);
+	struct iwl_shared *shrd = bus->shrd;
 
 	/* Before you put code here, think about WoWLAN. You cannot check here
 	 * whether WoWLAN is enabled or not, and your code will run even if
 	 * WoWLAN is enabled - don't kill the NIC, someone may need it in Sx.
 	 */
 
-	return iwl_suspend(priv);
+	return iwl_trans_suspend(shrd->trans);
 }
 
 static int iwl_pci_resume(struct device *device)
 {
 	struct pci_dev *pdev = to_pci_dev(device);
-	struct iwl_priv *priv = pci_get_drvdata(pdev);
+	struct iwl_bus *bus = pci_get_drvdata(pdev);
+	struct iwl_shared *shrd = bus->shrd;
 
 	/* Before you put code here, think about WoWLAN. You cannot check here
 	 * whether WoWLAN is enabled or not, and your code will run even if
@@ -532,7 +523,7 @@ static int iwl_pci_resume(struct device *device)
 	 */
 	pci_write_config_byte(pdev, PCI_CFG_RETRY_TIMEOUT, 0x00);
 
-	return iwl_resume(priv);
+	return iwl_trans_resume(shrd->trans);
 }
 
 static SIMPLE_DEV_PM_OPS(iwl_dev_pm_ops, iwl_pci_suspend, iwl_pci_resume);

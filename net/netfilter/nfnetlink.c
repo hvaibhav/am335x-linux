@@ -130,7 +130,7 @@ static int nfnetlink_rcv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	const struct nfnetlink_subsystem *ss;
 	int type, err;
 
-	if (security_netlink_recv(skb, CAP_NET_ADMIN))
+	if (!capable(CAP_NET_ADMIN))
 		return -EPERM;
 
 	/* All the messages must at least contain nfgenmsg */
@@ -219,7 +219,7 @@ static void __net_exit nfnetlink_net_exit_batch(struct list_head *net_exit_list)
 	struct net *net;
 
 	list_for_each_entry(net, net_exit_list, exit_list)
-		rcu_assign_pointer(net->nfnl, NULL);
+		RCU_INIT_POINTER(net->nfnl, NULL);
 	synchronize_net();
 	list_for_each_entry(net, net_exit_list, exit_list)
 		netlink_kernel_release(net->nfnl_stash);

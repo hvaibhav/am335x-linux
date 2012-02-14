@@ -15,7 +15,7 @@
     along with this program; if not, write to the Free Software
     Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
-#include <linux/moduleparam.h>
+#include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/string.h>
 #include <linux/errno.h>
@@ -24,12 +24,6 @@
 #include <linux/err.h>
 #include <linux/slab.h>
 #include <linux/ctype.h>
-
-#if 0
-#define DEBUGP printk
-#else
-#define DEBUGP(fmt, a...)
-#endif
 
 /* Protects all parameters, and incidentally kmalloced_param list. */
 static DEFINE_MUTEX(param_lock);
@@ -67,20 +61,27 @@ static void maybe_kfree_parameter(void *param)
 	}
 }
 
-static inline char dash2underscore(char c)
+static char dash2underscore(char c)
 {
 	if (c == '-')
 		return '_';
 	return c;
 }
 
-static inline int parameq(const char *input, const char *paramname)
+bool parameqn(const char *a, const char *b, size_t n)
 {
-	unsigned int i;
-	for (i = 0; dash2underscore(input[i]) == paramname[i]; i++)
-		if (input[i] == '\0')
-			return 1;
-	return 0;
+	size_t i;
+
+	for (i = 0; i < n; i++) {
+		if (dash2underscore(a[i]) != dash2underscore(b[i]))
+			return false;
+	}
+	return true;
+}
+
+bool parameq(const char *a, const char *b)
+{
+	return parameqn(a, b, strlen(a)+1);
 }
 
 static int parse_one(char *param,
@@ -98,7 +99,7 @@ static int parse_one(char *param,
 			/* No one handled NULL, so do it here. */
 			if (!val && params[i].ops->set != param_set_bool)
 				return -EINVAL;
-			DEBUGP("They are equal!  Calling %p\n",
+			pr_debug("They are equal!  Calling %p\n",
 			       params[i].ops->set);
 			mutex_lock(&param_lock);
 			err = params[i].ops->set(val, &params[i]);
@@ -108,11 +109,11 @@ static int parse_one(char *param,
 	}
 
 	if (handle_unknown) {
-		DEBUGP("Unknown argument: calling %p\n", handle_unknown);
+		pr_debug("Unknown argument: calling %p\n", handle_unknown);
 		return handle_unknown(param, val);
 	}
 
-	DEBUGP("Unknown argument `%s'\n", param);
+	pr_debug("Unknown argument `%s'\n", param);
 	return -ENOENT;
 }
 
@@ -177,7 +178,7 @@ int parse_args(const char *name,
 {
 	char *param, *val;
 
-	DEBUGP("Parsing ARGS: %s\n", args);
+	pr_debug("Parsing ARGS: %s\n", args);
 
 	/* Chew leading spaces */
 	args = skip_spaces(args);
@@ -361,6 +362,30 @@ struct kernel_param_ops param_ops_invbool = {
 	.get = param_get_invbool,
 };
 EXPORT_SYMBOL(param_ops_invbool);
+
+int param_set_bint(const char *val, const struct kernel_param *kp)
+{
+	struct kernel_param boolkp;
+	bool v;
+	int ret;
+
+	/* Match bool exactly, by re-using it. */
+	boolkp = *kp;
+	boolkp.arg = &v;
+	boolkp.flags |= KPARAM_ISBOOL;
+
+	ret = param_set_bool(val, &boolkp);
+	if (ret == 0)
+		*(int *)kp->arg = v;
+	return ret;
+}
+EXPORT_SYMBOL(param_set_bint);
+
+struct kernel_param_ops param_ops_bint = {
+	.set = param_set_bint,
+	.get = param_get_int,
+};
+EXPORT_SYMBOL(param_ops_bint);
 
 /* We break the rule and mangle the string. */
 static int param_array(const char *name,

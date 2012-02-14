@@ -97,12 +97,12 @@ static void bit_shift(unsigned long *seq_bits, int32_t n)
 			(seq_bits[i - word_num - 1] >>
 			 (WORD_BIT_SIZE-word_offset));
 		/* and the upper part of the right half and shift it left to
-		 * it's position */
+		 * its position */
 		/* for our example that would be: word[0] = 9800 + 0076 =
 		 * 9876 */
 	}
-	/* now for our last word, i==word_num, we only have the it's "left"
-	 * half. that's the 1000 word in our example.*/
+	/* now for our last word, i==word_num, we only have its "left" half.
+	 * that's the 1000 word in our example.*/
 
 	seq_bits[i] = (seq_bits[i - word_num] << word_offset);
 
@@ -155,7 +155,7 @@ int bit_get_packet(void *priv, unsigned long *seq_bits,
 	/* sequence number is much newer, probably missed a lot of packets */
 
 	if ((seq_num_diff >= TQ_LOCAL_WINDOW_SIZE)
-		|| (seq_num_diff < EXPECTED_SEQNO_RANGE)) {
+		&& (seq_num_diff < EXPECTED_SEQNO_RANGE)) {
 		bat_dbg(DBG_BATMAN, bat_priv,
 			"We missed a lot of packets (%i) !\n",
 			seq_num_diff - 1);

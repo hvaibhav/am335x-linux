@@ -116,13 +116,13 @@ static int mid_spi_dma_transfer(struct dw_spi *dws, int cs_change)
 	/* 1. setup DMA related registers */
 	if (cs_change) {
 		spi_enable_chip(dws, 0);
-		dw_writew(dws, dmardlr, 0xf);
-		dw_writew(dws, dmatdlr, 0x10);
+		dw_writew(dws, DW_SPI_DMARDLR, 0xf);
+		dw_writew(dws, DW_SPI_DMATDLR, 0x10);
 		if (dws->tx_dma)
 			dma_ctrl |= 0x2;
 		if (dws->rx_dma)
 			dma_ctrl |= 0x1;
-		dw_writew(dws, dmacr, dma_ctrl);
+		dw_writew(dws, DW_SPI_DMACR, dma_ctrl);
 		spi_enable_chip(dws, 1);
 	}
 
@@ -131,7 +131,7 @@ static int mid_spi_dma_transfer(struct dw_spi *dws, int cs_change)
 	rxchan = dws->rxchan;
 
 	/* 2. Prepare the TX dma transfer */
-	txconf.direction = DMA_TO_DEVICE;
+	txconf.direction = DMA_MEM_TO_DEV;
 	txconf.dst_addr = dws->dma_addr;
 	txconf.dst_maxburst = LNW_DMA_MSIZE_16;
 	txconf.src_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
@@ -147,13 +147,13 @@ static int mid_spi_dma_transfer(struct dw_spi *dws, int cs_change)
 	txdesc = txchan->device->device_prep_slave_sg(txchan,
 				&dws->tx_sgl,
 				1,
-				DMA_TO_DEVICE,
+				DMA_MEM_TO_DEV,
 				DMA_PREP_INTERRUPT | DMA_COMPL_SKIP_DEST_UNMAP);
 	txdesc->callback = dw_spi_dma_done;
 	txdesc->callback_param = dws;
 
 	/* 3. Prepare the RX dma transfer */
-	rxconf.direction = DMA_FROM_DEVICE;
+	rxconf.direction = DMA_DEV_TO_MEM;
 	rxconf.src_addr = dws->dma_addr;
 	rxconf.src_maxburst = LNW_DMA_MSIZE_16;
 	rxconf.dst_addr_width = DMA_SLAVE_BUSWIDTH_4_BYTES;
@@ -169,7 +169,7 @@ static int mid_spi_dma_transfer(struct dw_spi *dws, int cs_change)
 	rxdesc = rxchan->device->device_prep_slave_sg(rxchan,
 				&dws->rx_sgl,
 				1,
-				DMA_FROM_DEVICE,
+				DMA_DEV_TO_MEM,
 				DMA_PREP_INTERRUPT | DMA_COMPL_SKIP_DEST_UNMAP);
 	rxdesc->callback = dw_spi_dma_done;
 	rxdesc->callback_param = dws;
@@ -200,7 +200,8 @@ static struct dw_spi_dma_ops mid_dma_ops = {
 
 int dw_spi_mid_init(struct dw_spi *dws)
 {
-	u32 *clk_reg, clk_cdiv;
+	void __iomem *clk_reg;
+	u32 clk_cdiv;
 
 	clk_reg = ioremap_nocache(MRST_CLK_SPI0_REG, 16);
 	if (!clk_reg)

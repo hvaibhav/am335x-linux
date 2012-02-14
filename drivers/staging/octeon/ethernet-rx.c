@@ -52,14 +52,14 @@
 #include "octeon-ethernet.h"
 #include "ethernet-util.h"
 
-#include "cvmx-helper.h"
-#include "cvmx-wqe.h"
-#include "cvmx-fau.h"
-#include "cvmx-pow.h"
-#include "cvmx-pip.h"
-#include "cvmx-scratch.h"
+#include <asm/octeon/cvmx-helper.h>
+#include <asm/octeon/cvmx-wqe.h>
+#include <asm/octeon/cvmx-fau.h>
+#include <asm/octeon/cvmx-pow.h>
+#include <asm/octeon/cvmx-pip.h>
+#include <asm/octeon/cvmx-scratch.h>
 
-#include "cvmx-gmxx-defs.h"
+#include <asm/octeon/cvmx-gmxx-defs.h>
 
 struct cvm_napi_wrapper {
 	struct napi_struct napi;
@@ -411,7 +411,8 @@ static int cvm_oct_napi_poll(struct napi_struct *napi, int budget)
 				skb->protocol = eth_type_trans(skb, dev);
 				skb->dev = dev;
 
-				if (unlikely(work->word2.s.not_IP || work->word2.s.IP_exc || work->word2.s.L4_error))
+				if (unlikely(work->word2.s.not_IP || work->word2.s.IP_exc ||
+					work->word2.s.L4_error || !work->word2.s.tcp_or_udp))
 					skb->ip_summed = CHECKSUM_NONE;
 				else
 					skb->ip_summed = CHECKSUM_UNNECESSARY;

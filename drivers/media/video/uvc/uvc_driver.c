@@ -114,6 +114,11 @@ static struct uvc_format_desc uvc_fmts[] = {
 		.guid		= UVC_GUID_FORMAT_RGBP,
 		.fcc		= V4L2_PIX_FMT_RGB565,
 	},
+	{
+		.name		= "H.264",
+		.guid		= UVC_GUID_FORMAT_H264,
+		.fcc		= V4L2_PIX_FMT_H264,
+	},
 };
 
 /* ------------------------------------------------------------------------
@@ -1670,6 +1675,8 @@ static void uvc_unregister_video(struct uvc_device *dev)
 
 		video_unregister_device(stream->vdev);
 		stream->vdev = NULL;
+
+		uvc_debugfs_cleanup_stream(stream);
 	}
 
 	/* Decrement the stream count and call uvc_delete explicitly if there
@@ -1694,6 +1701,8 @@ static int uvc_register_video(struct uvc_device *dev,
 			"(%d).\n", ret);
 		return ret;
 	}
+
+	uvc_debugfs_init_stream(stream);
 
 	/* Register the device with V4L. */
 	vdev = video_device_alloc();
@@ -1961,7 +1970,7 @@ static int __uvc_resume(struct usb_interface *intf, int reset)
 
 	list_for_each_entry(stream, &dev->streams, list) {
 		if (stream->intf == intf)
-			return uvc_video_resume(stream);
+			return uvc_video_resume(stream, reset);
 	}
 
 	uvc_trace(UVC_TRACE_SUSPEND, "Resume: video streaming USB interface "
@@ -2028,6 +2037,15 @@ MODULE_PARM_DESC(timeout, "Streaming control requests timeout");
  * though they are compliant.
  */
 static struct usb_device_id uvc_ids[] = {
+	/* LogiLink Wireless Webcam */
+	{ .match_flags		= USB_DEVICE_ID_MATCH_DEVICE
+				| USB_DEVICE_ID_MATCH_INT_INFO,
+	  .idVendor		= 0x0416,
+	  .idProduct		= 0xa91a,
+	  .bInterfaceClass	= USB_CLASS_VIDEO,
+	  .bInterfaceSubClass	= 1,
+	  .bInterfaceProtocol	= 0,
+	  .driver_info		= UVC_QUIRK_PROBE_MINMAX },
 	/* Genius eFace 2025 */
 	{ .match_flags		= USB_DEVICE_ID_MATCH_DEVICE
 				| USB_DEVICE_ID_MATCH_INT_INFO,
@@ -2331,6 +2349,14 @@ static struct usb_device_id uvc_ids[] = {
 	  .bInterfaceSubClass	= 1,
 	  .bInterfaceProtocol	= 0,
 	  .driver_info		= UVC_QUIRK_PROBE_DEF },
+	/* The Imaging Source USB CCD cameras */
+	{ .match_flags		= USB_DEVICE_ID_MATCH_DEVICE
+				| USB_DEVICE_ID_MATCH_INT_INFO,
+	  .idVendor		= 0x199e,
+	  .idProduct		= 0x8102,
+	  .bInterfaceClass	= USB_CLASS_VENDOR_SPEC,
+	  .bInterfaceSubClass	= 1,
+	  .bInterfaceProtocol	= 0 },
 	/* Bodelin ProScopeHR */
 	{ .match_flags		= USB_DEVICE_ID_MATCH_DEVICE
 				| USB_DEVICE_ID_MATCH_DEV_HI
@@ -2383,17 +2409,24 @@ struct uvc_driver uvc_driver = {
 
 static int __init uvc_init(void)
 {
-	int result;
+	int ret;
 
-	result = usb_register(&uvc_driver.driver);
-	if (result == 0)
-		printk(KERN_INFO DRIVER_DESC " (" DRIVER_VERSION ")\n");
-	return result;
+	uvc_debugfs_init();
+
+	ret = usb_register(&uvc_driver.driver);
+	if (ret < 0) {
+		uvc_debugfs_cleanup();
+		return ret;
+	}
+
+	printk(KERN_INFO DRIVER_DESC " (" DRIVER_VERSION ")\n");
+	return 0;
 }
 
 static void __exit uvc_cleanup(void)
 {
 	usb_deregister(&uvc_driver.driver);
+	uvc_debugfs_cleanup();
 }
 
 module_init(uvc_init);

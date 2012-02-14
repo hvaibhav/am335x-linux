@@ -145,7 +145,7 @@ void b43_radio_lock(struct b43_wldev *dev)
 
 #if B43_DEBUG
 	B43_WARN_ON(dev->phy.radio_locked);
-	dev->phy.radio_locked = 1;
+	dev->phy.radio_locked = true;
 #endif
 
 	macctl = b43_read32(dev, B43_MMIO_MACCTL);
@@ -163,7 +163,7 @@ void b43_radio_unlock(struct b43_wldev *dev)
 
 #if B43_DEBUG
 	B43_WARN_ON(!dev->phy.radio_locked);
-	dev->phy.radio_locked = 0;
+	dev->phy.radio_locked = false;
 #endif
 
 	/* Commit any write */
@@ -178,7 +178,7 @@ void b43_phy_lock(struct b43_wldev *dev)
 {
 #if B43_DEBUG
 	B43_WARN_ON(dev->phy.phy_locked);
-	dev->phy.phy_locked = 1;
+	dev->phy.phy_locked = true;
 #endif
 	B43_WARN_ON(dev->dev->core_rev < 3);
 
@@ -190,7 +190,7 @@ void b43_phy_unlock(struct b43_wldev *dev)
 {
 #if B43_DEBUG
 	B43_WARN_ON(!dev->phy.phy_locked);
-	dev->phy.phy_locked = 0;
+	dev->phy.phy_locked = false;
 #endif
 	B43_WARN_ON(dev->dev->core_rev < 3);
 
@@ -446,6 +446,38 @@ bool b43_channel_type_is_40mhz(enum nl80211_channel_type channel_type)
 {
 	return (channel_type == NL80211_CHAN_HT40MINUS ||
 		channel_type == NL80211_CHAN_HT40PLUS);
+}
+
+/* http://bcm-v4.sipsolutions.net/802.11/PHY/N/BmacPhyClkFgc */
+void b43_phy_force_clock(struct b43_wldev *dev, bool force)
+{
+	u32 tmp;
+
+	WARN_ON(dev->phy.type != B43_PHYTYPE_N &&
+		dev->phy.type != B43_PHYTYPE_HT);
+
+	switch (dev->dev->bus_type) {
+#ifdef CONFIG_B43_BCMA
+	case B43_BUS_BCMA:
+		tmp = bcma_aread32(dev->dev->bdev, BCMA_IOCTL);
+		if (force)
+			tmp |= BCMA_IOCTL_FGC;
+		else
+			tmp &= ~BCMA_IOCTL_FGC;
+		bcma_awrite32(dev->dev->bdev, BCMA_IOCTL, tmp);
+		break;
+#endif
+#ifdef CONFIG_B43_SSB
+	case B43_BUS_SSB:
+		tmp = ssb_read32(dev->dev->sdev, SSB_TMSLOW);
+		if (force)
+			tmp |= SSB_TMSLOW_FGC;
+		else
+			tmp &= ~SSB_TMSLOW_FGC;
+		ssb_write32(dev->dev->sdev, SSB_TMSLOW, tmp);
+		break;
+#endif
+	}
 }
 
 /* http://bcm-v4.sipsolutions.net/802.11/PHY/Cordic */

@@ -4,7 +4,7 @@
  */
 #include <linux/clockchips.h>
 #include <linux/i8253.h>
-#include <linux/module.h>
+#include <linux/export.h>
 #include <linux/smp.h>
 #include <linux/irq.h>
 
@@ -19,7 +19,7 @@ static irqreturn_t timer_interrupt(int irq, void *dev_id)
 
 static struct irqaction irq0  = {
 	.handler = timer_interrupt,
-	.flags = IRQF_DISABLED | IRQF_NOBALANCING | IRQF_TIMER,
+	.flags = IRQF_NOBALANCING | IRQF_TIMER,
 	.name = "timer"
 };
 

@@ -445,30 +445,31 @@ static void softif_batman_recv(struct sk_buff *skb, struct net_device *dev,
 {
 	struct bat_priv *bat_priv = netdev_priv(dev);
 	struct ethhdr *ethhdr = (struct ethhdr *)skb->data;
-	struct batman_packet *batman_packet;
+	struct batman_ogm_packet *batman_ogm_packet;
 	struct softif_neigh *softif_neigh = NULL;
 	struct hard_iface *primary_if = NULL;
 	struct softif_neigh *curr_softif_neigh = NULL;
 
 	if (ntohs(ethhdr->h_proto) == ETH_P_8021Q)
-		batman_packet = (struct batman_packet *)
+		batman_ogm_packet = (struct batman_ogm_packet *)
 					(skb->data + ETH_HLEN + VLAN_HLEN);
 	else
-		batman_packet = (struct batman_packet *)(skb->data + ETH_HLEN);
+		batman_ogm_packet = (struct batman_ogm_packet *)
+							(skb->data + ETH_HLEN);
 
-	if (batman_packet->version != COMPAT_VERSION)
+	if (batman_ogm_packet->version != COMPAT_VERSION)
 		goto out;
 
-	if (batman_packet->packet_type != BAT_PACKET)
+	if (batman_ogm_packet->packet_type != BAT_OGM)
 		goto out;
 
-	if (!(batman_packet->flags & PRIMARIES_FIRST_HOP))
+	if (!(batman_ogm_packet->flags & PRIMARIES_FIRST_HOP))
 		goto out;
 
-	if (is_my_mac(batman_packet->orig))
+	if (is_my_mac(batman_ogm_packet->orig))
 		goto out;
 
-	softif_neigh = softif_neigh_get(bat_priv, batman_packet->orig, vid);
+	softif_neigh = softif_neigh_get(bat_priv, batman_ogm_packet->orig, vid);
 	if (!softif_neigh)
 		goto out;
 
@@ -532,11 +533,11 @@ static int interface_set_mac_addr(struct net_device *dev, void *p)
 	if (!is_valid_ether_addr(addr->sa_data))
 		return -EADDRNOTAVAIL;
 
-	/* only modify transtable if it has been initialised before */
+	/* only modify transtable if it has been initialized before */
 	if (atomic_read(&bat_priv->mesh_state) == MESH_ACTIVE) {
 		tt_local_remove(bat_priv, dev->dev_addr,
 				"mac address changed", false);
-		tt_local_add(dev, addr->sa_data);
+		tt_local_add(dev, addr->sa_data, NULL_IFINDEX);
 	}
 
 	memcpy(dev->dev_addr, addr->sa_data, ETH_ALEN);
@@ -562,7 +563,7 @@ static int interface_tx(struct sk_buff *skb, struct net_device *soft_iface)
 	struct bcast_packet *bcast_packet;
 	struct vlan_ethhdr *vhdr;
 	struct softif_neigh *curr_softif_neigh = NULL;
-	struct orig_node *orig_node = NULL;
+	unsigned int header_len = 0;
 	int data_len = skb->len, ret;
 	short vid = -1;
 	bool do_bcast = false;
@@ -595,18 +596,30 @@ static int interface_tx(struct sk_buff *skb, struct net_device *soft_iface)
 		goto dropped;
 
 	/* Register the client MAC in the transtable */
-	tt_local_add(soft_iface, ethhdr->h_source);
+	tt_local_add(soft_iface, ethhdr->h_source, skb->skb_iif);
 
-	orig_node = transtable_search(bat_priv, ethhdr->h_dest);
-	if (is_multicast_ether_addr(ethhdr->h_dest) ||
-				(orig_node && orig_node->gw_flags)) {
-		ret = gw_is_target(bat_priv, skb, orig_node);
+	if (is_multicast_ether_addr(ethhdr->h_dest)) {
+		do_bcast = true;
 
-		if (ret < 0)
-			goto dropped;
-
-		if (ret == 0)
-			do_bcast = true;
+		switch (atomic_read(&bat_priv->gw_mode)) {
+		case GW_MODE_SERVER:
+			/* gateway servers should not send dhcp
+			 * requests into the mesh */
+			ret = gw_is_dhcp_target(skb, &header_len);
+			if (ret)
+				goto dropped;
+			break;
+		case GW_MODE_CLIENT:
+			/* gateway clients should send dhcp requests
+			 * via unicast to their gateway */
+			ret = gw_is_dhcp_target(skb, &header_len);
+			if (ret)
+				do_bcast = false;
+			break;
+		case GW_MODE_OFF:
+		default:
+			break;
+		}
 	}
 
 	/* ethernet packet should be broadcasted */
@@ -642,6 +655,12 @@ static int interface_tx(struct sk_buff *skb, struct net_device *soft_iface)
 
 	/* unicast packet */
 	} else {
+		if (atomic_read(&bat_priv->gw_mode) != GW_MODE_OFF) {
+			ret = gw_out_of_range(bat_priv, skb, ethhdr);
+			if (ret)
+				goto dropped;
+		}
+
 		ret = unicast_send_skb(skb, bat_priv);
 		if (ret != 0)
 			goto dropped_freed;
@@ -660,8 +679,6 @@ end:
 		softif_neigh_free_ref(curr_softif_neigh);
 	if (primary_if)
 		hardif_free_ref(primary_if);
-	if (orig_node)
-		orig_node_free_ref(orig_node);
 	return NETDEV_TX_OK;
 }
 
@@ -739,6 +756,9 @@ void interface_rx(struct net_device *soft_iface,
 
 	soft_iface->last_rx = jiffies;
 
+	if (is_ap_isolated(bat_priv, ethhdr->h_source, ethhdr->h_dest))
+		goto dropped;
+
 	netif_rx(skb);
 	goto out;
 
@@ -796,10 +816,8 @@ struct net_device *softif_create(const char *name)
 
 	soft_iface = alloc_netdev(sizeof(*bat_priv), name, interface_setup);
 
-	if (!soft_iface) {
-		pr_err("Unable to allocate the batman interface: %s\n", name);
+	if (!soft_iface)
 		goto out;
-	}
 
 	ret = register_netdevice(soft_iface);
 	if (ret < 0) {
@@ -812,6 +830,7 @@ struct net_device *softif_create(const char *name)
 
 	atomic_set(&bat_priv->aggregated_ogms, 1);
 	atomic_set(&bat_priv->bonding, 0);
+	atomic_set(&bat_priv->ap_isolation, 0);
 	atomic_set(&bat_priv->vis_mode, VIS_TYPE_CLIENT_UPDATE);
 	atomic_set(&bat_priv->gw_mode, GW_MODE_OFF);
 	atomic_set(&bat_priv->gw_sel_class, 20);
@@ -855,7 +874,7 @@ unreg_debugfs:
 unreg_sysfs:
 	sysfs_del_meshif(soft_iface);
 unreg_soft_iface:
-	unregister_netdev(soft_iface);
+	unregister_netdevice(soft_iface);
 	return NULL;
 
 free_soft_iface:

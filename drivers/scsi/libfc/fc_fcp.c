@@ -155,6 +155,7 @@ static struct fc_fcp_pkt *fc_fcp_pkt_alloc(struct fc_lport *lport, gfp_t gfp)
 		fsp->xfer_ddp = FC_XID_UNKNOWN;
 		atomic_set(&fsp->ref_cnt, 1);
 		init_timer(&fsp->timer);
+		fsp->timer.data = (unsigned long)fsp;
 		INIT_LIST_HEAD(&fsp->list);
 		spin_lock_init(&fsp->scsi_pkt_lock);
 	}
@@ -759,7 +760,6 @@ static void fc_fcp_recv(struct fc_seq *seq, struct fc_frame *fp, void *arg)
 		goto out;
 	if (fc_fcp_lock_pkt(fsp))
 		goto out;
-	fsp->last_pkt_time = jiffies;
 
 	if (fh->fh_type == FC_TYPE_BLS) {
 		fc_fcp_abts_resp(fsp, fp);
@@ -1148,7 +1148,6 @@ static int fc_fcp_cmd_send(struct fc_lport *lport, struct fc_fcp_pkt *fsp,
 		rc = -1;
 		goto unlock;
 	}
-	fsp->last_pkt_time = jiffies;
 	fsp->seq_ptr = seq;
 	fc_fcp_pkt_hold(fsp);	/* hold for fc_fcp_pkt_destroy */
 
@@ -1852,9 +1851,6 @@ int fc_queuecommand(struct Scsi_Host *shost, struct scsi_cmnd *sc_cmd)
 	}
 	put_cpu();
 
-	init_timer(&fsp->timer);
-	fsp->timer.data = (unsigned long)fsp;
-
 	/*
 	 * send it to the lower layer
 	 * if we get -1 return then put the request in the pending
@@ -2019,6 +2015,11 @@ int fc_eh_abort(struct scsi_cmnd *sc_cmd)
 	struct fc_fcp_internal *si;
 	int rc = FAILED;
 	unsigned long flags;
+	int rval;
+
+	rval = fc_block_scsi_eh(sc_cmd);
+	if (rval)
+		return rval;
 
 	lport = shost_priv(sc_cmd->device->host);
 	if (lport->state != LPORT_ST_READY)
@@ -2068,9 +2069,9 @@ int fc_eh_device_reset(struct scsi_cmnd *sc_cmd)
 	int rc = FAILED;
 	int rval;
 
-	rval = fc_remote_port_chkready(rport);
+	rval = fc_block_scsi_eh(sc_cmd);
 	if (rval)
-		goto out;
+		return rval;
 
 	lport = shost_priv(sc_cmd->device->host);
 
@@ -2115,6 +2116,8 @@ int fc_eh_host_reset(struct scsi_cmnd *sc_cmd)
 	unsigned long wait_tmo;
 
 	FC_SCSI_DBG(lport, "Resetting host\n");
+
+	fc_block_scsi_eh(sc_cmd);
 
 	lport->tt.lport_reset(lport);
 	wait_tmo = jiffies + FC_HOST_RESET_TIMEOUT;

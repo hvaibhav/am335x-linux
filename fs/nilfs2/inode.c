@@ -291,7 +291,7 @@ const struct address_space_operations nilfs_aops = {
 	.is_partially_uptodate  = block_is_partially_uptodate,
 };
 
-struct inode *nilfs_new_inode(struct inode *dir, int mode)
+struct inode *nilfs_new_inode(struct inode *dir, umode_t mode)
 {
 	struct super_block *sb = dir->i_sb;
 	struct the_nilfs *nilfs = sb->s_fs_info;
@@ -354,7 +354,7 @@ struct inode *nilfs_new_inode(struct inode *dir, int mode)
 
  failed_acl:
  failed_bmap:
-	inode->i_nlink = 0;
+	clear_nlink(inode);
 	iput(inode);  /* raw_inode will be deleted through
 			 generic_delete_inode() */
 	goto failed;
@@ -396,7 +396,7 @@ int nilfs_read_inode_common(struct inode *inode,
 	inode->i_mode = le16_to_cpu(raw_inode->i_mode);
 	inode->i_uid = (uid_t)le32_to_cpu(raw_inode->i_uid);
 	inode->i_gid = (gid_t)le32_to_cpu(raw_inode->i_gid);
-	inode->i_nlink = le16_to_cpu(raw_inode->i_links_count);
+	set_nlink(inode, le16_to_cpu(raw_inode->i_links_count));
 	inode->i_size = le64_to_cpu(raw_inode->i_size);
 	inode->i_atime.tv_sec = le64_to_cpu(raw_inode->i_mtime);
 	inode->i_ctime.tv_sec = le64_to_cpu(raw_inode->i_ctime);

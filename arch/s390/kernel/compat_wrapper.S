@@ -665,12 +665,6 @@ ENTRY(sys32_poll_wrapper)
 	lgfr	%r4,%r4			# long
 	jg	sys_poll		# branch to system call
 
-ENTRY(compat_sys_nfsservctl_wrapper)
-	lgfr	%r2,%r2			# int
-	llgtr	%r3,%r3			# struct compat_nfsctl_arg*
-	llgtr	%r4,%r4			# union compat_nfsctl_res*
-	jg	compat_sys_nfsservctl	# branch to system call
-
 ENTRY(sys32_setresgid16_wrapper)
 	llgfr	%r2,%r2			# __kernel_old_gid_emu31_t
 	llgfr	%r3,%r3			# __kernel_old_gid_emu31_t
@@ -1629,8 +1623,27 @@ ENTRY(sys_syncfs_wrapper)
 	lgfr	%r2,%r2			# int
 	jg	sys_syncfs
 
-	.globl	sys_setns_wrapper
-sys_setns_wrapper:
+ENTRY(sys_setns_wrapper)
 	lgfr	%r2,%r2			# int
 	lgfr	%r3,%r3			# int
 	jg	sys_setns
+
+ENTRY(compat_sys_process_vm_readv_wrapper)
+	lgfr	%r2,%r2			# compat_pid_t
+	llgtr	%r3,%r3			# struct compat_iovec __user *
+	llgfr	%r4,%r4			# unsigned long
+	llgtr	%r5,%r5			# struct compat_iovec __user *
+	llgfr	%r6,%r6			# unsigned long
+	llgf	%r0,164(%r15)		# unsigned long
+	stg	%r0,160(%r15)
+	jg	sys_process_vm_readv
+
+ENTRY(compat_sys_process_vm_writev_wrapper)
+	lgfr	%r2,%r2			# compat_pid_t
+	llgtr	%r3,%r3			# struct compat_iovec __user *
+	llgfr	%r4,%r4			# unsigned long
+	llgtr	%r5,%r5			# struct compat_iovec __user *
+	llgfr	%r6,%r6			# unsigned long
+	llgf	%r0,164(%r15)		# unsigned long
+	stg	%r0,160(%r15)
+	jg	sys_process_vm_writev

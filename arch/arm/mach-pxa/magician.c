@@ -184,8 +184,8 @@ static struct resource egpio_resources[] = {
 		.flags = IORESOURCE_MEM,
 	},
 	[1] = {
-		.start = gpio_to_irq(GPIO13_MAGICIAN_CPLD_IRQ),
-		.end   = gpio_to_irq(GPIO13_MAGICIAN_CPLD_IRQ),
+		.start = PXA_GPIO_TO_IRQ(GPIO13_MAGICIAN_CPLD_IRQ),
+		.end   = PXA_GPIO_TO_IRQ(GPIO13_MAGICIAN_CPLD_IRQ),
 		.flags = IORESOURCE_IRQ,
 	},
 };
@@ -468,8 +468,8 @@ static struct resource pasic3_resources[] = {
 	},
 	/* No IRQ handler in the PASIC3, DS1WM needs an external IRQ */
 	[1] = {
-		.start  = gpio_to_irq(GPIO107_MAGICIAN_DS1WM_IRQ),
-		.end    = gpio_to_irq(GPIO107_MAGICIAN_DS1WM_IRQ),
+		.start  = PXA_GPIO_TO_IRQ(GPIO107_MAGICIAN_DS1WM_IRQ),
+		.end    = PXA_GPIO_TO_IRQ(GPIO107_MAGICIAN_DS1WM_IRQ),
 		.flags  = IORESOURCE_IRQ | IORESOURCE_IRQ_HIGHEDGE,
 	}
 };
@@ -753,11 +753,12 @@ static void __init magician_init(void)
 
 
 MACHINE_START(MAGICIAN, "HTC Magician")
-	.boot_params = 0xa0000100,
+	.atag_offset = 0x100,
 	.map_io = pxa27x_map_io,
 	.nr_irqs = MAGICIAN_NR_IRQS,
 	.init_irq = pxa27x_init_irq,
 	.handle_irq = pxa27x_handle_irq,
 	.init_machine = magician_init,
 	.timer = &pxa_timer,
+	.restart	= pxa_restart,
 MACHINE_END
