@@ -2,8 +2,6 @@
 # Makefile for the linux kernel.
 #
 
-flags-y := -Werror
-
 # Common support
 obj-y := common.o sram.o clock.o devices.o dma.o mux.o \
 	 usb.o fb.o counter_32k.o
