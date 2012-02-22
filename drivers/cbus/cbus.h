@@ -30,4 +30,9 @@ extern int cbus_read_reg(struct device *, unsigned dev, unsigned reg);
 extern int cbus_write_reg(struct device *, unsigned dev, unsigned reg,
 		unsigned val);
 
+#ifndef CONFIG_ARCH_OMAP1
+#define omap_readw(reg)		0
+#define omap_writew(val, reg)	do {} while(0)
+#endif
+
 #endif /* __DRIVERS_CBUS_CBUS_H */
