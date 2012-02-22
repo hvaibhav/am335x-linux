@@ -2,6 +2,8 @@
 # Makefile for the linux kernel.
 #
 
+ccflags-y := -Werror
+
 # Common support
 obj-y := id.o io.o control.o mux.o devices.o serial.o gpmc.o timer.o pm.o \
 	 common.o gpio.o dma.o wd_timer.o display.o
