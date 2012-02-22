@@ -87,9 +87,9 @@ static struct platform_device nokia770_kp_device = {
 #if defined(CONFIG_CBUS) || defined(CONFIG_CBUS_MODULE)
 
 static struct cbus_host_platform_data nokia770_cbus_data = {
-	.clk_gpio	= OMAP_MPUIO(11),
+	.clk_gpio	= OMAP_MPUIO(9),
 	.dat_gpio	= OMAP_MPUIO(10),
-	.sel_gpio	= OMAP_MPUIO(9),
+	.sel_gpio	= OMAP_MPUIO(11),
 };
 
 static struct platform_device nokia770_cbus_device = {
