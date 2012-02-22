@@ -195,7 +195,6 @@ static int __init omap_dm_timer_init_one(struct omap_dm_timer *timer,
 		}
 	}
 	__omap_dm_timer_init_regs(timer);
-	__omap_dm_timer_reset(timer, 1, 1);
 	timer->posted = 1;
 
 	timer->rate = clk_get_rate(timer->fclk);

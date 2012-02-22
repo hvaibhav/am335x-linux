@@ -604,6 +604,11 @@ int omap_hwmod_for_each_by_class(const char *classname,
 				 void *user);
 
 int omap_hwmod_set_postsetup_state(struct omap_hwmod *oh, u8 state);
+
+int omap_hwmod_set_wakeuplat_constraint(struct omap_hwmod *oh, void *cookie,
+					long min_latency);
+int omap_hwmod_remove_wakeuplat_constraint(struct omap_hwmod *oh, void *cookie);
+
 int omap_hwmod_get_context_loss_count(struct omap_hwmod *oh);
 
 int omap_hwmod_no_setup_reset(struct omap_hwmod *oh);
