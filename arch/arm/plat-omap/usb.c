@@ -29,6 +29,8 @@
 #include <plat/usb.h>
 #include <plat/board.h>
 
+#include "../mach-omap2/common.h"
+
 #ifdef	CONFIG_ARCH_OMAP_OTG
 
 void __init
