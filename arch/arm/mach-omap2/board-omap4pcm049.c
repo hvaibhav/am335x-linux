@@ -522,7 +522,7 @@ static struct omap_dss_board_info pcm049_dss_data = {
 	.default_device = &pcm049_dpi_device,
 };
 
-void pcm049_display_init(void)
+void __init pcm049_display_init(void)
 {
 	omap_mux_init_gpio(OMAP4_PCM049_LCD_ENABLE, OMAP_PIN_OUTPUT);
 
