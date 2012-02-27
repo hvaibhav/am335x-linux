@@ -805,6 +805,9 @@ static int _omap4_disable_module(struct omap_hwmod *oh)
 				    oh->clkdm->clkdm_offs,
 				    oh->prcm.omap4.clkctrl_offs);
 
+	if (oh->rst_lines_cnt >= 0)
+		return 0;
+
 	v = _omap4_wait_target_disable(oh);
 	if (v)
 		pr_warn("omap_hwmod: %s: _wait_target_disable failed\n",
@@ -1508,7 +1511,7 @@ static int _reset(struct omap_hwmod *oh)
  */
 static int _enable(struct omap_hwmod *oh)
 {
-	int r, i;
+	int r;
 	int hwsup = 0;
 
 	pr_debug("omap_hwmod: %s: enabling\n", oh->name);
@@ -1539,16 +1542,6 @@ static int _enable(struct omap_hwmod *oh)
 		return -EINVAL;
 	}
 
-	/*
-	 * If an IP contains HW reset lines, then de-assert them in order
-	 * to allow the module state transition. Otherwise the PRCM will return
-	 * Intransition status, and the init will failed.
-	 */
-	if (oh->_state == _HWMOD_STATE_INITIALIZED ||
-	    oh->_state == _HWMOD_STATE_DISABLED)
-		for (i = 0; i < oh->rst_lines_cnt; i++)
-			_deassert_hardreset(oh, oh->rst_lines[i].name);
-
 	/* Mux pins for device runtime if populated */
 	if (oh->mux && (!oh->mux->enabled ||
 			((oh->_state == _HWMOD_STATE_IDLE) &&
@@ -1575,7 +1568,19 @@ static int _enable(struct omap_hwmod *oh)
 	_enable_clocks(oh);
 	_enable_module(oh);
 
-	r = _wait_target_ready(oh);
+	/*
+	 * If an IP contains HW reset lines, we leave them
+	 * asserted.  But this will block the module's idle state
+	 * transition - the PRCM will return Intransition status.  So
+	 * we need to avoid the target ready-wait in this case.  XXX
+	 * We also need to give the drivers a way to wait for the
+	 * target to become ready once they decide to deassert some
+	 * hardreset lines.  XXX Is this strategy going to break PM
+	 * because the clockdomain may not be able to enter idle while
+	 * the module's idle status is in-transition?  We may just need
+	 * custom reset blocks for all IPs with hardreset lines.
+	 */
+	r = (oh->rst_lines_cnt == 0) ? _wait_target_ready(oh) : 1;
 	if (!r) {
 		/*
 		 * Set the clockdomain to HW_AUTO only if the target is ready,
@@ -1813,21 +1818,13 @@ static int __init _setup_reset(struct omap_hwmod *oh)
 	if (oh->_state != _HWMOD_STATE_INITIALIZED)
 		return -EINVAL;
 
-	/*
-	 * In the case of hwmod with hardreset that should not be
-	 * de-assert at boot time, we have to keep the module
-	 * initialized, because we cannot enable it properly with the
-	 * reset asserted. Exit without warning because that behavior
-	 * is expected.
-	 */
-	if ((oh->flags & HWMOD_INIT_NO_RESET) && oh->rst_lines_cnt > 0)
-		return 0;
-
-	r = _enable(oh);
-	if (r) {
-		pr_warning("omap_hwmod: %s: cannot be enabled (%d)\n",
-			   oh->name, oh->_state);
-		return 0;
+	if (oh->rst_lines_cnt == 0) {
+		r = _enable(oh);
+		if (r) {
+			pr_warning("omap_hwmod: %s: cannot be enabled for reset (%d)\n",
+				   oh->name, oh->_state);
+			return -EINVAL;
+		}
 	}
 
 	if (!(oh->flags & HWMOD_INIT_NO_RESET))
