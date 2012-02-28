@@ -66,6 +66,8 @@ static struct omap_hwmod omap3xxx_gpio5_hwmod;
 static struct omap_hwmod omap3xxx_gpio6_hwmod;
 static struct omap_hwmod omap34xx_sr1_hwmod;
 static struct omap_hwmod omap34xx_sr2_hwmod;
+static struct omap_hwmod omap36xx_sr1_hwmod;
+static struct omap_hwmod omap36xx_sr2_hwmod;
 static struct omap_hwmod omap34xx_mcspi1;
 static struct omap_hwmod omap34xx_mcspi2;
 static struct omap_hwmod omap34xx_mcspi3;
@@ -413,9 +415,17 @@ static struct omap_hwmod_addr_space omap3_sr1_addr_space[] = {
 	{ }
 };
 
-static struct omap_hwmod_ocp_if omap3_l4_core__sr1 = {
+static struct omap_hwmod_ocp_if omap34xx_l4_core__sr1 = {
 	.master		= &omap3xxx_l4_core_hwmod,
 	.slave		= &omap34xx_sr1_hwmod,
+	.clk		= "sr_l4_ick",
+	.addr		= omap3_sr1_addr_space,
+	.user		= OCP_USER_MPU,
+};
+
+static struct omap_hwmod_ocp_if omap36xx_l4_core__sr1 = {
+	.master		= &omap3xxx_l4_core_hwmod,
+	.slave		= &omap36xx_sr1_hwmod,
 	.clk		= "sr_l4_ick",
 	.addr		= omap3_sr1_addr_space,
 	.user		= OCP_USER_MPU,
@@ -431,9 +441,17 @@ static struct omap_hwmod_addr_space omap3_sr2_addr_space[] = {
 	{ }
 };
 
-static struct omap_hwmod_ocp_if omap3_l4_core__sr2 = {
+static struct omap_hwmod_ocp_if omap34xx_l4_core__sr2 = {
 	.master		= &omap3xxx_l4_core_hwmod,
 	.slave		= &omap34xx_sr2_hwmod,
+	.clk		= "sr_l4_ick",
+	.addr		= omap3_sr2_addr_space,
+	.user		= OCP_USER_MPU,
+};
+
+static struct omap_hwmod_ocp_if omap36xx_l4_core__sr2 = {
+	.master		= &omap3xxx_l4_core_hwmod,
+	.slave		= &omap36xx_sr2_hwmod,
 	.clk		= "sr_l4_ick",
 	.addr		= omap3_sr2_addr_space,
 	.user		= OCP_USER_MPU,
@@ -2713,8 +2731,8 @@ static struct omap_hwmod_class omap36xx_smartreflex_hwmod_class = {
 };
 
 /* SR1 */
-static struct omap_hwmod_ocp_if *omap3_sr1_slaves[] = {
-	&omap3_l4_core__sr1,
+static struct omap_hwmod_ocp_if *omap34xx_sr1_slaves[] = {
+	&omap34xx_l4_core__sr1,
 };
 
 static struct omap_hwmod omap34xx_sr1_hwmod = {
@@ -2731,9 +2749,13 @@ static struct omap_hwmod omap34xx_sr1_hwmod = {
 			.idlest_idle_bit = OMAP3430_EN_SR1_SHIFT,
 		},
 	},
-	.slaves		= omap3_sr1_slaves,
-	.slaves_cnt	= ARRAY_SIZE(omap3_sr1_slaves),
+	.slaves		= omap34xx_sr1_slaves,
+	.slaves_cnt	= ARRAY_SIZE(omap34xx_sr1_slaves),
 	.flags		= HWMOD_SET_DEFAULT_CLOCKACT,
+};
+
+static struct omap_hwmod_ocp_if *omap36xx_sr1_slaves[] = {
+	&omap36xx_l4_core__sr1,
 };
 
 static struct omap_hwmod omap36xx_sr1_hwmod = {
@@ -2750,13 +2772,13 @@ static struct omap_hwmod omap36xx_sr1_hwmod = {
 			.idlest_idle_bit = OMAP3430_EN_SR1_SHIFT,
 		},
 	},
-	.slaves		= omap3_sr1_slaves,
-	.slaves_cnt	= ARRAY_SIZE(omap3_sr1_slaves),
+	.slaves		= omap36xx_sr1_slaves,
+	.slaves_cnt	= ARRAY_SIZE(omap36xx_sr1_slaves),
 };
 
 /* SR2 */
-static struct omap_hwmod_ocp_if *omap3_sr2_slaves[] = {
-	&omap3_l4_core__sr2,
+static struct omap_hwmod_ocp_if *omap34xx_sr2_slaves[] = {
+	&omap34xx_l4_core__sr2,
 };
 
 static struct omap_hwmod omap34xx_sr2_hwmod = {
@@ -2773,9 +2795,13 @@ static struct omap_hwmod omap34xx_sr2_hwmod = {
 			.idlest_idle_bit = OMAP3430_EN_SR2_SHIFT,
 		},
 	},
-	.slaves		= omap3_sr2_slaves,
-	.slaves_cnt	= ARRAY_SIZE(omap3_sr2_slaves),
+	.slaves		= omap34xx_sr2_slaves,
+	.slaves_cnt	= ARRAY_SIZE(omap34xx_sr2_slaves),
 	.flags		= HWMOD_SET_DEFAULT_CLOCKACT,
+};
+
+static struct omap_hwmod_ocp_if *omap36xx_sr2_slaves[] = {
+	&omap36xx_l4_core__sr2,
 };
 
 static struct omap_hwmod omap36xx_sr2_hwmod = {
@@ -2792,8 +2818,8 @@ static struct omap_hwmod omap36xx_sr2_hwmod = {
 			.idlest_idle_bit = OMAP3430_EN_SR2_SHIFT,
 		},
 	},
-	.slaves		= omap3_sr2_slaves,
-	.slaves_cnt	= ARRAY_SIZE(omap3_sr2_slaves),
+	.slaves		= omap36xx_sr2_slaves,
+	.slaves_cnt	= ARRAY_SIZE(omap36xx_sr2_slaves),
 };
 
 /*
