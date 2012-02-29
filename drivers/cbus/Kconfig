@@ -51,7 +51,7 @@ if CBUS_RETU
 
 config CBUS_RETU_POWERBUTTON
 	depends on INPUT
-	bool "Support for Retu power button"
+	tristate "Support for Retu power button"
 	---help---
 	  The power button on Nokia 770 is connected to the Retu ASIC.
 

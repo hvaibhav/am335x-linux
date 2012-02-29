@@ -40,6 +40,7 @@
 
 #include <asm/uaccess.h>
 
+#include <plat/cpu.h>
 #include <plat/prcm.h>
 
 #include "cbus.h"
