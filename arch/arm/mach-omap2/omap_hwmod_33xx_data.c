@@ -3029,7 +3029,9 @@ static __initdata struct omap_hwmod *am33xx_hwmods[] = {
 	&am33xx_gpio2_hwmod,
 	&am33xx_gpio3_hwmod,
 	/* gpmc class */
+#if 0
 	&am33xx_gpmc_hwmod,
+#endif
 	/* i2c class */
 	&am33xx_i2c1_hwmod,
 	&am33xx_i2c2_hwmod,
