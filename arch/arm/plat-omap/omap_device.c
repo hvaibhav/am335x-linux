@@ -1180,6 +1180,28 @@ int omap_device_enable_clocks(struct omap_device *od)
 	return 0;
 }
 
+/**
+ * omap_device_reset - reset the module.
+ * @dev: struct device *
+ *
+ * Reset all the hwmods associated with the device @dev.
+ */
+int omap_device_reset(struct device *dev)
+{
+	int r = 0;
+	int i;
+	struct platform_device *pdev = to_platform_device(dev);
+	struct omap_device *odev = to_omap_device(pdev);
+	struct omap_hwmod *oh;
+
+	for (i = 0; i < odev->hwmods_cnt; i++) {
+		oh = odev->hwmods[i];
+		r |= omap_hwmod_reset(oh);
+	}
+	return r;
+}
+
+
 static struct notifier_block omap_device_pm_qos_nb = {
 	.notifier_call	= _omap_device_pm_qos_handler,
 };
