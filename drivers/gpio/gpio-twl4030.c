@@ -398,18 +398,17 @@ static int __devinit gpio_twl4030_probe(struct platform_device *pdev)
 	int ret;
 
 	/* maybe setup IRQs */
-	if (pdata->irq_base) {
-		if (is_module()) {
-			dev_err(&pdev->dev,
-				"can't dispatch IRQs from modules\n");
-			goto no_irqs;
-		}
-		ret = twl4030_sih_setup(TWL4030_MODULE_GPIO);
-		if (ret < 0)
-			return ret;
-		WARN_ON(ret != pdata->irq_base);
-		twl4030_gpio_irq_base = ret;
+	if (is_module()) {
+		dev_err(&pdev->dev,
+			"can't dispatch IRQs from modules\n");
+		goto no_irqs;
 	}
+
+	ret = twl4030_sih_setup(TWL4030_MODULE_GPIO);
+	if (ret < 0)
+		return ret;
+
+	twl4030_gpio_irq_base = ret;
 
 no_irqs:
 	/*
