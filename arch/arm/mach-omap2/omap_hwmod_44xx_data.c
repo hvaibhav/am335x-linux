@@ -824,33 +824,6 @@ static struct omap_hwmod omap44xx_aess_hwmod = {
 };
 
 /*
- * 'bandgap' class
- * bangap reference for ldo regulators
- */
-
-static struct omap_hwmod_class omap44xx_bandgap_hwmod_class = {
-	.name	= "bandgap",
-};
-
-/* bandgap */
-static struct omap_hwmod_opt_clk bandgap_opt_clks[] = {
-	{ .role = "fclk", .clk = "bandgap_fclk" },
-};
-
-static struct omap_hwmod omap44xx_bandgap_hwmod = {
-	.name		= "bandgap",
-	.class		= &omap44xx_bandgap_hwmod_class,
-	.clkdm_name	= "l4_wkup_clkdm",
-	.prcm = {
-		.omap4 = {
-			.clkctrl_offs = OMAP4_CM_WKUP_BANDGAP_CLKCTRL_OFFSET,
-		},
-	},
-	.opt_clks	= bandgap_opt_clks,
-	.opt_clks_cnt	= ARRAY_SIZE(bandgap_opt_clks),
-};
-
-/*
  * 'counter' class
  * 32-bit ordinary counter, clocked by the falling edge of the 32 khz clock
  */
@@ -1107,11 +1080,8 @@ static struct omap_hwmod_irq_info omap44xx_dsp_irqs[] = {
 };
 
 static struct omap_hwmod_rst_info omap44xx_dsp_resets[] = {
-	{ .name = "mmu_cache", .rst_shift = 1 },
-};
-
-static struct omap_hwmod_rst_info omap44xx_dsp_c0_resets[] = {
 	{ .name = "dsp", .rst_shift = 0 },
+	{ .name = "mmu_cache", .rst_shift = 1 },
 };
 
 /* dsp -> iva */
@@ -1119,6 +1089,7 @@ static struct omap_hwmod_ocp_if omap44xx_dsp__iva = {
 	.master		= &omap44xx_dsp_hwmod,
 	.slave		= &omap44xx_iva_hwmod,
 	.clk		= "dpll_iva_m5x2_ck",
+	.user		= OCP_USER_DSP,
 };
 
 /* dsp master ports */
@@ -1139,21 +1110,6 @@ static struct omap_hwmod_ocp_if omap44xx_l4_cfg__dsp = {
 /* dsp slave ports */
 static struct omap_hwmod_ocp_if *omap44xx_dsp_slaves[] = {
 	&omap44xx_l4_cfg__dsp,
-};
-
-/* Pseudo hwmod for reset control purpose only */
-static struct omap_hwmod omap44xx_dsp_c0_hwmod = {
-	.name		= "dsp_c0",
-	.class		= &omap44xx_dsp_hwmod_class,
-	.clkdm_name	= "tesla_clkdm",
-	.flags		= HWMOD_INIT_NO_RESET,
-	.rst_lines	= omap44xx_dsp_c0_resets,
-	.rst_lines_cnt	= ARRAY_SIZE(omap44xx_dsp_c0_resets),
-	.prcm = {
-		.omap4 = {
-			.rstctrl_offs = OMAP4_RM_TESLA_RSTCTRL_OFFSET,
-		},
-	},
 };
 
 static struct omap_hwmod omap44xx_dsp_hwmod = {
@@ -2504,15 +2460,9 @@ static struct omap_hwmod_irq_info omap44xx_ipu_irqs[] = {
 	{ .irq = -1 }
 };
 
-static struct omap_hwmod_rst_info omap44xx_ipu_c0_resets[] = {
-	{ .name = "cpu0", .rst_shift = 0 },
-};
-
-static struct omap_hwmod_rst_info omap44xx_ipu_c1_resets[] = {
-	{ .name = "cpu1", .rst_shift = 1 },
-};
-
 static struct omap_hwmod_rst_info omap44xx_ipu_resets[] = {
+	{ .name = "cpu0", .rst_shift = 0 },
+	{ .name = "cpu1", .rst_shift = 1 },
 	{ .name = "mmu_cache", .rst_shift = 2 },
 };
 
@@ -2532,36 +2482,6 @@ static struct omap_hwmod_ocp_if omap44xx_l3_main_2__ipu = {
 /* ipu slave ports */
 static struct omap_hwmod_ocp_if *omap44xx_ipu_slaves[] = {
 	&omap44xx_l3_main_2__ipu,
-};
-
-/* Pseudo hwmod for reset control purpose only */
-static struct omap_hwmod omap44xx_ipu_c0_hwmod = {
-	.name		= "ipu_c0",
-	.class		= &omap44xx_ipu_hwmod_class,
-	.clkdm_name	= "ducati_clkdm",
-	.flags		= HWMOD_INIT_NO_RESET,
-	.rst_lines	= omap44xx_ipu_c0_resets,
-	.rst_lines_cnt	= ARRAY_SIZE(omap44xx_ipu_c0_resets),
-	.prcm = {
-		.omap4 = {
-			.rstctrl_offs = OMAP4_RM_DUCATI_RSTCTRL_OFFSET,
-		},
-	},
-};
-
-/* Pseudo hwmod for reset control purpose only */
-static struct omap_hwmod omap44xx_ipu_c1_hwmod = {
-	.name		= "ipu_c1",
-	.class		= &omap44xx_ipu_hwmod_class,
-	.clkdm_name	= "ducati_clkdm",
-	.flags		= HWMOD_INIT_NO_RESET,
-	.rst_lines	= omap44xx_ipu_c1_resets,
-	.rst_lines_cnt	= ARRAY_SIZE(omap44xx_ipu_c1_resets),
-	.prcm = {
-		.omap4 = {
-			.rstctrl_offs = OMAP4_RM_DUCATI_RSTCTRL_OFFSET,
-		},
-	},
 };
 
 static struct omap_hwmod omap44xx_ipu_hwmod = {
@@ -2594,6 +2514,24 @@ static struct omap_hwmod omap44xx_ipu_hwmod = {
 static struct omap_hwmod_class_sysconfig omap44xx_iss_sysc = {
 	.rev_offs	= 0x0000,
 	.sysc_offs	= 0x0010,
+	/*
+	 * FDIF needs 100 OCP clk cycles delay after a softreset before
+	 * accessing sysconfig again.
+	 * The lowest frequency at the moment for L3 bus is 100 MHz, so
+	 * 1usec delay is needed. Add an x2 margin to be safe (2 usecs).
+	 *
+	 * TODO: Indicate errata when available.
+	 */
+	.srst_udelay	= 2,
+	/*
+	 * ISS needs 100 OCP clk cycles delay after a softreset before
+	 * accessing sysconfig again.
+	 * The lowest frequency at the moment for L3 bus is 100 MHz, so
+	 * 1usec delay is needed. Add an x2 margin to be safe (2 usecs).
+	 *
+	 * TODO: Indicate errata when available.
+	 */
+	.srst_udelay	= 2,
 	.sysc_flags	= (SYSC_HAS_MIDLEMODE | SYSC_HAS_RESET_STATUS |
 			   SYSC_HAS_SIDLEMODE | SYSC_HAS_SOFTRESET),
 	.idlemodes	= (SIDLE_FORCE | SIDLE_NO | SIDLE_SMART |
@@ -2693,15 +2631,9 @@ static struct omap_hwmod_irq_info omap44xx_iva_irqs[] = {
 };
 
 static struct omap_hwmod_rst_info omap44xx_iva_resets[] = {
-	{ .name = "logic", .rst_shift = 2 },
-};
-
-static struct omap_hwmod_rst_info omap44xx_iva_seq0_resets[] = {
 	{ .name = "seq0", .rst_shift = 0 },
-};
-
-static struct omap_hwmod_rst_info omap44xx_iva_seq1_resets[] = {
 	{ .name = "seq1", .rst_shift = 1 },
+	{ .name = "logic", .rst_shift = 2 },
 };
 
 /* iva master ports */
@@ -2732,36 +2664,6 @@ static struct omap_hwmod_ocp_if omap44xx_l3_main_2__iva = {
 static struct omap_hwmod_ocp_if *omap44xx_iva_slaves[] = {
 	&omap44xx_dsp__iva,
 	&omap44xx_l3_main_2__iva,
-};
-
-/* Pseudo hwmod for reset control purpose only */
-static struct omap_hwmod omap44xx_iva_seq0_hwmod = {
-	.name		= "iva_seq0",
-	.class		= &omap44xx_iva_hwmod_class,
-	.clkdm_name	= "ivahd_clkdm",
-	.flags		= HWMOD_INIT_NO_RESET,
-	.rst_lines	= omap44xx_iva_seq0_resets,
-	.rst_lines_cnt	= ARRAY_SIZE(omap44xx_iva_seq0_resets),
-	.prcm = {
-		.omap4 = {
-			.rstctrl_offs = OMAP4_RM_IVAHD_RSTCTRL_OFFSET,
-		},
-	},
-};
-
-/* Pseudo hwmod for reset control purpose only */
-static struct omap_hwmod omap44xx_iva_seq1_hwmod = {
-	.name		= "iva_seq1",
-	.class		= &omap44xx_iva_hwmod_class,
-	.clkdm_name	= "ivahd_clkdm",
-	.flags		= HWMOD_INIT_NO_RESET,
-	.rst_lines	= omap44xx_iva_seq1_resets,
-	.rst_lines_cnt	= ARRAY_SIZE(omap44xx_iva_seq1_resets),
-	.prcm = {
-		.omap4 = {
-			.rstctrl_offs = OMAP4_RM_IVAHD_RSTCTRL_OFFSET,
-		},
-	},
 };
 
 static struct omap_hwmod omap44xx_iva_hwmod = {
@@ -5506,13 +5408,10 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_mpu_private_hwmod,
 
 	/* aess class */
-/*	&omap44xx_aess_hwmod, */
-
-	/* bandgap class */
-	&omap44xx_bandgap_hwmod,
+	&omap44xx_aess_hwmod,
 
 	/* counter class */
-/*	&omap44xx_counter_32k_hwmod, */
+	&omap44xx_counter_32k_hwmod,
 
 	/* dma class */
 	&omap44xx_dma_system_hwmod,
@@ -5522,7 +5421,6 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 
 	/* dsp class */
 	&omap44xx_dsp_hwmod,
-	&omap44xx_dsp_c0_hwmod,
 
 	/* dss class */
 	&omap44xx_dss_hwmod,
@@ -5542,7 +5440,7 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_gpio6_hwmod,
 
 	/* hsi class */
-/*	&omap44xx_hsi_hwmod, */
+	&omap44xx_hsi_hwmod,
 
 	/* i2c class */
 	&omap44xx_i2c1_hwmod,
@@ -5552,16 +5450,12 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 
 	/* ipu class */
 	&omap44xx_ipu_hwmod,
-	&omap44xx_ipu_c0_hwmod,
-	&omap44xx_ipu_c1_hwmod,
 
 	/* iss class */
-/*	&omap44xx_iss_hwmod, */
+	&omap44xx_iss_hwmod,
 
 	/* iva class */
 	&omap44xx_iva_hwmod,
-	&omap44xx_iva_seq0_hwmod,
-	&omap44xx_iva_seq1_hwmod,
 
 	/* kbd class */
 	&omap44xx_kbd_hwmod,
