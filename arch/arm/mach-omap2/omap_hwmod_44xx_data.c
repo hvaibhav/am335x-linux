@@ -824,33 +824,6 @@ static struct omap_hwmod omap44xx_aess_hwmod = {
 };
 
 /*
- * 'bandgap' class
- * bangap reference for ldo regulators
- */
-
-static struct omap_hwmod_class omap44xx_bandgap_hwmod_class = {
-	.name	= "bandgap",
-};
-
-/* bandgap */
-static struct omap_hwmod_opt_clk bandgap_opt_clks[] = {
-	{ .role = "fclk", .clk = "bandgap_fclk" },
-};
-
-static struct omap_hwmod omap44xx_bandgap_hwmod = {
-	.name		= "bandgap",
-	.class		= &omap44xx_bandgap_hwmod_class,
-	.clkdm_name	= "l4_wkup_clkdm",
-	.prcm = {
-		.omap4 = {
-			.clkctrl_offs = OMAP4_CM_WKUP_BANDGAP_CLKCTRL_OFFSET,
-		},
-	},
-	.opt_clks	= bandgap_opt_clks,
-	.opt_clks_cnt	= ARRAY_SIZE(bandgap_opt_clks),
-};
-
-/*
  * 'counter' class
  * 32-bit ordinary counter, clocked by the falling edge of the 32 khz clock
  */
@@ -1116,6 +1089,7 @@ static struct omap_hwmod_ocp_if omap44xx_dsp__iva = {
 	.master		= &omap44xx_dsp_hwmod,
 	.slave		= &omap44xx_iva_hwmod,
 	.clk		= "dpll_iva_m5x2_ck",
+	.user		= OCP_USER_DSP,
 };
 
 /* dsp master ports */
@@ -5446,13 +5420,10 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_mpu_private_hwmod,
 
 	/* aess class */
-/*	&omap44xx_aess_hwmod, */
-
-	/* bandgap class */
-	&omap44xx_bandgap_hwmod,
+	&omap44xx_aess_hwmod,
 
 	/* counter class */
-/*	&omap44xx_counter_32k_hwmod, */
+	&omap44xx_counter_32k_hwmod,
 
 	/* dma class */
 	&omap44xx_dma_system_hwmod,
@@ -5481,7 +5452,7 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_gpio6_hwmod,
 
 	/* hsi class */
-/*	&omap44xx_hsi_hwmod, */
+	&omap44xx_hsi_hwmod,
 
 	/* i2c class */
 	&omap44xx_i2c1_hwmod,
@@ -5493,7 +5464,7 @@ static __initdata struct omap_hwmod *omap44xx_hwmods[] = {
 	&omap44xx_ipu_hwmod,
 
 	/* iss class */
-/*	&omap44xx_iss_hwmod, */
+	&omap44xx_iss_hwmod,
 
 	/* iva class */
 	&omap44xx_iva_hwmod,

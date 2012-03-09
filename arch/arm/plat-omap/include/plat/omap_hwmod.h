@@ -213,6 +213,7 @@ struct omap_hwmod_addr_space {
  */
 #define OCP_USER_MPU			(1 << 0)
 #define OCP_USER_SDMA			(1 << 1)
+#define OCP_USER_DSP			(1 << 2)
 
 /* omap_hwmod_ocp_if.flags bits */
 #define OCPIF_SWSUP_IDLE		(1 << 0)
@@ -327,9 +328,9 @@ struct omap_hwmod_sysc_fields {
  * then this field has to be populated with the correct offset structure.
  */
 struct omap_hwmod_class_sysconfig {
-	u16 rev_offs;
-	u16 sysc_offs;
-	u16 syss_offs;
+	u32 rev_offs;
+	u32 sysc_offs;
+	u32 syss_offs;
 	u16 sysc_flags;
 	struct omap_hwmod_sysc_fields *sysc_fields;
 	u8 srst_udelay;
