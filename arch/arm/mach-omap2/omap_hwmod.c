@@ -150,6 +150,7 @@
 #include "cminst44xx.h"
 #include "prm2xxx_3xxx.h"
 #include "prm44xx.h"
+#include "prm33xx.h"
 #include "prminst44xx.h"
 #include "mux.h"
 
@@ -1288,7 +1289,15 @@ static int _assert_hardreset(struct omap_hwmod *oh, const char *name)
 	if (IS_ERR_VALUE(ret))
 		return ret;
 
-	if (cpu_is_omap24xx() || cpu_is_omap34xx())
+	/*
+	 * cpu_is_omap34xx() is true for am33xx device as well, so
+	 * fist check for cpu_is_am33xx().
+	 */
+	if (cpu_is_am33xx())
+		return am33xx_prm_assert_hardreset(ohri.rst_shift,
+				oh->clkdm->pwrdm.ptr->prcm_offs,
+				oh->prcm.omap4.rstctrl_offs);
+	else if (cpu_is_omap24xx() || cpu_is_omap34xx())
 		return omap2_prm_assert_hardreset(oh->prcm.omap2.module_offs,
 						  ohri.rst_shift);
 	else if (cpu_is_omap44xx())
@@ -1322,7 +1331,16 @@ static int _deassert_hardreset(struct omap_hwmod *oh, const char *name)
 	if (IS_ERR_VALUE(ret))
 		return ret;
 
-	if (cpu_is_omap24xx() || cpu_is_omap34xx()) {
+	/*
+	 * cpu_is_omap34xx() is true for am33xx device as well, so
+	 * fist check for cpu_is_am33xx().
+	 */
+	if (cpu_is_am33xx()) {
+		return am33xx_prm_deassert_hardreset(ohri.rst_shift,
+				oh->clkdm->pwrdm.ptr->prcm_offs,
+				oh->prcm.omap4.rstctrl_offs,
+				oh->prcm.omap4.rstst_offs);
+	} else if (cpu_is_omap24xx() || cpu_is_omap34xx()) {
 		ret = omap2_prm_deassert_hardreset(oh->prcm.omap2.module_offs,
 						   ohri.rst_shift,
 						   ohri.st_shift);
@@ -1364,7 +1382,15 @@ static int _read_hardreset(struct omap_hwmod *oh, const char *name)
 	if (IS_ERR_VALUE(ret))
 		return ret;
 
-	if (cpu_is_omap24xx() || cpu_is_omap34xx()) {
+	/*
+	 * cpu_is_omap34xx() is true for am33xx device as well, so
+	 * fist check for cpu_is_am33xx().
+	 */
+	if (cpu_is_am33xx()) {
+		return am33xx_prm_is_hardreset_asserted(ohri.rst_shift,
+				oh->clkdm->pwrdm.ptr->prcm_offs,
+				oh->prcm.omap4.rstctrl_offs);
+	} else if (cpu_is_omap24xx() || cpu_is_omap34xx()) {
 		return omap2_prm_is_hardreset_asserted(oh->prcm.omap2.module_offs,
 						       ohri.st_shift);
 	} else if (cpu_is_omap44xx()) {
