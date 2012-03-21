@@ -41,6 +41,7 @@
 #include "clock2xxx.h"
 #include "clock3xxx.h"
 #include "clock44xx.h"
+#include "clock33xx.h"
 
 /*
  * The machine specific code may provide the extra mapping besides the
@@ -469,7 +470,7 @@ void __init am33xx_init_early(void)
 	am33xx_voltagedomains_init();
 	am33xx_powerdomains_init();
 	am33xx_clockdomains_init();
-	omap3xxx_clk_init();
+	am33xx_clk_init();
 }
 #endif
 
