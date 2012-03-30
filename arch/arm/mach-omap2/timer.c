@@ -243,21 +243,6 @@ static void __init omap2_gp_clockevent_init(int gptimer_id,
 }
 
 /* Clocksource code */
-
-#ifdef CONFIG_OMAP_32K_TIMER
-/*
- * When 32k-timer is enabled, don't use GPTimer for clocksource
- * instead, just leave default clocksource which uses the 32k
- * sync counter.  See clocksource setup in plat-omap/counter_32k.c
- */
-
-static void __init omap2_gp_clocksource_init(int unused, const char *dummy)
-{
-	omap_init_clocksource_32k();
-}
-
-#else
-
 static struct omap_dm_timer clksrc;
 
 /*
@@ -289,12 +274,32 @@ static void __init omap2_gp_clocksource_init(int gptimer_id,
 						const char *fck_source)
 {
 	int res;
+	struct omap_hwmod *oh;
+	const char *oh_name = "counter_32k";
 
+	/*
+	 * First check for availability for 32k-sync timer.
+	 *
+	 * In case of failure in finding 32k_counter module or
+	 * registering it as clocksource, execution will fallback to
+	 * gp-timer.
+	 */
+	oh = omap_hwmod_lookup(oh_name);
+	if (oh && oh->slaves_cnt != 0) {
+		u32 pbase;
+		unsigned long size;
+
+		pbase = oh->slaves[0]->addr->pa_start + 0x10;
+		size = oh->slaves[0]->addr->pa_end -
+			oh->slaves[0]->addr->pa_start;
+		res = omap_init_clocksource_32k(pbase, size);
+		if (!res)
+			return;
+	}
+
+	/* Fall back to gp-timer code */
 	res = omap_dm_timer_init_one(&clksrc, gptimer_id, fck_source);
 	BUG_ON(res);
-
-	pr_info("OMAP clocksource: GPTIMER%d at %lu Hz\n",
-		gptimer_id, clksrc.rate);
 
 	__omap_dm_timer_load_start(&clksrc,
 			OMAP_TIMER_CTRL_ST | OMAP_TIMER_CTRL_AR, 0, 1);
@@ -303,8 +308,10 @@ static void __init omap2_gp_clocksource_init(int gptimer_id,
 	if (clocksource_register_hz(&clocksource_gpt, clksrc.rate))
 		pr_err("Could not register clocksource %s\n",
 			clocksource_gpt.name);
+	else
+		pr_info("OMAP clocksource: GPTIMER%d at %lu Hz\n",
+			gptimer_id, clksrc.rate);
 }
-#endif
 
 #define OMAP_SYS_TIMER_INIT(name, clkev_nr, clkev_src,			\
 				clksrc_nr, clksrc_src)			\

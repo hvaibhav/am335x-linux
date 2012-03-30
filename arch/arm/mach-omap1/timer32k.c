@@ -72,6 +72,7 @@
 
 /* 16xx specific defines */
 #define OMAP1_32K_TIMER_BASE		0xfffb9000
+#define OMAP1_32KSYNC_TIMER_BASE	0xfffbc410
 #define OMAP1_32K_TIMER_CR		0x08
 #define OMAP1_32K_TIMER_TVR		0x00
 #define OMAP1_32K_TIMER_TCR		0x04
@@ -185,7 +186,10 @@ static __init void omap_init_32k_timer(void)
  */
 bool __init omap_32k_timer_init(void)
 {
-	omap_init_clocksource_32k();
+	u32 pbase;
+
+	pbase = cpu_is_omap16xx() ? OMAP1_32KSYNC_TIMER_BASE : NULL;
+	omap_init_clocksource_32k(pbase, SZ_1K);
 	omap_init_32k_timer();
 
 	return true;
