@@ -41,6 +41,7 @@
 #include "clock2xxx.h"
 #include "clock3xxx.h"
 #include "clock44xx.h"
+#include "clock33xx.h"
 
 /*
  * The machine specific code may provide the extra mapping besides the
@@ -466,6 +467,18 @@ void __init ti81xx_init_early(void)
 	omap3xxx_hwmod_init();
 	omap_hwmod_init_postsetup();
 	omap3xxx_clk_init();
+}
+
+void __init am33xx_init_early(void)
+{
+	omap2_set_globals_am33xx();
+	omap_common_init_early();
+	am33xx_voltagedomains_init();
+	am33xx_powerdomains_init();
+	am33xx_clockdomains_init();
+	am33xx_hwmod_init();
+	omap_hwmod_init_postsetup();
+	am33xx_clk_init();
 }
 #endif
 

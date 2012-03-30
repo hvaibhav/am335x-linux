@@ -41,23 +41,24 @@ struct omap_device;
 
 extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type1;
 extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type2;
+extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type3;
 
 /*
  * OCP SYSCONFIG bit shifts/masks TYPE1. These are for IPs compliant
  * with the original PRCM protocol defined for OMAP2420
  */
 #define SYSC_TYPE1_MIDLEMODE_SHIFT	12
-#define SYSC_TYPE1_MIDLEMODE_MASK	(0x3 << SYSC_MIDLEMODE_SHIFT)
+#define SYSC_TYPE1_MIDLEMODE_MASK	(0x3 << SYSC_TYPE1_MIDLEMODE_SHIFT)
 #define SYSC_TYPE1_CLOCKACTIVITY_SHIFT	8
-#define SYSC_TYPE1_CLOCKACTIVITY_MASK	(0x3 << SYSC_CLOCKACTIVITY_SHIFT)
+#define SYSC_TYPE1_CLOCKACTIVITY_MASK	(0x3 << SYSC_TYPE1_CLOCKACTIVITY_SHIFT)
 #define SYSC_TYPE1_SIDLEMODE_SHIFT	3
-#define SYSC_TYPE1_SIDLEMODE_MASK	(0x3 << SYSC_SIDLEMODE_SHIFT)
+#define SYSC_TYPE1_SIDLEMODE_MASK	(0x3 << SYSC_TYPE1_SIDLEMODE_SHIFT)
 #define SYSC_TYPE1_ENAWAKEUP_SHIFT	2
-#define SYSC_TYPE1_ENAWAKEUP_MASK	(1 << SYSC_ENAWAKEUP_SHIFT)
+#define SYSC_TYPE1_ENAWAKEUP_MASK	(1 << SYSC_TYPE1_ENAWAKEUP_SHIFT)
 #define SYSC_TYPE1_SOFTRESET_SHIFT	1
-#define SYSC_TYPE1_SOFTRESET_MASK	(1 << SYSC_SOFTRESET_SHIFT)
+#define SYSC_TYPE1_SOFTRESET_MASK	(1 << SYSC_TYPE1_SOFTRESET_SHIFT)
 #define SYSC_TYPE1_AUTOIDLE_SHIFT	0
-#define SYSC_TYPE1_AUTOIDLE_MASK	(1 << SYSC_AUTOIDLE_SHIFT)
+#define SYSC_TYPE1_AUTOIDLE_MASK	(1 << SYSC_TYPE1_AUTOIDLE_SHIFT)
 
 /*
  * OCP SYSCONFIG bit shifts/masks TYPE2. These are for IPs compliant
@@ -69,6 +70,15 @@ extern struct omap_hwmod_sysc_fields omap_hwmod_sysc_type2;
 #define SYSC_TYPE2_SIDLEMODE_MASK	(0x3 << SYSC_TYPE2_SIDLEMODE_SHIFT)
 #define SYSC_TYPE2_MIDLEMODE_SHIFT	4
 #define SYSC_TYPE2_MIDLEMODE_MASK	(0x3 << SYSC_TYPE2_MIDLEMODE_SHIFT)
+
+/*
+ * OCP SYSCONFIG bit shifts/masks TYPE3.
+ * This is applicable for some IPs present in AM33XX
+ */
+#define SYSC_TYPE3_SIDLEMODE_SHIFT	0
+#define SYSC_TYPE3_SIDLEMODE_MASK	(0x3 << SYSC_TYPE3_SIDLEMODE_SHIFT)
+#define SYSC_TYPE3_MIDLEMODE_SHIFT	2
+#define SYSC_TYPE3_MIDLEMODE_MASK	(0x3 << SYSC_TYPE3_MIDLEMODE_SHIFT)
 
 /* OCP SYSSTATUS bit shifts/masks */
 #define SYSS_RESETDONE_SHIFT		0
@@ -367,11 +377,13 @@ struct omap_hwmod_omap2_prcm {
  * struct omap_hwmod_omap4_prcm - OMAP4-specific PRCM data
  * @clkctrl_reg: PRCM address of the clock control register
  * @rstctrl_reg: address of the XXX_RSTCTRL register located in the PRM
+ * @rstst_reg: (AM33XX Only) address of the XXX_RSTST register located in the PRM
  * @submodule_wkdep_bit: bit shift of the WKDEP range
  */
 struct omap_hwmod_omap4_prcm {
 	u16		clkctrl_offs;
 	u16		rstctrl_offs;
+	u16		rstst_offs;
 	u16		context_offs;
 	u8		submodule_wkdep_bit;
 	u8		modulemode;
@@ -626,5 +638,6 @@ extern int omap2420_hwmod_init(void);
 extern int omap2430_hwmod_init(void);
 extern int omap3xxx_hwmod_init(void);
 extern int omap44xx_hwmod_init(void);
+extern int am33xx_hwmod_init(void);
 
 #endif

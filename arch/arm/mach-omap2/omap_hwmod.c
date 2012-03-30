@@ -149,8 +149,10 @@
 
 #include "cm2xxx_3xxx.h"
 #include "cminst44xx.h"
+#include "cm33xx.h"
 #include "prm2xxx_3xxx.h"
 #include "prm44xx.h"
+#include "prm33xx.h"
 #include "prminst44xx.h"
 #include "mux.h"
 
@@ -736,7 +738,7 @@ static void _disable_optional_clocks(struct omap_hwmod *oh)
 static void _enable_module(struct omap_hwmod *oh)
 {
 	/* The module mode does not exist prior OMAP4 */
-	if (cpu_is_omap24xx() || cpu_is_omap34xx())
+	if (!cpu_is_omap44xx() && !cpu_is_am33xx())
 		return;
 
 	if (!oh->clkdm || !oh->prcm.omap4.modulemode)
@@ -745,11 +747,17 @@ static void _enable_module(struct omap_hwmod *oh)
 	pr_debug("omap_hwmod: %s: _enable_module: %d\n",
 		 oh->name, oh->prcm.omap4.modulemode);
 
-	omap4_cminst_module_enable(oh->prcm.omap4.modulemode,
-				   oh->clkdm->prcm_partition,
-				   oh->clkdm->cm_inst,
-				   oh->clkdm->clkdm_offs,
-				   oh->prcm.omap4.clkctrl_offs);
+	if (cpu_is_am33xx())
+		am33xx_cm_module_enable(oh->prcm.omap4.modulemode,
+				oh->clkdm->cm_inst,
+				oh->clkdm->clkdm_offs,
+				oh->prcm.omap4.clkctrl_offs);
+	else
+		omap4_cminst_module_enable(oh->prcm.omap4.modulemode,
+				oh->clkdm->prcm_partition,
+				oh->clkdm->cm_inst,
+				oh->clkdm->clkdm_offs,
+				oh->prcm.omap4.clkctrl_offs);
 }
 
 /**
@@ -763,7 +771,7 @@ static void _enable_module(struct omap_hwmod *oh)
  */
 static int _omap4_wait_target_disable(struct omap_hwmod *oh)
 {
-	if (!cpu_is_omap44xx())
+	if (!cpu_is_omap44xx() && !cpu_is_am33xx())
 		return 0;
 
 	if (!oh)
@@ -775,10 +783,15 @@ static int _omap4_wait_target_disable(struct omap_hwmod *oh)
 	if (oh->flags & HWMOD_NO_IDLEST)
 		return 0;
 
-	return omap4_cminst_wait_module_idle(oh->clkdm->prcm_partition,
-					     oh->clkdm->cm_inst,
-					     oh->clkdm->clkdm_offs,
-					     oh->prcm.omap4.clkctrl_offs);
+	if (cpu_is_am33xx())
+		return am33xx_cm_wait_module_idle(oh->clkdm->cm_inst,
+				oh->clkdm->clkdm_offs,
+				oh->prcm.omap4.clkctrl_offs);
+	else
+		return omap4_cminst_wait_module_idle(oh->clkdm->prcm_partition,
+				oh->clkdm->cm_inst,
+				oh->clkdm->clkdm_offs,
+				oh->prcm.omap4.clkctrl_offs);
 }
 
 /**
@@ -793,7 +806,7 @@ static int _omap4_disable_module(struct omap_hwmod *oh)
 	int v;
 
 	/* The module mode does not exist prior OMAP4 */
-	if (!cpu_is_omap44xx())
+	if (!cpu_is_omap44xx() && !cpu_is_am33xx())
 		return -EINVAL;
 
 	if (!oh->clkdm || !oh->prcm.omap4.modulemode)
@@ -801,10 +814,15 @@ static int _omap4_disable_module(struct omap_hwmod *oh)
 
 	pr_debug("omap_hwmod: %s: %s\n", oh->name, __func__);
 
-	omap4_cminst_module_disable(oh->clkdm->prcm_partition,
-				    oh->clkdm->cm_inst,
-				    oh->clkdm->clkdm_offs,
-				    oh->prcm.omap4.clkctrl_offs);
+	if (cpu_is_am33xx())
+		am33xx_cm_module_disable(oh->clkdm->cm_inst,
+				oh->clkdm->clkdm_offs,
+				oh->prcm.omap4.clkctrl_offs);
+	else
+		omap4_cminst_module_disable(oh->clkdm->prcm_partition,
+				oh->clkdm->cm_inst,
+				oh->clkdm->clkdm_offs,
+				oh->prcm.omap4.clkctrl_offs);
 
 	if (oh->rst_lines_cnt >= 0)
 		return 0;
@@ -1265,7 +1283,7 @@ static struct omap_hwmod *_lookup(const char *name)
  */
 static int _init_clkdm(struct omap_hwmod *oh)
 {
-	if (cpu_is_omap24xx() || cpu_is_omap34xx())
+	if (cpu_is_omap24xx() || (cpu_is_omap34xx() && !cpu_is_am33xx()))
 		return 0;
 
 	if (!oh->clkdm_name) {
@@ -1347,7 +1365,14 @@ static int _wait_target_ready(struct omap_hwmod *oh)
 
 	/* XXX check clock enable states */
 
-	if (cpu_is_omap24xx() || cpu_is_omap34xx()) {
+	if (cpu_is_am33xx()) {
+		if (!oh->clkdm)
+			return -EINVAL;
+
+		ret = am33xx_cm_wait_module_ready(oh->clkdm->cm_inst,
+						oh->clkdm->clkdm_offs,
+						oh->prcm.omap4.clkctrl_offs);
+	} else if (cpu_is_omap24xx() || cpu_is_omap34xx()) {
 		ret = omap2_cm_wait_module_ready(oh->prcm.omap2.module_offs,
 						 oh->prcm.omap2.idlest_reg_id,
 						 oh->prcm.omap2.idlest_idle_bit);
@@ -1418,7 +1443,15 @@ static int _assert_hardreset(struct omap_hwmod *oh, const char *name)
 	if (IS_ERR_VALUE(ret))
 		return ret;
 
-	if (cpu_is_omap24xx() || cpu_is_omap34xx())
+	/*
+	 * cpu_is_omap34xx() is true for am33xx device as well, so
+	 * fist check for cpu_is_am33xx().
+	 */
+	if (cpu_is_am33xx())
+		return am33xx_prm_assert_hardreset(ohri.rst_shift,
+				oh->clkdm->pwrdm.ptr->prcm_offs,
+				oh->prcm.omap4.rstctrl_offs);
+	else if (cpu_is_omap24xx() || cpu_is_omap34xx())
 		return omap2_prm_assert_hardreset(oh->prcm.omap2.module_offs,
 						  ohri.rst_shift);
 	else if (cpu_is_omap44xx())
@@ -1452,7 +1485,16 @@ static int _deassert_hardreset(struct omap_hwmod *oh, const char *name)
 	if (IS_ERR_VALUE(ret))
 		return ret;
 
-	if (cpu_is_omap24xx() || cpu_is_omap34xx()) {
+	/*
+	 * cpu_is_omap34xx() is true for am33xx device as well, so
+	 * fist check for cpu_is_am33xx().
+	 */
+	if (cpu_is_am33xx()) {
+		return am33xx_prm_deassert_hardreset(ohri.rst_shift,
+				oh->clkdm->pwrdm.ptr->prcm_offs,
+				oh->prcm.omap4.rstctrl_offs,
+				oh->prcm.omap4.rstst_offs);
+	} else if (cpu_is_omap24xx() || cpu_is_omap34xx()) {
 		ret = omap2_prm_deassert_hardreset(oh->prcm.omap2.module_offs,
 						   ohri.rst_shift,
 						   ohri.st_shift);
@@ -1494,7 +1536,15 @@ static int _read_hardreset(struct omap_hwmod *oh, const char *name)
 	if (IS_ERR_VALUE(ret))
 		return ret;
 
-	if (cpu_is_omap24xx() || cpu_is_omap34xx()) {
+	/*
+	 * cpu_is_omap34xx() is true for am33xx device as well, so
+	 * fist check for cpu_is_am33xx().
+	 */
+	if (cpu_is_am33xx()) {
+		return am33xx_prm_is_hardreset_asserted(ohri.rst_shift,
+				oh->clkdm->pwrdm.ptr->prcm_offs,
+				oh->prcm.omap4.rstctrl_offs);
+	} else if (cpu_is_omap24xx() || cpu_is_omap34xx()) {
 		return omap2_prm_is_hardreset_asserted(oh->prcm.omap2.module_offs,
 						       ohri.st_shift);
 	} else if (cpu_is_omap44xx()) {
