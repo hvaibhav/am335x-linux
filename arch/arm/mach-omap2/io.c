@@ -33,10 +33,10 @@
 #include <plat/multi.h>
 
 #include "iomap.h"
+#include "common.h"
 #include "voltage.h"
 #include "powerdomain.h"
 #include "clockdomain.h"
-#include "common.h"
 #include "clock2xxx.h"
 #include "clock3xxx.h"
 #include "clock44xx.h"
