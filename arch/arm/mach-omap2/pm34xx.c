@@ -31,6 +31,7 @@
 #include <trace/events/power.h>
 
 #include <asm/suspend.h>
+#include <asm/system_misc.h>
 
 #include <plat/sram.h>
 #include "clockdomain.h"
@@ -70,16 +71,6 @@ void (*omap3_do_wfi_sram)(void);
 static struct powerdomain *mpu_pwrdm, *neon_pwrdm;
 static struct powerdomain *core_pwrdm, *per_pwrdm;
 static struct powerdomain *cam_pwrdm;
-
-static inline void omap3_per_save_context(void)
-{
-	omap_gpio_save_context();
-}
-
-static inline void omap3_per_restore_context(void)
-{
-	omap_gpio_restore_context();
-}
 
 static void omap3_enable_io_chain(void)
 {
@@ -323,8 +314,6 @@ void omap_sram_idle(void)
 	if (per_next_state < PWRDM_POWER_ON) {
 		per_going_off = (per_next_state == PWRDM_POWER_OFF) ? 1 : 0;
 		omap2_gpio_prepare_for_idle(per_going_off);
-		if (per_next_state == PWRDM_POWER_OFF)
-				omap3_per_save_context();
 	}
 
 	/* CORE */
@@ -390,8 +379,6 @@ void omap_sram_idle(void)
 	if (per_next_state < PWRDM_POWER_ON) {
 		per_prev_state = pwrdm_read_prev_pwrst(per_pwrdm);
 		omap2_gpio_resume_after_idle();
-		if (per_prev_state == PWRDM_POWER_OFF)
-			omap3_per_restore_context();
 	}
 
 	/* Disable IO-PAD and IO-CHAIN wakeup */

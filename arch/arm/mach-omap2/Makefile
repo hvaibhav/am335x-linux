@@ -17,13 +17,14 @@ obj-$(CONFIG_ARCH_OMAP2) += $(omap-2-3-common) $(hwmod-common)
 obj-$(CONFIG_ARCH_OMAP3) += $(omap-2-3-common) $(hwmod-common) $(secure-common)
 obj-$(CONFIG_ARCH_OMAP4) += prm44xx.o $(hwmod-common) $(secure-common)
 
-obj-$(CONFIG_OMAP_MCBSP) += mcbsp.o
+ifneq ($(CONFIG_SND_OMAP_SOC_MCBSP),)
+obj-y += mcbsp.o
+endif
 
 obj-$(CONFIG_TWL4030_CORE) += omap_twl.o
 
 # SMP support ONLY available for OMAP4
 obj-$(CONFIG_SMP)			+= omap-smp.o omap-headsmp.o
-obj-$(CONFIG_LOCAL_TIMERS)		+= timer-mpu.o
 obj-$(CONFIG_HOTPLUG_CPU)		+= omap-hotplug.o
 obj-$(CONFIG_ARCH_OMAP4)		+= omap4-common.o omap-wakeupgen.o \
 					   sleep44xx.o
@@ -268,5 +269,8 @@ obj-y					+= $(smsc911x-m) $(smsc911x-y)
 ifneq ($(CONFIG_HWSPINLOCK_OMAP),)
 obj-y					+= hwspinlock.o
 endif
+
+emac-$(CONFIG_TI_DAVINCI_EMAC)		:= am35xx-emac.o
+obj-y					+= $(emac-m) $(emac-y)
 
 obj-y					+= common-board-devices.o twl-common.o
