@@ -1943,16 +1943,17 @@ static int smack_netlabel_send(struct sock *sk, struct sockaddr_in *sap)
 	char *hostsp;
 	struct socket_smack *ssp = sk->sk_security;
 	struct smk_audit_info ad;
+	struct lsm_network_audit net;
 
 	rcu_read_lock();
 	hostsp = smack_host_label(sap);
 	if (hostsp != NULL) {
 		sk_lbl = SMACK_UNLABELED_SOCKET;
 #ifdef CONFIG_AUDIT
-		smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_NET);
-		ad.a.u.net.family = sap->sin_family;
-		ad.a.u.net.dport = sap->sin_port;
-		ad.a.u.net.v4info.daddr = sap->sin_addr.s_addr;
+		smk_ad_init_net(&ad, __func__, LSM_AUDIT_DATA_NET, &net);
+		ad.a.u.net->family = sap->sin_family;
+		ad.a.u.net->dport = sap->sin_port;
+		ad.a.u.net->v4info.daddr = sap->sin_addr.s_addr;
 #endif
 		rc = smk_access(ssp->smk_out, hostsp, MAY_WRITE, &ad);
 	} else {
@@ -2834,9 +2835,10 @@ static int smack_unix_stream_connect(struct sock *sock,
 	struct socket_smack *osp = other->sk_security;
 	struct socket_smack *nsp = newsk->sk_security;
 	struct smk_audit_info ad;
+	struct lsm_network_audit net;
 	int rc = 0;
 
-	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_NET);
+	smk_ad_init_net(&ad, __func__, LSM_AUDIT_DATA_NET, &net);
 	smk_ad_setfield_u_net_sk(&ad, other);
 
 	if (!capable(CAP_MAC_OVERRIDE))
@@ -2866,9 +2868,10 @@ static int smack_unix_may_send(struct socket *sock, struct socket *other)
 	struct socket_smack *ssp = sock->sk->sk_security;
 	struct socket_smack *osp = other->sk->sk_security;
 	struct smk_audit_info ad;
+	struct lsm_network_audit net;
 	int rc = 0;
 
-	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_NET);
+	smk_ad_init_net(&ad, __func__, LSM_AUDIT_DATA_NET, &net);
 	smk_ad_setfield_u_net_sk(&ad, other->sk);
 
 	if (!capable(CAP_MAC_OVERRIDE))
@@ -3016,6 +3019,7 @@ static int smack_socket_sock_rcv_skb(struct sock *sk, struct sk_buff *skb)
 	char *csp;
 	int rc;
 	struct smk_audit_info ad;
+	struct lsm_network_audit net;
 	if (sk->sk_family != PF_INET && sk->sk_family != PF_INET6)
 		return 0;
 
@@ -3033,9 +3037,9 @@ static int smack_socket_sock_rcv_skb(struct sock *sk, struct sk_buff *skb)
 	netlbl_secattr_destroy(&secattr);
 
 #ifdef CONFIG_AUDIT
-	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_NET);
-	ad.a.u.net.family = sk->sk_family;
-	ad.a.u.net.netif = skb->skb_iif;
+	smk_ad_init_net(&ad, __func__, LSM_AUDIT_DATA_NET, &net);
+	ad.a.u.net->family = sk->sk_family;
+	ad.a.u.net->netif = skb->skb_iif;
 	ipv4_skb_to_auditdata(skb, &ad.a, NULL);
 #endif
 	/*
@@ -3178,6 +3182,7 @@ static int smack_inet_conn_request(struct sock *sk, struct sk_buff *skb,
 	char *sp;
 	int rc;
 	struct smk_audit_info ad;
+	struct lsm_network_audit net;
 
 	/* handle mapped IPv4 packets arriving via IPv6 sockets */
 	if (family == PF_INET6 && skb->protocol == htons(ETH_P_IP))
@@ -3192,9 +3197,9 @@ static int smack_inet_conn_request(struct sock *sk, struct sk_buff *skb,
 	netlbl_secattr_destroy(&secattr);
 
 #ifdef CONFIG_AUDIT
-	smk_ad_init(&ad, __func__, LSM_AUDIT_DATA_NET);
-	ad.a.u.net.family = family;
-	ad.a.u.net.netif = skb->skb_iif;
+	smk_ad_init_net(&ad, __func__, LSM_AUDIT_DATA_NET, &net);
+	ad.a.u.net->family = family;
+	ad.a.u.net->netif = skb->skb_iif;
 	ipv4_skb_to_auditdata(skb, &ad.a, NULL);
 #endif
 	/*
