@@ -2515,15 +2515,6 @@ static struct omap_hwmod_class_sysconfig omap44xx_iss_sysc = {
 	.rev_offs	= 0x0000,
 	.sysc_offs	= 0x0010,
 	/*
-	 * FDIF needs 100 OCP clk cycles delay after a softreset before
-	 * accessing sysconfig again.
-	 * The lowest frequency at the moment for L3 bus is 100 MHz, so
-	 * 1usec delay is needed. Add an x2 margin to be safe (2 usecs).
-	 *
-	 * TODO: Indicate errata when available.
-	 */
-	.srst_udelay	= 2,
-	/*
 	 * ISS needs 100 OCP clk cycles delay after a softreset before
 	 * accessing sysconfig again.
 	 * The lowest frequency at the moment for L3 bus is 100 MHz, so
