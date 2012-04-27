@@ -75,7 +75,7 @@ long omap2_round_to_table_rate(struct clk *clk, unsigned long rate)
 	for (ptr = rate_table; ptr->mpu_speed; ptr++) {
 		if (!(ptr->flags & cpu_mask))
 			continue;
-		if (ptr->xtal_speed != sclk->rate)
+		if (ptr->xtal_speed != __clk_get_rate(sclk))
 			continue;
 
 		highest_rate = ptr->mpu_speed;
@@ -99,7 +99,7 @@ int omap2_select_table_rate(struct clk *clk, unsigned long rate)
 		if (!(prcm->flags & cpu_mask))
 			continue;
 
-		if (prcm->xtal_speed != sclk->rate)
+		if (prcm->xtal_speed != __clk_get_rate(sclk))
 			continue;
 
 		if (prcm->mpu_speed <= rate) {
