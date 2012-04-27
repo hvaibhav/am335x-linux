@@ -43,8 +43,14 @@ void __iomem *cm_idlest_pll;
 /* Private functions */
 
 /* Enable an APLL if off */
+#ifdef CONFIG_COMMON_CLK
+static int omap2_clk_apll_enable(struct clk_hw *hw, u32 status_mask)
+{
+	struct clk_hw_omap *clk = to_clk_hw_omap(hw);
+#else
 static int omap2_clk_apll_enable(struct clk *clk, u32 status_mask)
 {
+#endif
 	u32 cval, apll_mask;
 
 	apll_mask = EN_APLL_LOCKED << clk->enable_bit;
@@ -59,7 +65,11 @@ static int omap2_clk_apll_enable(struct clk *clk, u32 status_mask)
 	omap2_cm_write_mod_reg(cval, PLL_MOD, CM_CLKEN);
 
 	omap2_cm_wait_idlest(cm_idlest_pll, status_mask,
+#ifdef CONFIG_COMMON_CLK
+			     OMAP24XX_CM_IDLEST_VAL, __clk_get_name(hw->clk));
+#else
 			     OMAP24XX_CM_IDLEST_VAL, __clk_get_name(clk));
+#endif
 
 	/*
 	 * REVISIT: Should we return an error code if omap2_wait_clock_ready()
@@ -68,39 +78,69 @@ static int omap2_clk_apll_enable(struct clk *clk, u32 status_mask)
 	return 0;
 }
 
+#ifdef CONFIG_COMMON_CLK
+int omap2_clk_apll96_enable(struct clk_hw *clk)
+#else
 static int omap2_clk_apll96_enable(struct clk *clk)
+#endif
 {
 	return omap2_clk_apll_enable(clk, OMAP24XX_ST_96M_APLL_MASK);
 }
 
+#ifdef CONFIG_COMMON_CLK
+int omap2_clk_apll54_enable(struct clk_hw *clk)
+#else
 static int omap2_clk_apll54_enable(struct clk *clk)
+#endif
 {
 	return omap2_clk_apll_enable(clk, OMAP24XX_ST_54M_APLL_MASK);
 }
 
+#ifdef CONFIG_COMMON_CLK
+void _apll96_allow_idle(struct clk_hw_omap *clk)
+#else
 static void _apll96_allow_idle(struct clk *clk)
+#endif
 {
 	omap2xxx_cm_set_apll96_auto_low_power_stop();
 }
 
+#ifdef CONFIG_COMMON_CLK
+void _apll96_deny_idle(struct clk_hw_omap *clk)
+#else
 static void _apll96_deny_idle(struct clk *clk)
+#endif
 {
 	omap2xxx_cm_set_apll96_disable_autoidle();
 }
 
+#ifdef CONFIG_COMMON_CLK
+void _apll54_allow_idle(struct clk_hw_omap *clk)
+#else
 static void _apll54_allow_idle(struct clk *clk)
+#endif
 {
 	omap2xxx_cm_set_apll54_auto_low_power_stop();
 }
 
+#ifdef CONFIG_COMMON_CLK
+void _apll54_deny_idle(struct clk_hw_omap *clk)
+#else
 static void _apll54_deny_idle(struct clk *clk)
+#endif
 {
 	omap2xxx_cm_set_apll54_disable_autoidle();
 }
 
 /* Stop APLL */
+#ifdef CONFIG_COMMON_CLK
+void omap2_clk_apll_disable(struct clk_hw *hw)
+{
+	struct clk_hw_omap *clk = to_clk_hw_omap(hw);
+#else
 static void omap2_clk_apll_disable(struct clk *clk)
 {
+#endif
 	u32 cval;
 
 	cval = omap2_cm_read_mod_reg(PLL_MOD, CM_CLKEN);
@@ -109,7 +149,17 @@ static void omap2_clk_apll_disable(struct clk *clk)
 }
 
 /* Public data */
+#ifdef CONFIG_COMMON_CLK
+const struct clk_hw_omap_ops clkhwops_apll54 = {
+	.allow_idle	= _apll54_allow_idle,
+	.deny_idle	= _apll54_deny_idle,
+};
 
+const struct clk_hw_omap_ops clkhwops_apll96 = {
+	.allow_idle	= _apll96_allow_idle,
+	.deny_idle	= _apll96_deny_idle,
+};
+#else
 const struct clkops clkops_apll96 = {
 	.enable		= omap2_clk_apll96_enable,
 	.disable	= omap2_clk_apll_disable,
@@ -123,6 +173,7 @@ const struct clkops clkops_apll54 = {
 	.allow_idle	= _apll54_allow_idle,
 	.deny_idle	= _apll54_deny_idle,
 };
+#endif
 
 /* Public functions */
 
