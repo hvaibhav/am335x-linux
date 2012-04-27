@@ -3,12 +3,13 @@
 #
 
 # Common support
-obj-y := common.o sram.o clock.o devices.o dma.o mux.o \
+obj-y := common.o sram.o devices.o dma.o mux.o \
 	 fb.o counter_32k.o
 obj-m :=
 obj-n :=
 obj-  :=
 
+obj-$(CONFIG_ARCH_OMAP1) += clock.o
 # omap_device support (OMAP2+ only at the moment)
 obj-$(CONFIG_ARCH_OMAP2PLUS) += omap_device.o
 

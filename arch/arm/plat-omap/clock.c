@@ -10,7 +10,6 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
-#ifndef CONFIG_COMMON_CLK
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/list.h>
@@ -543,4 +542,3 @@ err_out:
 late_initcall(clk_debugfs_init);
 
 #endif /* defined(CONFIG_PM_DEBUG) && defined(CONFIG_DEBUG_FS) */
-#endif /* CONFIG_COMMON_CLK */
