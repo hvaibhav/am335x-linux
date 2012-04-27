@@ -19,11 +19,7 @@
 #include <linux/errno.h>
 #include <linux/err.h>
 #include <linux/delay.h>
-#ifdef CONFIG_COMMON_CLK
 #include <linux/clk-provider.h>
-#else
-#include <linux/clk.h>
-#endif
 #include <linux/io.h>
 #include <linux/bitops.h>
 #include <trace/events/power.h>
@@ -49,7 +45,6 @@ u16 cpu_mask;
  */
 static bool clkdm_control = true;
 
-#ifdef CONFIG_COMMON_CLK
 LIST_HEAD(clk_hw_omap_clocks);
 
 /*
@@ -72,7 +67,6 @@ unsigned long omap_fixed_divisor_recalc(struct clk_hw *hw,
 
 	return parent_rate / oclk->fixed_div;
 }
-#endif
 
 /*
  * OMAP2+ specific clock functions
@@ -90,11 +84,7 @@ unsigned long omap_fixed_divisor_recalc(struct clk_hw *hw,
  * belong in the clock code and will be moved in the medium term to
  * module-dependent code.  No return value.
  */
-#ifdef CONFIG_COMMON_CLK
 static void _omap2_module_wait_ready(struct clk_hw_omap *clk)
-#else
-static void _omap2_module_wait_ready(struct clk *clk)
-#endif
 {
 	void __iomem *companion_reg, *idlest_reg;
 	u8 other_bit, idlest_bit, idlest_val;
@@ -108,11 +98,7 @@ static void _omap2_module_wait_ready(struct clk *clk)
 
 	clk->ops->find_idlest(clk, &idlest_reg, &idlest_bit, &idlest_val);
 	omap2_cm_wait_idlest(idlest_reg, (1 << idlest_bit), idlest_val,
-#ifdef CONFIG_COMMON_CLK
 			     __clk_get_name(clk->hw.clk));
-#else
-			     __clk_get_name(clk));
-#endif
 }
 
 /* Public functions */
@@ -125,25 +111,16 @@ static void _omap2_module_wait_ready(struct clk *clk)
  * clockdomain pointer, and save it into the struct clk.  Intended to be
  * called during clk_register().  No return value.
  */
-#ifdef CONFIG_COMMON_CLK
 void omap2_init_clk_clkdm(struct clk_hw *hw)
 {
 	struct clk_hw_omap *clk = to_clk_hw_omap(hw);
-#else
-void omap2_init_clk_clkdm(struct clk *clk)
-{
-#endif
 	struct clockdomain *clkdm;
 	const char *clk_name;
 
 	if (!clk->clkdm_name)
 		return;
 
-#ifdef CONFIG_COMMON_CLK
 	clk_name = __clk_get_name(hw->clk);
-#else
-	clk_name = __clk_get_name(clk);
-#endif
 
 	clkdm = clkdm_lookup(clk->clkdm_name);
 	if (clkdm) {
@@ -190,11 +167,7 @@ void __init omap2_clk_disable_clkdm_control(void)
  * associate this type of code with per-module data structures to
  * avoid this issue, and remove the casts.  No return value.
  */
-#ifdef CONFIG_COMMON_CLK
 void omap2_clk_dflt_find_companion(struct clk_hw_omap *clk,
-#else
-void omap2_clk_dflt_find_companion(struct clk *clk,
-#endif
 			void __iomem **other_reg, u8 *other_bit)
 {
 	u32 r;
@@ -223,11 +196,7 @@ void omap2_clk_dflt_find_companion(struct clk *clk,
  * register address ID (e.g., that CM_FCLKEN2 corresponds to
  * CM_IDLEST2).  This is not true for all modules.  No return value.
  */
-#ifdef CONFIG_COMMON_CLK
 void omap2_clk_dflt_find_idlest(struct clk_hw_omap *clk,
-#else
-void omap2_clk_dflt_find_idlest(struct clk *clk,
-#endif
 		void __iomem **idlest_reg, u8 *idlest_bit, u8 *idlest_val)
 {
 	u32 r;
@@ -250,7 +219,6 @@ void omap2_clk_dflt_find_idlest(struct clk *clk,
 
 }
 
-#ifdef CONFIG_COMMON_CLK
 int omap2_dflt_clk_enable(struct clk_hw *hw)
 {
 	struct clk_hw_omap *clk;
@@ -413,240 +381,6 @@ const struct clk_hw_omap_ops clkhwops_wait = {
 	.find_idlest	= omap2_clk_dflt_find_idlest,
 	.find_companion	= omap2_clk_dflt_find_companion,
 };
-#else
-int omap2_dflt_clk_enable(struct clk *clk)
-{
-	u32 v;
-
-	if (unlikely(clk->enable_reg == NULL)) {
-		pr_err("clock.c: Enable for %s without enable code\n",
-		       clk->name);
-		return 0; /* REVISIT: -EINVAL */
-	}
-
-	v = __raw_readl(clk->enable_reg);
-	if (clk->flags & INVERT_ENABLE)
-		v &= ~(1 << clk->enable_bit);
-	else
-		v |= (1 << clk->enable_bit);
-	__raw_writel(v, clk->enable_reg);
-	v = __raw_readl(clk->enable_reg); /* OCP barrier */
-
-	if (clk->ops->find_idlest)
-		_omap2_module_wait_ready(clk);
-
-	return 0;
-}
-
-void omap2_dflt_clk_disable(struct clk *clk)
-{
-	u32 v;
-
-	if (!clk->enable_reg) {
-		/*
-		 * 'Independent' here refers to a clock which is not
-		 * controlled by its parent.
-		 */
-		printk(KERN_ERR "clock: clk_disable called on independent "
-		       "clock %s which has no enable_reg\n", clk->name);
-		return;
-	}
-
-	v = __raw_readl(clk->enable_reg);
-	if (clk->flags & INVERT_ENABLE)
-		v |= (1 << clk->enable_bit);
-	else
-		v &= ~(1 << clk->enable_bit);
-	__raw_writel(v, clk->enable_reg);
-	/* No OCP barrier needed here since it is a disable operation */
-}
-
-const struct clkops clkops_omap2_dflt_wait = {
-	.enable		= omap2_dflt_clk_enable,
-	.disable	= omap2_dflt_clk_disable,
-	.find_companion	= omap2_clk_dflt_find_companion,
-	.find_idlest	= omap2_clk_dflt_find_idlest,
-};
-
-const struct clkops clkops_omap2_dflt = {
-	.enable		= omap2_dflt_clk_enable,
-	.disable	= omap2_dflt_clk_disable,
-};
-
-/**
- * omap2_clk_disable - disable a clock, if the system is not using it
- * @clk: struct clk * to disable
- *
- * Decrements the usecount on struct clk @clk.  If there are no users
- * left, call the clkops-specific clock disable function to disable it
- * in hardware.  If the clock is part of a clockdomain (which they all
- * should be), request that the clockdomain be disabled.  (It too has
- * a usecount, and so will not be disabled in the hardware until it no
- * longer has any users.)  If the clock has a parent clock (most of
- * them do), then call ourselves, recursing on the parent clock.  This
- * can cause an entire branch of the clock tree to be powered off by
- * simply disabling one clock.  Intended to be called with the clockfw_lock
- * spinlock held.  No return value.
- */
-void omap2_clk_disable(struct clk *clk)
-{
-	if (clk->usecount == 0) {
-		WARN(1, "clock: %s: omap2_clk_disable() called, but usecount "
-		     "already 0?", clk->name);
-		return;
-	}
-
-	pr_debug("clock: %s: decrementing usecount\n", clk->name);
-
-	clk->usecount--;
-
-	if (clk->usecount > 0)
-		return;
-
-	pr_debug("clock: %s: disabling in hardware\n", clk->name);
-
-	if (clk->ops && clk->ops->disable) {
-		trace_clock_disable(clk->name, 0, smp_processor_id());
-		clk->ops->disable(clk);
-	}
-
-	if (clkdm_control && clk->clkdm)
-		clkdm_clk_disable(clk->clkdm, clk);
-
-	if (clk->parent)
-		omap2_clk_disable(clk->parent);
-}
-
-/**
- * omap2_clk_enable - request that the system enable a clock
- * @clk: struct clk * to enable
- *
- * Increments the usecount on struct clk @clk.  If there were no users
- * previously, then recurse up the clock tree, enabling all of the
- * clock's parents and all of the parent clockdomains, and finally,
- * enabling @clk's clockdomain, and @clk itself.  Intended to be
- * called with the clockfw_lock spinlock held.  Returns 0 upon success
- * or a negative error code upon failure.
- */
-int omap2_clk_enable(struct clk *clk)
-{
-	int ret;
-
-	pr_debug("clock: %s: incrementing usecount\n", clk->name);
-
-	clk->usecount++;
-
-	if (clk->usecount > 1)
-		return 0;
-
-	pr_debug("clock: %s: enabling in hardware\n", clk->name);
-
-	if (clk->parent) {
-		ret = omap2_clk_enable(clk->parent);
-		if (ret) {
-			WARN(1, "clock: %s: could not enable parent %s: %d\n",
-			     clk->name, clk->parent->name, ret);
-			goto oce_err1;
-		}
-	}
-
-	if (clkdm_control && clk->clkdm) {
-		ret = clkdm_clk_enable(clk->clkdm, clk);
-		if (ret) {
-			WARN(1, "clock: %s: could not enable clockdomain %s: "
-			     "%d\n", clk->name, clk->clkdm->name, ret);
-			goto oce_err2;
-		}
-	}
-
-	if (clk->ops && clk->ops->enable) {
-		trace_clock_enable(clk->name, 1, smp_processor_id());
-		ret = clk->ops->enable(clk);
-		if (ret) {
-			WARN(1, "clock: %s: could not enable: %d\n",
-			     clk->name, ret);
-			goto oce_err3;
-		}
-	}
-
-	return 0;
-
-oce_err3:
-	if (clkdm_control && clk->clkdm)
-		clkdm_clk_disable(clk->clkdm, clk);
-oce_err2:
-	if (clk->parent)
-		omap2_clk_disable(clk->parent);
-oce_err1:
-	clk->usecount--;
-
-	return ret;
-}
-
-/* Given a clock and a rate apply a clock specific rounding function */
-long omap2_clk_round_rate(struct clk *clk, unsigned long rate)
-{
-	if (clk->round_rate)
-		return clk->round_rate(clk, rate);
-
-	return clk->rate;
-}
-
-/* Set the clock rate for a clock source */
-int omap2_clk_set_rate(struct clk *clk, unsigned long rate)
-{
-	int ret = -EINVAL;
-
-	pr_debug("clock: set_rate for clock %s to rate %ld\n", clk->name, rate);
-
-	/* dpll_ck, core_ck, virt_prcm_set; plus all clksel clocks */
-	if (clk->set_rate) {
-		trace_clock_set_rate(clk->name, rate, smp_processor_id());
-		ret = clk->set_rate(clk, rate);
-	}
-
-	return ret;
-}
-
-int omap2_clk_set_parent(struct clk *clk, struct clk *new_parent)
-{
-	if (!clk->clksel)
-		return -EINVAL;
-
-	if (clk->parent == new_parent)
-		return 0;
-
-	return omap2_clksel_set_parent(clk, new_parent);
-}
-
-/*
- * OMAP2+ clock reset and init functions
- */
-
-#ifdef CONFIG_OMAP_RESET_CLOCKS
-void omap2_clk_disable_unused(struct clk *clk)
-{
-	u32 regval32, v;
-
-	v = (clk->flags & INVERT_ENABLE) ? (1 << clk->enable_bit) : 0;
-
-	regval32 = __raw_readl(clk->enable_reg);
-	if ((regval32 & (1 << clk->enable_bit)) == v)
-		return;
-
-	pr_debug("Disabling unused clock \"%s\"\n", clk->name);
-	if (cpu_is_omap34xx()) {
-		omap2_clk_enable(clk);
-		omap2_clk_disable(clk);
-	} else {
-		clk->ops->disable(clk);
-	}
-	if (clk->clkdm != NULL)
-		pwrdm_state_switch(clk->clkdm->pwrdm.ptr);
-}
-#endif
-
-#endif /* CONFIG_COMMON_CLK */
 
 /**
  * omap2_clk_switch_mpurate_at_boot - switch ARM MPU rate by boot-time argument
@@ -684,10 +418,6 @@ int __init omap2_clk_switch_mpurate_at_boot(const char *mpurate_ck_name)
 	}
 
 	calibrate_delay();
-#ifndef CONFIG_COMMON_CLK
-	recalculate_root_clocks();
-#endif
-
 	clk_put(mpurate_ck);
 
 	return 0;
@@ -733,15 +463,3 @@ void __init omap2_clk_print_new_rates(const char *hfclkin_ck_name,
 		(clk_get_rate(core_ck) / 1000000),
 		(clk_get_rate(mpu_ck) / 1000000));
 }
-
-#ifndef CONFIG_COMMON_CLK
-/* Common data */
-struct clk_functions omap2_clk_functions = {
-	.clk_enable		= omap2_clk_enable,
-	.clk_disable		= omap2_clk_disable,
-	.clk_round_rate		= omap2_clk_round_rate,
-	.clk_set_rate		= omap2_clk_set_rate,
-	.clk_set_parent		= omap2_clk_set_parent,
-	.clk_disable_unused	= omap2_clk_disable_unused,
-};
-#endif
