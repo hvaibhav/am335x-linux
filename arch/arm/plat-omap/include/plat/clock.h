@@ -21,6 +21,22 @@
 struct clockdomain;
 #define to_clk_hw_omap(_hw) container_of(_hw, struct clk_hw_omap, hw)
 
+#define DEFINE_STRUCT_CLK(_name, _parent_array_name, _clkops_name)	\
+	static struct clk _name = {				\
+		.name = #_name,					\
+		.hw = &_name##_hw.hw,				\
+		.parent_names = _parent_array_name,		\
+		.num_parents = ARRAY_SIZE(_parent_array_name),	\
+		.ops = &_clkops_name,				\
+	};
+
+#define DEFINE_STRUCT_CLK_HW_OMAP(_name)			\
+	static struct clk_hw_omap _name##_hw = {		\
+		.hw = {						\
+			.clk = &_name,				\
+		},						\
+	};
+
 #else
 
 struct module;

@@ -210,6 +210,7 @@ extern const struct clksel_rate gpt_32k_rates[];
 extern const struct clksel_rate gpt_sys_rates[];
 extern const struct clksel_rate gfx_l3_rates[];
 extern const struct clksel_rate dsp_ick_rates[];
+extern struct clk dummy_ck;
 
 #ifdef CONFIG_COMMON_CLK
 extern const struct clk_hw_omap_ops clkhwops_omap3_dpll;
