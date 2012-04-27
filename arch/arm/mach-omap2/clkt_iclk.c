@@ -11,7 +11,11 @@
 #undef DEBUG
 
 #include <linux/kernel.h>
+#ifdef CONFIG_COMMON_CLK
+#include <linux/clk-provider.h>
+#else
 #include <linux/clk.h>
+#endif
 #include <linux/io.h>
 
 #include <plat/clock.h>
