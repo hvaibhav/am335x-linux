@@ -8,7 +8,6 @@
 #ifndef __ARCH_ARM_MACH_OMAP2_CLOCK2XXX_H
 #define __ARCH_ARM_MACH_OMAP2_CLOCK2XXX_H
 
-#ifdef CONFIG_COMMON_CLK
 #include <linux/clk-provider.h>
 #include "clock.h"
 
@@ -27,16 +26,6 @@ unsigned long omap2_dpllcore_recalc(struct clk_hw *hw,
 int omap2_reprogram_dpllcore(struct clk_hw *clk, unsigned long rate,
 			     unsigned long parent_rate);
 unsigned long omap2xxx_clk_get_core_rate(struct clk_hw_omap *clk);
-#else
-unsigned long omap2_table_mpu_recalc(struct clk *clk);
-int omap2_select_table_rate(struct clk *clk, unsigned long rate);
-long omap2_round_to_table_rate(struct clk *clk, unsigned long rate);
-unsigned long omap2xxx_sys_clk_recalc(struct clk *clk);
-unsigned long omap2_osc_clk_recalc(struct clk *clk);
-unsigned long omap2_dpllcore_recalc(struct clk *clk);
-int omap2_reprogram_dpllcore(struct clk *clk, unsigned long rate);
-unsigned long omap2xxx_clk_get_core_rate(struct clk *clk);
-#endif
 u32 omap2xxx_get_apll_clkin(void);
 u32 omap2xxx_get_sysclkdiv(void);
 void omap2xxx_clk_prepare_for_reboot(void);
@@ -56,8 +45,6 @@ int omap2430_clk_init(void);
 extern void __iomem *prcm_clksrc_ctrl, *cm_idlest_pll;
 
 extern struct clk *dclk;
-
-#ifdef CONFIG_COMMON_CLK
 extern struct clk_hw *dclk_hw;
 int omap2_enable_osc_ck(struct clk_hw *hw);
 void omap2_disable_osc_ck(struct clk_hw *hw);
@@ -70,11 +57,5 @@ void _apll54_deny_idle(struct clk_hw_omap *hw);
 void omap2_clk_apll_disable(struct clk_hw *hw);
 void _allow_idle(struct clk_hw_omap *hw);
 void _deny_idle(struct clk_hw_omap *hw);
-#else
-extern const struct clkops clkops_omap2430_i2chs_wait;
-extern const struct clkops clkops_oscck;
-extern const struct clkops clkops_apll96;
-extern const struct clkops clkops_apll54;
-#endif
 
 #endif
