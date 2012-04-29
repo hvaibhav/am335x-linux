@@ -475,6 +475,8 @@ ENTRY(ret_from_fork)
 	nop
 
 work_pending:
+	lwi	r11, r1, PT_MODE
+	bneid	r11, 2f
 	enable_irq
 
 	andi	r11, r19, _TIF_NEED_RESCHED
@@ -500,6 +502,7 @@ ENTRY(ret_to_user)
 no_work_pending:
 	disable_irq
 
+2:
 	/* save r31 */
 	swi	r31, r0, PER_CPU(CURRENT_SAVE)
 	/* save mode indicator */
