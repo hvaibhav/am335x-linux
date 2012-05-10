@@ -31,6 +31,7 @@
 #include <plat/omap-pm.h>
 #include <plat/omap_hwmod.h>
 #include <plat/multi.h>
+#include <plat/dma.h>
 
 #include "iomap.h"
 #include "voltage.h"
@@ -172,7 +173,7 @@ static struct map_desc omap34xx_io_desc[] __initdata = {
 };
 #endif
 
-#ifdef CONFIG_SOC_OMAPTI81XX
+#ifdef CONFIG_SOC_TI81XX
 static struct map_desc omapti81xx_io_desc[] __initdata = {
 	{
 		.virtual	= L4_34XX_VIRT,
@@ -183,7 +184,7 @@ static struct map_desc omapti81xx_io_desc[] __initdata = {
 };
 #endif
 
-#ifdef CONFIG_SOC_OMAPAM33XX
+#ifdef CONFIG_SOC_AM33XX
 static struct map_desc omapam33xx_io_desc[] __initdata = {
 	{
 		.virtual	= L4_34XX_VIRT,
@@ -215,39 +216,9 @@ static struct map_desc omap44xx_io_desc[] __initdata = {
 		.type		= MT_DEVICE,
 	},
 	{
-		.virtual	= OMAP44XX_GPMC_VIRT,
-		.pfn		= __phys_to_pfn(OMAP44XX_GPMC_PHYS),
-		.length		= OMAP44XX_GPMC_SIZE,
-		.type		= MT_DEVICE,
-	},
-	{
-		.virtual	= OMAP44XX_EMIF1_VIRT,
-		.pfn		= __phys_to_pfn(OMAP44XX_EMIF1_PHYS),
-		.length		= OMAP44XX_EMIF1_SIZE,
-		.type		= MT_DEVICE,
-	},
-	{
-		.virtual	= OMAP44XX_EMIF2_VIRT,
-		.pfn		= __phys_to_pfn(OMAP44XX_EMIF2_PHYS),
-		.length		= OMAP44XX_EMIF2_SIZE,
-		.type		= MT_DEVICE,
-	},
-	{
-		.virtual	= OMAP44XX_DMM_VIRT,
-		.pfn		= __phys_to_pfn(OMAP44XX_DMM_PHYS),
-		.length		= OMAP44XX_DMM_SIZE,
-		.type		= MT_DEVICE,
-	},
-	{
 		.virtual	= L4_PER_44XX_VIRT,
 		.pfn		= __phys_to_pfn(L4_PER_44XX_PHYS),
 		.length		= L4_PER_44XX_SIZE,
-		.type		= MT_DEVICE,
-	},
-	{
-		.virtual	= L4_EMU_44XX_VIRT,
-		.pfn		= __phys_to_pfn(L4_EMU_44XX_PHYS),
-		.length		= L4_EMU_44XX_SIZE,
 		.type		= MT_DEVICE,
 	},
 #ifdef CONFIG_OMAP4_ERRATA_I688
@@ -285,14 +256,14 @@ void __init omap34xx_map_common_io(void)
 }
 #endif
 
-#ifdef CONFIG_SOC_OMAPTI81XX
+#ifdef CONFIG_SOC_TI81XX
 void __init omapti81xx_map_common_io(void)
 {
 	iotable_init(omapti81xx_io_desc, ARRAY_SIZE(omapti81xx_io_desc));
 }
 #endif
 
-#ifdef CONFIG_SOC_OMAPAM33XX
+#ifdef CONFIG_SOC_AM33XX
 void __init omapam33xx_map_common_io(void)
 {
 	iotable_init(omapam33xx_io_desc, ARRAY_SIZE(omapam33xx_io_desc));
@@ -362,24 +333,6 @@ static void __init omap_hwmod_init_postsetup(void)
 	postsetup_state = _HWMOD_STATE_ENABLED;
 #endif
 	omap_hwmod_for_each(_set_hwmod_postsetup_state, &postsetup_state);
-
-	/*
-	 * Set the default postsetup state for unusual modules (like
-	 * MPU WDT).
-	 *
-	 * The postsetup_state is not actually used until
-	 * omap_hwmod_late_init(), so boards that desire full watchdog
-	 * coverage of kernel initialization can reprogram the
-	 * postsetup_state between the calls to
-	 * omap2_init_common_infra() and omap_sdrc_init().
-	 *
-	 * XXX ideally we could detect whether the MPU WDT was currently
-	 * enabled here and make this conditional
-	 */
-	postsetup_state = _HWMOD_STATE_DISABLED;
-	omap_hwmod_for_each_by_class("wd_timer",
-				     _set_hwmod_postsetup_state,
-				     &postsetup_state);
 
 	omap_pm_if_early_init();
 }

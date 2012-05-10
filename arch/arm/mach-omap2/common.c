@@ -134,7 +134,9 @@ void __init ti81xx_map_io(void)
 {
 	omapti81xx_map_common_io();
 }
+#endif
 
+#if defined(CONFIG_SOC_AM33XX)
 #define AM33XX_TAP_BASE		(AM33XX_CTRL_BASE + \
 				TI81XX_CONTROL_DEVICE_ID - 0x204)
 
@@ -166,6 +168,7 @@ static struct omap_globals omap4_globals = {
 	.prm	= OMAP2_L4_IO_ADDRESS(OMAP4430_PRM_BASE),
 	.cm	= OMAP2_L4_IO_ADDRESS(OMAP4430_CM_BASE),
 	.cm2	= OMAP2_L4_IO_ADDRESS(OMAP4430_CM2_BASE),
+	.prcm_mpu	= OMAP2_L4_IO_ADDRESS(OMAP4430_PRCM_MPU_BASE),
 };
 
 void __init omap2_set_globals_443x(void)
