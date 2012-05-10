@@ -28,7 +28,6 @@
 #include <linux/mfd/twl6040.h>
 #include <linux/regulator/machine.h>
 #include <linux/regulator/fixed.h>
-#include <linux/ti_wilink_st.h>
 #include <linux/wl12xx.h>
 #include <linux/platform_data/omap-abe-twl6040.h>
 
@@ -43,7 +42,7 @@
 #include "common.h"
 #include <plat/usb.h>
 #include <plat/mmc.h>
-#include <video/omap-panel-dvi.h>
+#include <video/omap-panel-tfp410.h>
 
 #include "hsmmc.h"
 #include "control.h"
@@ -59,21 +58,12 @@
 #define HDMI_GPIO_HPD  63 /* Hotplug detect */
 
 /* wl127x BT, FM, GPS connectivity chip */
-static struct ti_st_plat_data wilink_platform_data = {
-	.nshutdown_gpio	= 46,
-	.dev_name	= "/dev/ttyO1",
-	.flow_cntrl	= 1,
-	.baud_rate	= 3000000,
-	.chip_enable	= NULL,
-	.suspend	= NULL,
-	.resume		= NULL,
-};
-
+static int wl1271_gpios[] = {46, -1, -1};
 static struct platform_device wl1271_device = {
 	.name	= "kim",
 	.id	= -1,
 	.dev	= {
-		.platform_data	= &wilink_platform_data,
+		.platform_data	= &wl1271_gpios,
 	},
 };
 
@@ -127,11 +117,6 @@ static struct platform_device panda_abe_audio = {
 	},
 };
 
-static struct platform_device panda_hdmi_audio_codec = {
-	.name	= "hdmi-audio-codec",
-	.id	= -1,
-};
-
 static struct platform_device btwilink_device = {
 	.name	= "btwilink",
 	.id	= -1,
@@ -141,7 +126,6 @@ static struct platform_device *panda_devices[] __initdata = {
 	&leds_gpio,
 	&wl1271_device,
 	&panda_abe_audio,
-	&panda_hdmi_audio_codec,
 	&btwilink_device,
 };
 
@@ -389,46 +373,22 @@ static struct omap_board_mux board_mux[] __initdata = {
 /* Display DVI */
 #define PANDA_DVI_TFP410_POWER_DOWN_GPIO	0
 
-static int omap4_panda_enable_dvi(struct omap_dss_device *dssdev)
-{
-	gpio_set_value(dssdev->reset_gpio, 1);
-	return 0;
-}
-
-static void omap4_panda_disable_dvi(struct omap_dss_device *dssdev)
-{
-	gpio_set_value(dssdev->reset_gpio, 0);
-}
-
 /* Using generic display panel */
-static struct panel_dvi_platform_data omap4_dvi_panel = {
-	.platform_enable	= omap4_panda_enable_dvi,
-	.platform_disable	= omap4_panda_disable_dvi,
-	.i2c_bus_num = 3,
+static struct tfp410_platform_data omap4_dvi_panel = {
+	.i2c_bus_num		= 3,
+	.power_down_gpio	= PANDA_DVI_TFP410_POWER_DOWN_GPIO,
 };
 
 static struct omap_dss_device omap4_panda_dvi_device = {
 	.type			= OMAP_DISPLAY_TYPE_DPI,
 	.name			= "dvi",
-	.driver_name		= "dvi",
+	.driver_name		= "tfp410",
 	.data			= &omap4_dvi_panel,
 	.phy.dpi.data_lines	= 24,
 	.reset_gpio		= PANDA_DVI_TFP410_POWER_DOWN_GPIO,
 	.channel		= OMAP_DSS_CHANNEL_LCD2,
 };
 
-static int __init omap4_panda_dvi_init(void)
-{
-	int r;
-
-	/* Requesting TFP410 DVI GPIO and disabling it, at bootup */
-	r = gpio_request_one(omap4_panda_dvi_device.reset_gpio,
-				GPIOF_OUT_INIT_LOW, "DVI PD");
-	if (r)
-		pr_err("Failed to get DVI powerdown GPIO\n");
-
-	return r;
-}
 
 static struct gpio panda_hdmi_gpios[] = {
 	{ HDMI_GPIO_CT_CP_HPD, GPIOF_OUT_INIT_HIGH, "hdmi_gpio_ct_cp_hpd" },
@@ -480,11 +440,6 @@ static struct omap_dss_board_info omap4_panda_dss_data = {
 
 static void __init omap4_panda_display_init(void)
 {
-	int r;
-
-	r = omap4_panda_dvi_init();
-	if (r)
-		pr_err("error initializing panda DVI\n");
 
 	omap_display_init(&omap4_panda_dss_data);
 
