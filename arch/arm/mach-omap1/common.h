@@ -63,7 +63,11 @@ extern void omap1_nand_cmd_ctl(struct mtd_info *mtd, int cmd,
 			       unsigned int ctrl);
 
 extern u32 omap_irq_flags;
+#ifdef CONFIG_ARCH_OMAP16XX
 extern int ocpi_enable(void);
+#else
+static inline int ocpi_enable(void) { return 0; }
+#endif
 	       
 extern struct sys_timer omap1_timer;
 #ifdef CONFIG_OMAP_32K_TIMER
