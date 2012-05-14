@@ -56,14 +56,12 @@ static struct clk func_32k_ck = {
 	.name		= "func_32k_ck",
 	.ops		= &clkops_null,
 	.rate		= 32768,
-	.clkdm_name	= "wkup_clkdm",
 };
 
 static struct clk secure_32k_ck = {
 	.name		= "secure_32k_ck",
 	.ops		= &clkops_null,
 	.rate		= 32768,
-	.clkdm_name	= "wkup_clkdm",
 };
 
 /* Typical 12/13MHz in standalone mode, will be 26Mhz in chassis mode */
@@ -79,7 +77,6 @@ static struct clk sys_ck = {		/* (*12, *13, 19.2, 26, 38.4)MHz */
 	.name		= "sys_ck",		/* ~ ref_clk also */
 	.ops		= &clkops_null,
 	.parent		= &osc_ck,
-	.clkdm_name	= "wkup_clkdm",
 	.recalc		= &omap2xxx_sys_clk_recalc,
 };
 
@@ -87,7 +84,6 @@ static struct clk alt_ck = {		/* Typical 54M or 48M, may not exist */
 	.name		= "alt_ck",
 	.ops		= &clkops_null,
 	.rate		= 54000000,
-	.clkdm_name	= "wkup_clkdm",
 };
 
 /* Optional external clock input for McBSP CLKS */
@@ -180,7 +176,6 @@ static struct clk func_54m_ck = {
 	.name		= "func_54m_ck",
 	.ops		= &clkops_null,
 	.parent		= &apll54_ck,	/* can also be alt_clk */
-	.clkdm_name	= "wkup_clkdm",
 	.init		= &omap2_init_clksel_parent,
 	.clksel_reg	= OMAP_CM_REGADDR(PLL_MOD, CM_CLKSEL1),
 	.clksel_mask	= OMAP24XX_54M_SOURCE_MASK,
@@ -192,7 +187,6 @@ static struct clk core_ck = {
 	.name		= "core_ck",
 	.ops		= &clkops_null,
 	.parent		= &dpll_ck,		/* can also be 32k */
-	.clkdm_name	= "wkup_clkdm",
 	.recalc		= &followparent_recalc,
 };
 
@@ -200,7 +194,6 @@ static struct clk func_96m_ck = {
 	.name		= "func_96m_ck",
 	.ops		= &clkops_null,
 	.parent		= &apll96_ck,
-	.clkdm_name	= "wkup_clkdm",
 	.recalc		= &followparent_recalc,
 };
 
@@ -226,7 +219,6 @@ static struct clk func_48m_ck = {
 	.name		= "func_48m_ck",
 	.ops		= &clkops_null,
 	.parent		= &apll96_ck,	 /* 96M or Alt */
-	.clkdm_name	= "wkup_clkdm",
 	.init		= &omap2_init_clksel_parent,
 	.clksel_reg	= OMAP_CM_REGADDR(PLL_MOD, CM_CLKSEL1),
 	.clksel_mask	= OMAP24XX_48M_SOURCE_MASK,
@@ -241,7 +233,6 @@ static struct clk func_12m_ck = {
 	.ops		= &clkops_null,
 	.parent		= &func_48m_ck,
 	.fixed_div	= 4,
-	.clkdm_name	= "wkup_clkdm",
 	.recalc		= &omap_fixed_divisor_recalc,
 };
 
@@ -323,7 +314,6 @@ static struct clk sys_clkout = {
 	.name		= "sys_clkout",
 	.ops		= &clkops_null,
 	.parent		= &sys_clkout_src,
-	.clkdm_name	= "wkup_clkdm",
 	.clksel_reg	= OMAP2420_PRCM_CLKOUT_CTRL,
 	.clksel_mask	= OMAP24XX_CLKOUT_DIV_MASK,
 	.clksel		= sys_clkout_clksel,
@@ -359,7 +349,6 @@ static struct clk sys_clkout2 = {
 	.name		= "sys_clkout2",
 	.ops		= &clkops_null,
 	.parent		= &sys_clkout2_src,
-	.clkdm_name	= "wkup_clkdm",
 	.clksel_reg	= OMAP2420_PRCM_CLKOUT_CTRL,
 	.clksel_mask	= OMAP2420_CLKOUT2_DIV_MASK,
 	.clksel		= sys_clkout2_clksel,
@@ -407,7 +396,6 @@ static struct clk mpu_ck = {	/* Control cpu */
 	.name		= "mpu_ck",
 	.ops		= &clkops_null,
 	.parent		= &core_ck,
-	.clkdm_name	= "mpu_clkdm",
 	.init		= &omap2_init_clksel_parent,
 	.clksel_reg	= OMAP_CM_REGADDR(MPU_MOD, CM_CLKSEL),
 	.clksel_mask	= OMAP24XX_CLKSEL_MPU_MASK,
@@ -541,7 +529,6 @@ static struct clk core_l3_ck = {	/* Used for ick and fck, interconnect */
 	.name		= "core_l3_ck",
 	.ops		= &clkops_null,
 	.parent		= &core_ck,
-	.clkdm_name	= "core_l3_clkdm",
 	.clksel_reg	= OMAP_CM_REGADDR(CORE_MOD, CM_CLKSEL1),
 	.clksel_mask	= OMAP24XX_CLKSEL_L3_MASK,
 	.clksel		= core_l3_clksel,
@@ -597,7 +584,6 @@ static struct clk l4_ck = {		/* used both as an ick and fck */
 	.name		= "l4_ck",
 	.ops		= &clkops_null,
 	.parent		= &core_l3_ck,
-	.clkdm_name	= "core_l4_clkdm",
 	.clksel_reg	= OMAP_CM_REGADDR(CORE_MOD, CM_CLKSEL1),
 	.clksel_mask	= OMAP24XX_CLKSEL_L4_MASK,
 	.clksel		= l4_clksel,
@@ -815,7 +801,6 @@ static struct clk wu_l4_ick = {
 	.name		= "wu_l4_ick",
 	.ops		= &clkops_null,
 	.parent		= &sys_ck,
-	.clkdm_name	= "wkup_clkdm",
 	.recalc		= &followparent_recalc,
 };
 
@@ -1597,7 +1582,6 @@ static struct clk sdma_fck = {
 	.name		= "sdma_fck",
 	.ops		= &clkops_null, /* RMK: missing? */
 	.parent		= &core_l3_ck,
-	.clkdm_name	= "core_l3_clkdm",
 	.recalc		= &followparent_recalc,
 };
 
