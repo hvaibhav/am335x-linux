@@ -723,6 +723,10 @@ static int __init gpmc_init(void)
 		else
 			l = OMAP34XX_GPMC_BASE;
 		gpmc_irq = INT_34XX_GPMC_IRQ;
+	} else if (soc_is_am33xx()) {
+		ck = "l3s_gclk";
+		l = OMAP44XX_GPMC_BASE;
+		gpmc_irq = INT_34XX_GPMC_IRQ;
 	} else if (cpu_is_omap34xx()) {
 		ck = "gpmc_fck";
 		l = OMAP34XX_GPMC_BASE;
