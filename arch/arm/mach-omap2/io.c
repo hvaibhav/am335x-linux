@@ -385,7 +385,7 @@ void __init omap2430_init_late(void)
  * Currently only board-omap3beagle.c should call this because of the
  * same machine_id for 34xx and 36xx beagle.. Will get fixed with DT.
  */
-#ifdef CONFIG_ARCH_OMAP3
+#ifdef CONFIG_SOC_OMAP3430
 void __init omap3_init_early(void)
 {
 	omap2_set_globals_3xxx();
@@ -484,6 +484,7 @@ void __init am33xx_init_early(void)
 	omap3xxx_check_revision();
 	ti81xx_check_features();
 	omap_common_init_early();
+	am33xx_voltagedomains_init();
 }
 #endif
 
