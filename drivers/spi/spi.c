@@ -53,7 +53,7 @@ modalias_show(struct device *dev, struct device_attribute *a, char *buf)
 {
 	const struct spi_device	*spi = to_spi_device(dev);
 
-	return sprintf(buf, "%s\n", spi->modalias);
+	return sprintf(buf, "%s%s\n", SPI_MODULE_PREFIX, spi->modalias);
 }
 
 static struct device_attribute spi_dev_attrs[] = {
@@ -813,6 +813,7 @@ static void of_register_spi_devices(struct spi_master *master)
 	struct spi_device *spi;
 	struct device_node *nc;
 	const __be32 *prop;
+	char modalias[SPI_NAME_SIZE + 4];
 	int rc;
 	int len;
 
@@ -874,7 +875,9 @@ static void of_register_spi_devices(struct spi_master *master)
 		spi->dev.of_node = nc;
 
 		/* Register the new device */
-		request_module(spi->modalias);
+		snprintf(modalias, sizeof(modalias), "%s%s", SPI_MODULE_PREFIX,
+			 spi->modalias);
+		request_module(modalias);
 		rc = spi_add_device(spi);
 		if (rc) {
 			dev_err(&master->dev, "spi_device register error %s\n",
