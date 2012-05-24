@@ -6133,6 +6133,15 @@ S:	Maintained
 F:	include/linux/sl?b*.h
 F:	mm/sl?b.c
 
+SMACK SECURITY MODULE
+M:	Casey Schaufler <casey@schaufler-ca.com>
+L:	linux-security-module@vger.kernel.org
+W:	http://schaufler-ca.com
+T:	git git://git.gitorious.org/smack-next/kernel.git
+S:	Maintained
+F:	Documentation/security/Smack.txt
+F:	security/smack/
+
 SMC91x ETHERNET DRIVER
 M:	Nicolas Pitre <nico@fluxnic.net>
 S:	Odd Fixes
