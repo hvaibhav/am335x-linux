@@ -563,9 +563,10 @@ _GLOBAL(ret_from_except_lite)
 	li	r0,_TIF_NEED_RESCHED	/* bits to check */
 	ld	r3,_MSR(r1)
 	ld	r4,TI_FLAGS(r9)
-	/* Move MSR_PR bit in r3 to _TIF_SIGPENDING position in r0 */
+	/* Add MSR_PR bit in r3 in _TIF_SIGPENDING and _TIF_NOTIFY_RESUME positions in r0 */
 	rlwimi	r0,r3,32+TIF_SIGPENDING-MSR_PR_LG,_TIF_SIGPENDING
-	and.	r0,r4,r0	/* check NEED_RESCHED and maybe SIGPENDING */
+	rlwimi	r0,r3,32+TIF_NOTIFY_RESUME-MSR_PR_LG,_TIF_NOTIFY_RESUME
+	and.	r0,r4,r0	/* check NEED_RESCHED and maybe SIGPENDING/NOTIFY_RESUME */
 	bne	do_work
 
 #else /* !CONFIG_PREEMPT */
