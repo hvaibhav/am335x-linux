@@ -1394,13 +1394,6 @@ SYSCALL_DEFINE1(alarm, unsigned int, seconds)
 
 #endif
 
-#ifndef __alpha__
-
-/*
- * The Alpha uses getxpid, getxuid, and getxgid instead.  Maybe this
- * should be moved into arch/i386 instead?
- */
-
 /**
  * sys_getpid - return the thread group id of the current process
  *
@@ -1455,8 +1448,6 @@ SYSCALL_DEFINE0(getegid)
 	/* Only we change this so SMP safe */
 	return from_kgid_munged(current_user_ns(), current_egid());
 }
-
-#endif
 
 static void process_timeout(unsigned long __data)
 {
