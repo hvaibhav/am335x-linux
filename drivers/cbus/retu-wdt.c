@@ -43,6 +43,8 @@
 #include <plat/cpu.h>
 #include <plat/prcm.h>
 
+#include <mach/hardware.h>
+
 #include "cbus.h"
 #include "retu.h"
 
