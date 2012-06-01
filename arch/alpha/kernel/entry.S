@@ -663,6 +663,31 @@ kernel_thread:
 	br	ret_to_kernel
 .end kernel_thread
 
+	.globl	ret_from_kernel_execve
+	.align	4
+	.ent	ret_from_kernel_execve
+ret_from_kernel_execve:
+	/*
+	 * copy regs to normal position and off to userland we go...
+	 * note that we are not guaranteed that we are deep enough
+	 * in stack for current_pt_regs() not to overlap our stack
+	 * frame; memcpy() would not be safe and we _must_ do
+	 * everything starting from that memmove() in assembler.
+	 * And we can't mangle $sp until after the call of memmove()
+	 * either...
+	 */
+	lda	$18, SIZEOF_PT_REGS
+	bsr	$26, memmove            !samegp
+
+	/* Take that over as our new stack frame and visit userland!  */
+	mov	$0, $sp
+	/* Avoid the HAE being gratuitously wrong, to avoid restoring it.  */
+	ldq	$2, alpha_mv+HAE_CACHE
+	stq	$2, 152($sp)		/* HAE */
+	br	$31, ret_to_user
+
+.end	ret_from_kernel_execve
+
 
 /*
  * Special system calls.  Most of these are special in that they either
