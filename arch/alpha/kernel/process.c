@@ -455,3 +455,32 @@ get_wchan(struct task_struct *p)
 	}
 	return pc;
 }
+
+int kernel_execve(const char *path, const char *const argv[], const char *const envp[])
+{
+	/* Avoid the HAE being gratuitously wrong, which would cause us
+	   to do the whole turn off interrupts thing and restore it.  */
+	struct pt_regs regs = {.hae = alpha_mv.hae_cache};
+	int err = do_execve(path, argv, envp, &regs);
+	if (!err) {
+		/*
+		 * copy regs to normal position and off to userland we go...
+		 * note that we are not guaranteed that we are deep enough
+		 * in stack for current_pt_regs() not to overlap our stack
+		 * frame; memcpy() would not be safe and we _must_ do
+		 * everything starting from that memmove() in assembler.
+		 * And we can't mangle $sp until after the call of memmove()
+		 * either...
+		 */
+		__asm__ __volatile__ (
+			"lda	$16, %0\n"
+			"lda	$17, %1\n"
+			"lda	$18, %2\n"
+			"bsr	$26, memmove\n"
+			"lda	$sp, %0\n"
+			"jsr	$31, ret_from_sys_call\n"
+			: : "m"(*current_pt_regs()), "m"(regs), "Ir"(sizeof(struct pt_regs)));
+	}
+	return err;
+}
+EXPORT_SYMBOL(kernel_execve);
