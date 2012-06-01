@@ -1921,6 +1921,7 @@ cifs_writev_requeue(struct cifs_writedata *wdata)
 {
 	int i, rc;
 	struct inode *inode = wdata->cfile->dentry->d_inode;
+	struct TCP_Server_Info *server;
 
 	for (i = 0; i < wdata->nr_pages; i++) {
 		lock_page(wdata->pages[i]);
@@ -1928,7 +1929,8 @@ cifs_writev_requeue(struct cifs_writedata *wdata)
 	}
 
 	do {
-		rc = cifs_async_writev(wdata);
+		server = tlink_tcon(wdata->cfile->tlink)->ses->server;
+		rc = server->ops->async_writev(wdata);
 	} while (rc == -EAGAIN);
 
 	for (i = 0; i < wdata->nr_pages; i++) {
