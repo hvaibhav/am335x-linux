@@ -10,8 +10,8 @@
 /include/ "omap3.dtsi"
 
 / {
-	model = "TI OMAP3 EVM (OMAP3530, AM/DM37x)";
-	compatible = "ti,omap3-evm", "ti,omap3";
+	model = "TI AM335x EVM";
+	compatible = "ti,am335x-evm", "ti,am33xx", "ti,omap3";
 
 	memory {
 		device_type = "memory";
@@ -19,17 +19,16 @@
 	};
 };
 
-&i2c1 {
-	clock-frequency = <2600000>;
-
-	twl: twl@48 {
-		reg = <0x48>;
-		interrupts = <7>; /* SYS_NIRQ cascaded to intc */
-		interrupt-parent = <&intc>;
-	};
+&intc {
+	/*
+	 * AM33XX family of devices have 128 interrupts
+	 */
+	ti,intc-size = <128>;
 };
 
-/include/ "twl4030.dtsi"
+&i2c1 {
+	clock-frequency = <400000>;
+};
 
 &i2c2 {
 	clock-frequency = <400000>;
@@ -37,12 +36,4 @@
 
 &i2c3 {
 	clock-frequency = <400000>;
-
-	/*
-	 * TVP5146 Video decoder-in for analog input support.
-	 */
-	tvp5146@5c {
-		compatible = "ti,tvp5146m2";
-		reg = <0x5c>;
-	};
 };
