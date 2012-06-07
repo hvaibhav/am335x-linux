@@ -56,6 +56,16 @@ config ARCH_OMAP4
 	select USB_ARCH_HAS_EHCI if USB_SUPPORT
 	select ARM_CPU_SUSPEND if PM
 
+config ARCH_OMAP2_AUTO
+	bool
+	depends on !ARCH_OMAP3 && !ARCH_OMAP4
+	select ARCH_OMAP2
+	default y
+	help
+	  At least one of OMAP2/OMAP3/OMAP4 needs to be enabled, this
+	  selects OMAP2 if nothing else gets selected, to avoid non-building
+	  configurations.
+
 comment "OMAP Core Type"
 	depends on ARCH_OMAP2
 
