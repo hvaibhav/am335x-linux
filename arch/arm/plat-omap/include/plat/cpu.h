@@ -374,8 +374,7 @@ IS_OMAP_TYPE(3430, 0x3430)
 /* Macros to detect if we have OMAP1 or OMAP2 */
 #define cpu_class_is_omap1()	(cpu_is_omap7xx() || cpu_is_omap15xx() || \
 				cpu_is_omap16xx())
-#define cpu_class_is_omap2()	(cpu_is_omap24xx() || cpu_is_omap34xx() || \
-				cpu_is_omap44xx())
+#define cpu_class_is_omap2()	!cpu_class_is_omap1()
 
 /* Various silicon revisions for omap2 */
 #define OMAP242X_CLASS		0x24200024
