@@ -14,6 +14,7 @@
 
 #include <linux/sched.h>
 #include <linux/key-type.h>
+#include <linux/task_work.h>
 
 #ifdef __KDEBUG
 #define kenter(FMT, ...) \
@@ -148,6 +149,7 @@ extern key_ref_t lookup_user_key(key_serial_t id, unsigned long flags,
 #define KEY_LOOKUP_FOR_UNLINK	0x04
 
 extern long join_session_keyring(const char *name);
+extern void key_change_session_keyring(struct task_work *twork);
 
 extern struct work_struct key_gc_work;
 extern unsigned key_gc_delay;
@@ -240,7 +242,7 @@ extern long keyctl_instantiate_key_iov(key_serial_t,
 extern long keyctl_invalidate_key(key_serial_t);
 
 extern long keyctl_instantiate_key_common(key_serial_t,
-					  const struct iovec __user *,
+					  const struct iovec *,
 					  unsigned, size_t, key_serial_t);
 
 /*
