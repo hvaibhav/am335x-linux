@@ -15,6 +15,14 @@
 
 #include <linux/list.h>
 
+#ifdef CONFIG_COMMON_CLK
+#include <linux/clk-provider.h>
+
+struct clockdomain;
+#define to_clk_hw_omap(_hw) container_of(_hw, struct clk_hw_omap, hw)
+
+#else
+
 struct module;
 struct clk;
 struct clockdomain;
@@ -52,6 +60,7 @@ struct clkops {
 	void			(*allow_idle)(struct clk *);
 	void			(*deny_idle)(struct clk *);
 };
+#endif /* CONFIG_COMMON_CLK */
 
 #ifdef CONFIG_ARCH_OMAP2PLUS
 
@@ -195,6 +204,65 @@ struct dpll_data {
 #define INVERT_ENABLE		(1 << 4)	/* 0 enables, 1 disables */
 #define CLOCK_CLKOUTX2		(1 << 5)
 
+#ifdef CONFIG_COMMON_CLK
+/**
+ * struct clk_hw_omap - OMAP struct clk
+ * @node: list_head connecting this clock into the full clock list
+ * @enable_reg: register to write to enable the clock (see @enable_bit)
+ * @enable_bit: bitshift to write to enable/disable the clock (see @enable_reg)
+ * @flags: see "struct clk.flags possibilities" above
+ * @clksel_reg: for clksel clks, register va containing src/divisor select
+ * @clksel_mask: bitmask in @clksel_reg for the src/divisor selector
+ * @clksel: for clksel clks, pointer to struct clksel for this clock
+ * @dpll_data: for DPLLs, pointer to struct dpll_data for this clock
+ * @clkdm_name: clockdomain name that this clock is contained in
+ * @clkdm: pointer to struct clockdomain, resolved from @clkdm_name at runtime
+ * @rate_offset: bitshift for rate selection bitfield (OMAP1 only)
+ * @src_offset: bitshift for source selection bitfield (OMAP1 only)
+ *
+ * XXX @rate_offset, @src_offset should probably be removed and OMAP1
+ * clock code converted to use clksel.
+ *
+ */
+
+struct clk_hw_omap_ops;
+
+struct clk_hw_omap {
+	struct clk_hw		hw;
+	struct list_head	node;
+	unsigned long		fixed_rate;
+	u8			fixed_div;
+	void __iomem		*enable_reg;
+	u8			enable_bit;
+	u8			flags;
+#ifdef CONFIG_ARCH_OMAP2PLUS
+	void __iomem		*clksel_reg;
+	u32			clksel_mask;
+	const struct clksel	*clksel;
+	struct dpll_data	*dpll_data;
+	const char		*clkdm_name;
+	struct clockdomain	*clkdm;
+#else
+	u8			rate_offset;
+	u8			src_offset;
+#endif
+	const struct clk_hw_omap_ops	*ops;
+};
+
+struct clk_hw_omap_ops {
+	void			(*find_idlest)(struct clk_hw_omap *oclk,
+					void __iomem **idlest_reg,
+					u8 *idlest_bit, u8 *idlest_val);
+	void			(*find_companion)(struct clk_hw_omap *oclk,
+					void __iomem **other_reg,
+					u8 *other_bit);
+	void			(*allow_idle)(struct clk_hw_omap *oclk);
+	void			(*deny_idle)(struct clk_hw_omap *oclk);
+};
+
+unsigned long omap_fixed_divisor_recalc(struct clk_hw *hw,
+		unsigned long parent_rate);
+#else
 /**
  * struct clk - OMAP struct clk
  * @node: list_head connecting this clock into the full clock list
@@ -306,4 +374,5 @@ extern const struct clkops clkops_null;
 
 extern struct clk dummy_ck;
 
+#endif /* CONFIG_COMMON_CLK */
 #endif
