@@ -110,7 +110,7 @@ static int __devinit omap_rng_probe(struct platform_device *pdev)
 			ret = PTR_ERR(rng_ick);
 			return ret;
 		} else
-			clk_enable(rng_ick);
+			clk_prepare_enable(rng_ick);
 	}
 
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
@@ -138,7 +138,7 @@ err_register:
 	rng_base = NULL;
 err_ioremap:
 	if (cpu_is_omap24xx()) {
-		clk_disable(rng_ick);
+		clk_disable_unprepare(rng_ick);
 		clk_put(rng_ick);
 	}
 	return ret;
@@ -151,7 +151,7 @@ static int __exit omap_rng_remove(struct platform_device *pdev)
 	omap_rng_write_reg(RNG_MASK_REG, 0x0);
 
 	if (cpu_is_omap24xx()) {
-		clk_disable(rng_ick);
+		clk_disable_unprepare(rng_ick);
 		clk_put(rng_ick);
 	}
 
