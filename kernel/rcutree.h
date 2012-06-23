@@ -413,8 +413,6 @@ struct rcu_state {
 	struct completion barrier_completion;	/* Wake at barrier end. */
 	unsigned long n_barrier_done;		/* ++ at start and end of */
 						/*  _rcu_barrier(). */
-	raw_spinlock_t fqslock;			/* Only one task forcing */
-						/*  quiescent states. */
 	unsigned long jiffies_force_qs;		/* Time at which to invoke */
 						/*  force_quiescent_state(). */
 	unsigned long n_force_qs;		/* Number of calls to */
@@ -432,6 +430,10 @@ struct rcu_state {
 	char *name;				/* Name of structure. */
 	struct list_head flavors;		/* List of RCU flavors. */
 };
+
+/* Values for rcu_state structure's gp_flags field. */
+#define RCU_GP_FLAG_INIT 0x1	/* Need grace-period initialization. */
+#define RCU_GP_FLAG_FQS  0x2	/* Need grace-period quiescent-state forcing. */
 
 extern struct list_head rcu_struct_flavors;
 #define for_each_rcu_flavor(rsp) \
