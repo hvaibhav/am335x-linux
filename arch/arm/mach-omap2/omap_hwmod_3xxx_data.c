@@ -14,6 +14,8 @@
  *
  * XXX these should be marked initdata for multi-OMAP kernels
  */
+#include <linux/power/smartreflex.h>
+
 #include <plat/omap_hwmod.h>
 #include <mach/irqs.h>
 #include <plat/cpu.h>
@@ -29,8 +31,6 @@
 #include <plat/dmtimer.h>
 
 #include "omap_hwmod_common_data.h"
-
-#include "smartreflex.h"
 #include "prm-regbits-34xx.h"
 #include "cm-regbits-34xx.h"
 #include "wd_timer.h"
@@ -129,7 +129,6 @@ static struct omap_hwmod_class_sysconfig omap3xxx_timer_1ms_sysc = {
 static struct omap_hwmod_class omap3xxx_timer_1ms_hwmod_class = {
 	.name = "timer",
 	.sysc = &omap3xxx_timer_1ms_sysc,
-	.rev = OMAP_TIMER_IP_VERSION_1,
 };
 
 static struct omap_hwmod_class_sysconfig omap3xxx_timer_sysc = {
@@ -145,12 +144,11 @@ static struct omap_hwmod_class_sysconfig omap3xxx_timer_sysc = {
 static struct omap_hwmod_class omap3xxx_timer_hwmod_class = {
 	.name = "timer",
 	.sysc = &omap3xxx_timer_sysc,
-	.rev =  OMAP_TIMER_IP_VERSION_1,
 };
 
 /* secure timers dev attribute */
 static struct omap_timer_capability_dev_attr capability_secure_dev_attr = {
-	.timer_capability	= OMAP_TIMER_SECURE,
+	.timer_capability	= OMAP_TIMER_ALWON | OMAP_TIMER_SECURE,
 };
 
 /* always-on timers dev attribute */
@@ -195,7 +193,6 @@ static struct omap_hwmod omap3xxx_timer2_hwmod = {
 			.idlest_idle_bit = OMAP3430_ST_GPT2_SHIFT,
 		},
 	},
-	.dev_attr	= &capability_alwon_dev_attr,
 	.class		= &omap3xxx_timer_1ms_hwmod_class,
 };
 
@@ -213,7 +210,6 @@ static struct omap_hwmod omap3xxx_timer3_hwmod = {
 			.idlest_idle_bit = OMAP3430_ST_GPT3_SHIFT,
 		},
 	},
-	.dev_attr	= &capability_alwon_dev_attr,
 	.class		= &omap3xxx_timer_hwmod_class,
 };
 
@@ -231,7 +227,6 @@ static struct omap_hwmod omap3xxx_timer4_hwmod = {
 			.idlest_idle_bit = OMAP3430_ST_GPT4_SHIFT,
 		},
 	},
-	.dev_attr	= &capability_alwon_dev_attr,
 	.class		= &omap3xxx_timer_hwmod_class,
 };
 
@@ -249,7 +244,6 @@ static struct omap_hwmod omap3xxx_timer5_hwmod = {
 			.idlest_idle_bit = OMAP3430_ST_GPT5_SHIFT,
 		},
 	},
-	.dev_attr	= &capability_alwon_dev_attr,
 	.class		= &omap3xxx_timer_hwmod_class,
 };
 
@@ -267,7 +261,6 @@ static struct omap_hwmod omap3xxx_timer6_hwmod = {
 			.idlest_idle_bit = OMAP3430_ST_GPT6_SHIFT,
 		},
 	},
-	.dev_attr	= &capability_alwon_dev_attr,
 	.class		= &omap3xxx_timer_hwmod_class,
 };
 
@@ -285,7 +278,6 @@ static struct omap_hwmod omap3xxx_timer7_hwmod = {
 			.idlest_idle_bit = OMAP3430_ST_GPT7_SHIFT,
 		},
 	},
-	.dev_attr	= &capability_alwon_dev_attr,
 	.class		= &omap3xxx_timer_hwmod_class,
 };
 
@@ -1074,6 +1066,17 @@ static struct omap_hwmod_class omap3xxx_mcbsp_hwmod_class = {
 	.rev  = MCBSP_CONFIG_TYPE3,
 };
 
+/* McBSP functional clock mapping */
+static struct omap_hwmod_opt_clk mcbsp15_opt_clks[] = {
+	{ .role = "pad_fck", .clk = "mcbsp_clks" },
+	{ .role = "prcm_fck", .clk = "core_96m_fck" },
+};
+
+static struct omap_hwmod_opt_clk mcbsp234_opt_clks[] = {
+	{ .role = "pad_fck", .clk = "mcbsp_clks" },
+	{ .role = "prcm_fck", .clk = "per_96m_fck" },
+};
+
 /* mcbsp1 */
 static struct omap_hwmod_irq_info omap3xxx_mcbsp1_irqs[] = {
 	{ .name = "common", .irq = 16 },
@@ -1097,6 +1100,8 @@ static struct omap_hwmod omap3xxx_mcbsp1_hwmod = {
 			.idlest_idle_bit = OMAP3430_ST_MCBSP1_SHIFT,
 		},
 	},
+	.opt_clks	= mcbsp15_opt_clks,
+	.opt_clks_cnt	= ARRAY_SIZE(mcbsp15_opt_clks),
 };
 
 /* mcbsp2 */
@@ -1126,6 +1131,8 @@ static struct omap_hwmod omap3xxx_mcbsp2_hwmod = {
 			.idlest_idle_bit = OMAP3430_ST_MCBSP2_SHIFT,
 		},
 	},
+	.opt_clks	= mcbsp234_opt_clks,
+	.opt_clks_cnt	= ARRAY_SIZE(mcbsp234_opt_clks),
 	.dev_attr	= &omap34xx_mcbsp2_dev_attr,
 };
 
@@ -1156,6 +1163,8 @@ static struct omap_hwmod omap3xxx_mcbsp3_hwmod = {
 			.idlest_idle_bit = OMAP3430_ST_MCBSP3_SHIFT,
 		},
 	},
+	.opt_clks	= mcbsp234_opt_clks,
+	.opt_clks_cnt	= ARRAY_SIZE(mcbsp234_opt_clks),
 	.dev_attr	= &omap34xx_mcbsp3_dev_attr,
 };
 
@@ -1188,6 +1197,8 @@ static struct omap_hwmod omap3xxx_mcbsp4_hwmod = {
 			.idlest_idle_bit = OMAP3430_ST_MCBSP4_SHIFT,
 		},
 	},
+	.opt_clks	= mcbsp234_opt_clks,
+	.opt_clks_cnt	= ARRAY_SIZE(mcbsp234_opt_clks),
 };
 
 /* mcbsp5 */
@@ -1219,6 +1230,8 @@ static struct omap_hwmod omap3xxx_mcbsp5_hwmod = {
 			.idlest_idle_bit = OMAP3430_ST_MCBSP5_SHIFT,
 		},
 	},
+	.opt_clks	= mcbsp15_opt_clks,
+	.opt_clks_cnt	= ARRAY_SIZE(mcbsp15_opt_clks),
 };
 
 /* 'mcbsp sidetone' class */
@@ -1325,7 +1338,7 @@ static struct omap_hwmod_irq_info omap3_smartreflex_mpu_irqs[] = {
 };
 
 static struct omap_hwmod omap34xx_sr1_hwmod = {
-	.name		= "sr1",
+	.name		= "smartreflex_mpu_iva",
 	.class		= &omap34xx_smartreflex_hwmod_class,
 	.main_clk	= "sr1_fck",
 	.prcm		= {
@@ -1343,7 +1356,7 @@ static struct omap_hwmod omap34xx_sr1_hwmod = {
 };
 
 static struct omap_hwmod omap36xx_sr1_hwmod = {
-	.name		= "sr1",
+	.name		= "smartreflex_mpu_iva",
 	.class		= &omap36xx_smartreflex_hwmod_class,
 	.main_clk	= "sr1_fck",
 	.prcm		= {
@@ -1370,7 +1383,7 @@ static struct omap_hwmod_irq_info omap3_smartreflex_core_irqs[] = {
 };
 
 static struct omap_hwmod omap34xx_sr2_hwmod = {
-	.name		= "sr2",
+	.name		= "smartreflex_core",
 	.class		= &omap34xx_smartreflex_hwmod_class,
 	.main_clk	= "sr2_fck",
 	.prcm		= {
@@ -1388,7 +1401,7 @@ static struct omap_hwmod omap34xx_sr2_hwmod = {
 };
 
 static struct omap_hwmod omap36xx_sr2_hwmod = {
-	.name		= "sr2",
+	.name		= "smartreflex_core",
 	.class		= &omap36xx_smartreflex_hwmod_class,
 	.main_clk	= "sr2_fck",
 	.prcm		= {
@@ -3282,6 +3295,8 @@ int __init omap3xxx_hwmod_init(void)
 	int r;
 	struct omap_hwmod_ocp_if **h = NULL;
 	unsigned int rev;
+
+	omap_hwmod_init();
 
 	/* Register hwmod links common to all OMAP3 */
 	r = omap_hwmod_register_links(omap3xxx_hwmod_ocp_ifs);
