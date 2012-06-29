@@ -1,0 +1,67 @@
+Texas Instruments Palmas family
+
+The Palmas familly are Integrated Power Management Chips.
+These chips are connected to an i2c bus.
+
+
+Required properties:
+- compatible : Must be "ti,palmas";
+  For Integrated power-management in the palmas series, twl6035, twl6037,
+  tps65913
+- interrupts : This i2c device has an IRQ line connected to the main SoC
+- interrupt-controller : Since the palmas support several interrupts internally,
+  it is considered as an interrupt controller cascaded to the SoC one.
+- #interrupt-cells = <1>;
+- interrupt-parent : The parent interrupt controller.
+
+Optional node:
+- Child nodes contain in the palmas. The palmas family is made of several
+  variants that support a different number of features.
+  The child nodes will thus depend of the capability of the variant.
+- mux_pad1 if a value is given it will be used for the pad1 mux
+- mux_pad2 if a value us given it will be used for the pad2 mux
+- power_ctrl if a value is given it will be written to the POWER_CTRL register
+
+Example:
+/*
+ * Integrated Power Management Chip Palmas
+ */
+palmas@48 {
+    compatible = "ti,palmas";
+    reg = <0x48>;
+    interrupts = <39>; /* IRQ_SYS_1N cascaded to gic */
+    interrupt-controller;
+    #interrupt-cells = <1>;
+    interrupt-parent = <&gic>;
+    #address-cells = <1>;
+    #size-cells = <0>;
+
+	ti,mux_pad1 = <0x00>;
+	ti,mux_pad2 = <0x00>;
+	ti,power_ctrl = <0x03>;
+
+	palmas_pmic {
+		compatible = "ti,palmas_pmic";
+		regulators {
+			smps12_reg: smps12 {
+				regulator-min-microvolt = < 600000>;
+                regulator-max-microvolt = <1500000>;
+				regulator-always-on;
+				regulator-boot-on;
+                ti,warm_sleep = <0>;
+                ti,roof_floor = <0>;
+                ti,mode_sleep = <0>;
+                ti,warm_reset = <0>;
+                ti,tstep = <0>;
+                ti,vsel = <0>;
+			};
+		};
+		ti,ldo6_vibrator = <0>;
+	};
+
+    palmas_rtc {
+        compatible = "ti,palmas_rtc";
+        interrupts = <8 9>;
+        reg = <0>;
+    };
+};
