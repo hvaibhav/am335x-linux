@@ -494,7 +494,7 @@ static int __devinit dsps_create_musb_pdev(struct dsps_glue *glue, u8 id)
 	struct resource *res;
 	struct resource	resources[2];
 	char res_name[10];
-	int ret;
+	int ret, musbid;
 
 	/* get memory resource for usb control register */
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 2 * id + 2);
@@ -534,14 +534,22 @@ static int __devinit dsps_create_musb_pdev(struct dsps_glue *glue, u8 id)
 	resources[1] = *res;
 	resources[1].name = "mc";
 
-	/* allocate the child platform device */
-	musb = platform_device_alloc("musb-hdrc", -1);
-	if (!musb) {
-		dev_err(dev, "failed to allocate musb device\n");
+	/* get the musb id */
+	musbid = musb_get_id(dev, GFP_KERNEL);
+	if (musbid < 0) {
+		dev_err(dev, "failed to allocate musb id\n");
 		ret = -ENOMEM;
 		goto err0;
 	}
+	/* allocate the child platform device */
+	musb = platform_device_alloc("musb-hdrc", musbid);
+	if (!musb) {
+		dev_err(dev, "failed to allocate musb device\n");
+		ret = -ENOMEM;
+		goto err1;
+	}
 
+	musb->id			= musbid;
 	musb->dev.parent		= dev;
 	musb->dev.dma_mask		= &musb_dmamask;
 	musb->dev.coherent_dma_mask	= musb_dmamask;
@@ -553,31 +561,34 @@ static int __devinit dsps_create_musb_pdev(struct dsps_glue *glue, u8 id)
 	ret = platform_device_add_resources(musb, resources, 2);
 	if (ret) {
 		dev_err(dev, "failed to add resources\n");
-		goto err1;
+		goto err2;
 	}
 
 	ret = platform_device_add_data(musb, pdata, sizeof(*pdata));
 	if (ret) {
 		dev_err(dev, "failed to add platform_data\n");
-		goto err1;
+		goto err2;
 	}
 
 	ret = platform_device_add(musb);
 	if (ret) {
 		dev_err(dev, "failed to register musb device\n");
-		goto err1;
+		goto err2;
 	}
 
 	return 0;
 
-err1:
+err2:
 	platform_device_put(musb);
+err1:
+	musb_put_id(dev, musbid);
 err0:
 	return ret;
 }
 
 static void __devexit dsps_delete_musb_pdev(struct dsps_glue *glue)
 {
+	musb_put_id(glue->dev, glue->musb->id);
 	platform_device_del(glue->musb);
 	platform_device_put(glue->musb);
 }
