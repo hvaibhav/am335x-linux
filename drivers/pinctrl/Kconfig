@@ -137,6 +137,14 @@ config PINCTRL_COH901
 	  COH 901 335 and COH 901 571/3. They contain 3, 5 or 7
 	  ports of 8 GPIO pins each.
 
+config PINCTRL_SIMPLE
+	tristate "Simple device tree based pinctrl driver"
+	depends on OF
+	select PINMUX
+	select PINCONF
+	help
+	  This selects the device tree based generic pinctrl driver.
+
 source "drivers/pinctrl/spear/Kconfig"
 
 endmenu

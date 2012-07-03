@@ -1,0 +1,124 @@
+Generic simple device tree based pinctrl driver
+
+Required properties:
+- compatible :  one of:
+	- "pinctrl-simple"
+	- "ti,omap2420-padconf"
+	- "ti,omap2430-padconf"
+	- "ti,omap3-padconf"
+	- "ti,omap4-padconf"
+- reg : offset and length of the register set for the mux registers
+- #pinctrl-cells : width of the pinctrl array, currently only 2 is supported
+- pinctrl-simple,register-width : pinmux register access width
+- pinctrl-simple,function-mask : mask of allowed pinmux function bits
+- pinctrl-simple,function-off : function off mode for disabled state
+- pinctrl-simple,pinconf-mask : mask of allowed pinconf bits
+
+This driver uses the common pinctrl bindings as specified in
+pinctrl-bindings.txt document in this directory. The common bindings are used
+to specify the client device states using pinctrl-0 and pinctrl-names entries.
+
+This driver supports parsing one or more pinctrl functions as the subnodes of
+the pinctrl driver entry. One or more registers can be specified for each
+function, see uart2 and uart3 examples below. If you are concerned about boot
+time, parsing multiple registers in a single function is slightly faster.
+
+For setting all static board specific pins, see the pinmux_board_pins example
+below. If you are concerned about the boot time, set up the static pins in
+the bootloader, and only set up selected pins as device tree entries.
+
+This driver assumes currently that there is one register for each pin. If you
+have some pins with more complicated configuration, you can set up a separate
+hardware specific driver for those pins.
+
+Example:
+
+/* SoC common file, such as omap4.dtsi */
+omap4_pmx_core: pinmux@4a100040 {
+	compatible = "ti,omap4-padconf";
+	reg = <0x4a100040 0x0196>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	#pinctrl-cells = <2>;
+	pinctrl-simple,register-width = <16>;
+	pinctrl-simple,function-mask = <0x7>;
+	pinctrl-simple,function-off = <0xffffffff>;
+	pinctrl-simple,pinconf-mask = <0xfff8>;
+};
+
+omap4_pmx_wkup: pinmux@4a31e040 {
+	compatible = "ti,omap4-padconf";
+	reg = <0x4a31e040 0x0038>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	#pinctrl-cells = <2>;
+	pinctrl-simple,register-width = <16>;
+	pinctrl-simple,function-mask = <0x7>;
+	pinctrl-simple,function-off = <0xffffffff>;
+	pinctrl-simple,pinconf-mask = <0xfff8>;
+};
+
+
+/* board specific .dts file, such as omap4-sdp.dts */
+&omap4_pmx_core {
+
+	/*
+	 * map all board specific static pins enabled by the pinctrl driver
+	 * itself during the boot (or just set them up in the bootloader)
+	 */
+	pinctrl-names = "default";
+	pinctrl-0 = <&board_pins>;
+
+	board_pins: pinmux_board_pins {
+		board_static_pins {
+			pinctrl-simple,cells = <
+				0x6c 0xf	/* CSI21_DX3 OMAP_PIN_OUTPUT | OMAP_MUX_MODE7 */
+				0x6e 0xf	/* CSI21_DY3 OMAP_PIN_OUTPUT | OMAP_MUX_MODE7 */
+				0x70 0xf	/* CSI21_DX4 OMAP_PIN_OUTPUT | OMAP_MUX_MODE7 */
+				0x72 0xf	/* CSI21_DY4 OMAP_PIN_OUTPUT | OMAP_MUX_MODE7 */
+			>;
+		};
+	};
+
+
+	/* map all uart2 pins as a single function */
+	uart2_pins: pinmux_uart2_pins {
+		uart2_pins {
+			pinctrl-simple,cells = <
+				0xd8 0x118	/* UART2_CTS OMAP_PIN_INPUT_PULLUP | OMAP_MUX_MODE0 */
+				0xda 0		/* UART2_RTS OMAP_PIN_OUTPUT | OMAP_MUX_MODE0 */
+				0xdc 0x118	/* UART2_RX OMAP_PIN_INPUT_PULLUP | OMAP_MUX_MODE0 */
+				0xde 0		/* UART2_TX OMAP_PIN_OUTPUT | OMAP_MUX_MODE0 */
+			>;
+		};
+	};
+
+	/* map all uart3 pins as separate functions */
+	uart3_pins: pinmux_uart3_pins {
+		uart3_cts_rctx.uart3_cts_rctx {
+			pinctrl-simple,cells = <0x100 0x118>;	/* OMAP_PIN_INPUT_PULLUP | OMAP_MUX_MODE0 */
+                };
+
+		uart3_rts_sd.uart3_rts_sd {
+			pinctrl-simple,cells = <0x102 0>;	/* OMAP_PIN_OUTPUT | OMAP_MUX_MODE0 */
+		};
+
+		uart3_rx_irrx.uart3_rx_irrx {
+			pinctrl-simple,cells = <0x104 0x100>;	/* OMAP_PIN_INPUT | OMAP_MUX_MODE0 */
+		};
+
+		uart3_tx_irtx.uart3_tx_irtx {
+			pinctrl-simple,cells = <0x106 0>;	/* OMAP_PIN_OUTPUT | OMAP_MUX_MODE0 */
+		};
+	};
+};
+
+&uart2 {
+       pinctrl-names = "default";
+       pinctrl-0 = <&uart2_pins>;
+};
+
+&uart3 {
+       pinctrl-names = "default";
+       pinctrl-0 = <&uart3_pins>;
+};
