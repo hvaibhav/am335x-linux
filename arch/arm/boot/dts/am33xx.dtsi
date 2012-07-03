@@ -40,6 +40,15 @@
 		};
 	};
 
+	am3358_pinmux: pinmux@44E10800 {
+		compatible = "pinctrl-single";
+		reg = <0x44E10800 0x0238>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		pinctrl-single,register-width = <32>;
+		pinctrl-single,function-mask = <0x7F>;
+	};
+
 	/*
 	 * XXX: Use a flat representation of the AM33XX interconnect.
 	 * The real AM33XX interconnect network is quite complex.Since
