@@ -40,6 +40,18 @@
 		};
 	};
 
+	am33xx_pinmux: pinmux@44E10800 {
+		compatible = "ti,omap4-padconf";
+		reg = <0x44E10800 0x0338>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+		#pinctrl-cells = <2>;
+		pinctrl-simple,register-width = <32>;
+		pinctrl-simple,function-mask = <0x7>;
+		pinctrl-simple,function-off = <0xffffffff>;
+		pinctrl-simple,pinconf-mask = <0x78>;
+	};
+
 	/*
 	 * XXX: Use a flat representation of the AM33XX interconnect.
 	 * The real AM33XX interconnect network is quite complex.Since
