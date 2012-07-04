@@ -129,7 +129,7 @@
 #define	_4ECCEND	(0x1 << 1)	/* 4 symbols end */
 #define	_4ECCEXST	(0x1 << 0)	/* 4 symbols exist */
 
-#define LOOP_TIMEOUT_MAX	0x00010000
+#define LOOP_TIMEOUT_MS	100
 
 enum flctl_ecc_res_t {
 	FL_SUCCESS,
