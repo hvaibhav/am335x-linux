@@ -73,6 +73,8 @@ static struct nand_bbt_descr flctl_4secc_largepage = {
 	.pattern = scan_ff_pattern,
 };
 
+static int loop_timeout_max;
+
 static void empty_fifo(struct sh_flctl *flctl)
 {
 	writel(flctl->flintdmacr_base | AC1CLR | AC0CLR, FLINTDMACR(flctl));
@@ -91,7 +93,7 @@ static void timeout_error(struct sh_flctl *flctl, const char *str)
 
 static void wait_completion(struct sh_flctl *flctl)
 {
-	uint32_t timeout = LOOP_TIMEOUT_MAX;
+	uint32_t timeout = loop_timeout_max;
 
 	while (timeout--) {
 		if (readb(FLTRCR(flctl)) & TREND) {
@@ -138,7 +140,7 @@ static void set_addr(struct mtd_info *mtd, int column, int page_addr)
 
 static void wait_rfifo_ready(struct sh_flctl *flctl)
 {
-	uint32_t timeout = LOOP_TIMEOUT_MAX;
+	uint32_t timeout = loop_timeout_max;
 
 	while (timeout--) {
 		uint32_t val;
@@ -153,7 +155,7 @@ static void wait_rfifo_ready(struct sh_flctl *flctl)
 
 static void wait_wfifo_ready(struct sh_flctl *flctl)
 {
-	uint32_t len, timeout = LOOP_TIMEOUT_MAX;
+	uint32_t len, timeout = loop_timeout_max;
 
 	while (timeout--) {
 		/* check FIFO */
@@ -168,7 +170,7 @@ static void wait_wfifo_ready(struct sh_flctl *flctl)
 static enum flctl_ecc_res_t wait_recfifo_ready
 		(struct sh_flctl *flctl, int sector_number)
 {
-	uint32_t timeout = LOOP_TIMEOUT_MAX;
+	uint32_t timeout = loop_timeout_max;
 	void __iomem *ecc_reg[4];
 	int i;
 	int state = FL_SUCCESS;
@@ -247,7 +249,7 @@ static enum flctl_ecc_res_t wait_recfifo_ready
 
 static void wait_wecfifo_ready(struct sh_flctl *flctl)
 {
-	uint32_t timeout = LOOP_TIMEOUT_MAX;
+	uint32_t timeout = loop_timeout_max;
 	uint32_t len;
 
 	while (timeout--) {
@@ -938,6 +940,8 @@ static int __devinit flctl_probe(struct platform_device *pdev)
 
 	pm_runtime_enable(&pdev->dev);
 	pm_runtime_resume(&pdev->dev);
+
+	loop_timeout_max = loops_per_jiffy * msecs_to_jiffies(LOOP_TIMEOUT_MS);
 
 	ret = nand_scan_ident(flctl_mtd, 1, NULL);
 	if (ret)
