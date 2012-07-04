@@ -1132,7 +1132,7 @@ done:
 			iounmap(sync);
 
 		usb_put_phy(musb->xceiv);
-		usb_nop_xceiv_unregister();
+		usb_nop_xceiv_unregister(musb->xceiv);
 	}
 	return ret;
 }
@@ -1148,7 +1148,7 @@ static int tusb_musb_exit(struct musb *musb)
 	iounmap(musb->sync_va);
 
 	usb_put_phy(musb->xceiv);
-	usb_nop_xceiv_unregister();
+	usb_nop_xceiv_unregister(musb->xceiv);
 	return 0;
 }
 

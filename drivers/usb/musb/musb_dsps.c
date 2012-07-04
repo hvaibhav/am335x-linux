@@ -420,7 +420,7 @@ static int dsps_musb_init(struct musb *musb)
 	/* mentor core register starts at offset of 0x400 from musb base */
 	musb->mregs += wrp->musb_core_offset;
 
-	/* NOP driver needs change if supporting dual instance */
+	/* Register NOP driver */
 	usb_nop_xceiv_register();
 	musb->xceiv = usb_get_phy(USB_PHY_TYPE_USB2);
 	if (IS_ERR_OR_NULL(musb->xceiv))
@@ -456,7 +456,7 @@ static int dsps_musb_init(struct musb *musb)
 	return 0;
 err0:
 	usb_put_phy(musb->xceiv);
-	usb_nop_xceiv_unregister();
+	usb_nop_xceiv_unregister(musb->xceiv);
 	return status;
 }
 
@@ -472,9 +472,9 @@ static int dsps_musb_exit(struct musb *musb)
 	/* Shutdown the on-chip PHY and its PLL. */
 	musb_dsps_phy_control(glue, pdev->id, 0);
 
-	/* NOP driver needs change if supporting dual instance */
+	/* Unregister NOP driver */
 	usb_put_phy(musb->xceiv);
-	usb_nop_xceiv_unregister();
+	usb_nop_xceiv_unregister(musb->xceiv);
 
 	return 0;
 }

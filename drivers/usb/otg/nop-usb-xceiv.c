@@ -31,30 +31,69 @@
 #include <linux/dma-mapping.h>
 #include <linux/usb/otg.h>
 #include <linux/slab.h>
+#include <linux/idr.h>
 
 struct nop_usb_xceiv {
 	struct usb_phy		phy;
 	struct device		*dev;
+	struct platform_device	*pd;
 };
 
-static struct platform_device *pd;
+static DEFINE_IDA(nop_ida);
 
-void usb_nop_xceiv_register(void)
+static int nop_get_id(gfp_t gfp_mask)
 {
-	if (pd)
+	int ret, id;
+
+	ret = ida_pre_get(&nop_ida, gfp_mask);
+	if (!ret) {
+		pr_err("failed to reserve resource for id\n");
+		return -ENOMEM;
+	}
+
+	ret = ida_get_new(&nop_ida, &id);
+	if (ret < 0) {
+		pr_err("failed to allocate a new id\n");
+		return ret;
+	}
+
+	return id;
+}
+
+static void nop_put_id(int id)
+{
+
+	pr_debug("removing id %d\n", id);
+	ida_remove(&nop_ida, id);
+}
+
+void usb_nop_xceiv_register()
+{
+	struct platform_device *pd;
+	int id;
+
+	id = nop_get_id(GFP_KERNEL);
+	if (id < 0) {
+		pr_err("failed to allocate a new id\n");
 		return;
-	pd = platform_device_register_simple("nop_usb_xceiv", -1, NULL, 0);
+	}
+
+	pd = platform_device_register_simple("nop_usb_xceiv", id, NULL, 0);
 	if (!pd) {
-		printk(KERN_ERR "Unable to register usb nop transceiver\n");
+		pr_err("Unable to register usb nop transceiver\n");
 		return;
 	}
 }
 EXPORT_SYMBOL(usb_nop_xceiv_register);
 
-void usb_nop_xceiv_unregister(void)
+void usb_nop_xceiv_unregister(struct usb_phy *phy)
 {
+	struct nop_usb_xceiv *nop = container_of(phy,
+			struct nop_usb_xceiv, phy);
+	struct platform_device *pd = nop->pd;
+
 	platform_device_unregister(pd);
-	pd = NULL;
+	nop_put_id(pd->id);
 }
 EXPORT_SYMBOL(usb_nop_xceiv_unregister);
 
@@ -107,6 +146,7 @@ static int __devinit nop_usb_xceiv_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 
+	nop->pd			= pdev;
 	nop->dev		= &pdev->dev;
 	nop->phy.dev		= nop->dev;
 	nop->phy.label		= "nop-xceiv";
