@@ -95,7 +95,6 @@ extern void am35x_musb_reset(void);
 extern void am35x_musb_phy_power(u8 on);
 extern void am35x_musb_clear_irq(void);
 extern void am35x_set_mode(u8 musb_mode);
-extern void ti81xx_musb_phy_power(u8 on);
 
 /* AM35x */
 /* USB 2.0 PHY Control */
@@ -120,8 +119,8 @@ extern void ti81xx_musb_phy_power(u8 on);
 #define CONF2_DATPOL		(1 << 1)
 
 /* TI81XX specific definitions */
-#define USBCTRL0	0x620
-#define USBSTAT0	0x624
+#define MUSB_USBSS_REV_816X	0x9
+#define MUSB_USBSS_REV_814X	0xb
 
 /* TI816X PHY controls bits */
 #define TI816X_USBPHY0_NORMAL_MODE	(1 << 0)

@@ -26,7 +26,6 @@
 #include <plat/usb.h>
 
 static struct omap_musb_board_data musb_board_data = {
-	.set_phy_power	= ti81xx_musb_phy_power,
 	.interface_type	= MUSB_INTERFACE_ULPI,
 	.mode           = MUSB_OTG,
 	.power		= 500,
