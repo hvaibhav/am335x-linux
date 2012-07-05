@@ -140,16 +140,21 @@ static void musb_dsps_phy_control(struct dsps_glue *glue, u8 on)
 		if (glue->usbss_rev == MUSB_USBSS_REV_816X) {
 			usbphycfg |= TI816X_USBPHY0_NORMAL_MODE;
 			usbphycfg &= ~TI816X_USBPHY_REFCLK_OSC;
-		} else if (glue->usbss_rev == MUSB_USBSS_REV_814X) {
-			usbphycfg &= ~(USBPHY_CM_PWRDN | USBPHY_OTG_PWRDN
-				| USBPHY_DPINPUT | USBPHY_DMINPUT);
-			usbphycfg |= (USBPHY_OTGVDET_EN | USBPHY_OTGSESSEND_EN
-				| USBPHY_DPOPBUFCTL | USBPHY_DMOPBUFCTL);
+		} else if (glue->usbss_rev == MUSB_USBSS_REV_814X ||
+				glue->usbss_rev == MUSB_USBSS_REV_33XX) {
+			usbphycfg &= ~(USBPHY_CM_PWRDN | USBPHY_OTG_PWRDN);
+			usbphycfg |= USBPHY_OTGVDET_EN | USBPHY_OTGSESSEND_EN;
+			if (glue->usbss_rev == MUSB_USBSS_REV_814X) {
+				usbphycfg &= ~(USBPHY_DPINPUT | USBPHY_DMINPUT);
+				usbphycfg |= USBPHY_DPOPBUFCTL
+						| USBPHY_DMOPBUFCTL;
+			}
 		}
 	} else {
 		if (glue->usbss_rev == MUSB_USBSS_REV_816X)
 			usbphycfg &= ~TI816X_USBPHY0_NORMAL_MODE;
-		else if (glue->usbss_rev == MUSB_USBSS_REV_814X)
+		else if (glue->usbss_rev == MUSB_USBSS_REV_814X ||
+				glue->usbss_rev == MUSB_USBSS_REV_33XX)
 			usbphycfg |= USBPHY_CM_PWRDN | USBPHY_OTG_PWRDN;
 	}
 	__raw_writel(usbphycfg, glue->usb_ctrl);

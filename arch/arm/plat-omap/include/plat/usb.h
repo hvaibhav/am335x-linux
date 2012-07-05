@@ -121,6 +121,7 @@ extern void am35x_set_mode(u8 musb_mode);
 /* TI81XX specific definitions */
 #define MUSB_USBSS_REV_816X	0x9
 #define MUSB_USBSS_REV_814X	0xb
+#define MUSB_USBSS_REV_33XX	0xd
 
 /* TI816X PHY controls bits */
 #define TI816X_USBPHY0_NORMAL_MODE	(1 << 0)
