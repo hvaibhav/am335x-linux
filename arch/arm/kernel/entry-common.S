@@ -54,12 +54,7 @@ work_pending:
 	mov	r0, sp				@ 'regs'
 	mov	r2, why				@ 'syscall'
 	bl	do_work_pending
-	tst	r0, #1
-	beq	no_work_pending
-	mov	r0, sp				@ pointer to regs
-	ldmia	r0, {r0 - r5}			@ have to reload r0 - r5
-	b	local_restart			@ ... and off we go
-
+	b	no_work_pending
 /*
  * "slow" syscall return path.  "why" tells us if this was a real syscall.
  */
@@ -407,7 +402,6 @@ ENTRY(vector_swi)
 	eor	scno, scno, #__NR_SYSCALL_BASE	@ check OS number
 #endif
 
-local_restart:
 	ldr	r10, [tsk, #TI_FLAGS]		@ check for syscall tracing
 	stmdb	sp!, {r4, r5}			@ push fifth and sixth args
 
