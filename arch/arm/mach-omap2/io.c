@@ -38,6 +38,7 @@
 #include "powerdomain.h"
 #include "clockdomain.h"
 #include "common.h"
+#include "clock.h"
 #include "clock2xxx.h"
 #include "clock3xxx.h"
 #include "clock44xx.h"
@@ -474,6 +475,20 @@ void __init ti81xx_init_late(void)
 	omap_mux_late_init();
 	omap2_common_pm_late_init();
 	omap3_pm_init();
+}
+#endif
+
+#ifdef CONFIG_SOC_AM33XX
+void __init am33xx_init_early(void)
+{
+	omap2_set_globals_am33xx();
+	omap3xxx_check_revision();
+	ti81xx_check_features();
+	omap_common_init_early();
+	am33xx_voltagedomains_init();
+	am33xx_powerdomains_init();
+	am33xx_clockdomains_init();
+	am33xx_clk_init();
 }
 #endif
 
