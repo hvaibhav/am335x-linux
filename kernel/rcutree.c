@@ -1161,33 +1161,23 @@ static void rcu_gp_cleanup(struct rcu_state *rsp)
 	 * they can do to advance the grace period.  It is therefore
 	 * safe for us to drop the lock in order to mark the grace
 	 * period as completed in all of the rcu_node structures.
-	 *
-	 * But if this CPU needs another grace period, it will take
-	 * care of this while initializing the next grace period.
-	 * We use RCU_WAIT_TAIL instead of the usual RCU_DONE_TAIL
-	 * because the callbacks have not yet been advanced: Those
-	 * callbacks are waiting on the grace period that just now
-	 * completed.
 	 */
-	rdp = this_cpu_ptr(rsp->rda);
-	if (*rdp->nxttail[RCU_WAIT_TAIL] == NULL) {
-		raw_spin_unlock_irqrestore(&rnp->lock, flags);
+	raw_spin_unlock_irqrestore(&rnp->lock, flags);
 
-		/*
-		 * Propagate new ->completed value to rcu_node
-		 * structures so that other CPUs don't have to
-		 * wait until the start of the next grace period
-		 * to process their callbacks.
-		 */
-		rcu_for_each_node_breadth_first(rsp, rnp) {
-			raw_spin_lock_irqsave(&rnp->lock, flags);
-			rnp->completed = rsp->gpnum;
-			raw_spin_unlock_irqrestore(&rnp->lock, flags);
-			cond_resched();
-		}
-		rnp = rcu_get_root(rsp);
+	/*
+	 * Propagate new ->completed value to rcu_node structures so
+	 * that other CPUs don't have to wait until the start of the next
+	 * grace period to process their callbacks.  This also avoids
+	 * some nasty RCU grace-period initialization races.
+	 */
+	rcu_for_each_node_breadth_first(rsp, rnp) {
 		raw_spin_lock_irqsave(&rnp->lock, flags);
+		rnp->completed = rsp->gpnum;
+		raw_spin_unlock_irqrestore(&rnp->lock, flags);
+		cond_resched();
 	}
+	rnp = rcu_get_root(rsp);
+	raw_spin_lock_irqsave(&rnp->lock, flags);
 
 	rsp->completed = rsp->gpnum; /* Declare grace period done. */
 	trace_rcu_grace_period(rsp->name, rsp->completed, "end");
