@@ -203,8 +203,8 @@
 #define OMAP3430_EN_MMC2_SHIFT				25
 #define OMAP3430_EN_MMC1_MASK				(1 << 24)
 #define OMAP3430_EN_MMC1_SHIFT				24
-#define OMAP3430_EN_UART4_MASK				(1 << 23)
-#define OMAP3430_EN_UART4_SHIFT				23
+#define AM35XX_EN_UART4_MASK				(1 << 23)
+#define AM35XX_EN_UART4_SHIFT				23
 #define OMAP3430_EN_MCSPI4_MASK				(1 << 21)
 #define OMAP3430_EN_MCSPI4_SHIFT			21
 #define OMAP3430_EN_MCSPI3_MASK				(1 << 20)
@@ -409,6 +409,14 @@
  * submodule to exit hardreset
  */
 #define MAX_MODULE_HARDRESET_WAIT		10000
+
+/*
+ * Maximum time(us) it takes to output the signal WUCLKOUT of the last
+ * pad of the I/O ring after asserting WUCLKIN high.  Tero measured
+ * the actual time at 7 to 8 microseconds on OMAP3 and 2 to 4
+ * microseconds on OMAP4, so this timeout may be too high.
+ */
+#define MAX_IOPAD_LATCH_TIME			100
 
 # ifndef __ASSEMBLER__
 extern void __iomem *prm_base;
