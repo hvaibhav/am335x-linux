@@ -187,6 +187,8 @@ usb_phy_shutdown(struct usb_phy *x)
 extern struct usb_phy *usb_get_phy(enum usb_phy_type type);
 extern struct usb_phy *devm_usb_get_phy(struct device *dev,
 	enum usb_phy_type type);
+extern struct usb_phy *devm_usb_get_phy_by_phandle(struct device *dev,
+	const char *phandle);
 extern void usb_put_phy(struct usb_phy *);
 extern void devm_usb_put_phy(struct device *dev, struct usb_phy *x);
 extern const char *otg_state_string(enum usb_otg_state state);
@@ -198,6 +200,12 @@ static inline struct usb_phy *usb_get_phy(enum usb_phy_type type)
 
 static inline struct usb_phy *devm_usb_get_phy(struct device *dev,
 	enum usb_phy_type type)
+{
+	return NULL;
+}
+
+extern struct usb_phy *devm_usb_get_phy_by_phandle(struct device *dev,
+	const char *phandle)
 {
 	return NULL;
 }
