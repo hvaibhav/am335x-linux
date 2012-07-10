@@ -12,3 +12,6 @@ AM33XX MUSB GLUE
    represents PERIPHERAL.
  - power : Should be "250". This signifies the controller can supply upto
    500mA when operating in host mode.
+
+NOP USB PHY
+ - compatible : Should be "nop-xceiv-usb"
