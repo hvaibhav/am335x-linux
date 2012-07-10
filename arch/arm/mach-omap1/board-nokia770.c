@@ -12,6 +12,8 @@
 #include <linux/init.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
+#include <linux/platform_data/cbus.h>
+#include <linux/irq.h>
 #include <linux/input.h>
 #include <linux/clk.h>
 #include <linux/omapfb.h>
@@ -26,7 +28,6 @@
 #include <asm/mach/map.h>
 
 #include <plat/mux.h>
-#include <plat/usb.h>
 #include <plat/board.h>
 #include <plat/keypad.h>
 #include <plat/lcd_mipid.h>
@@ -34,6 +35,7 @@
 #include <plat/clock.h>
 
 #include <mach/hardware.h>
+#include <mach/usb.h>
 
 #include "common.h"
 
@@ -82,6 +84,104 @@ static struct platform_device nokia770_kp_device = {
 	.num_resources	= ARRAY_SIZE(nokia770_kp_resources),
 	.resource	= nokia770_kp_resources,
 };
+
+#if defined(CONFIG_CBUS) || defined(CONFIG_CBUS_MODULE)
+
+static struct cbus_host_platform_data nokia770_cbus_data = {
+	.clk_gpio	= OMAP_MPUIO(9),
+	.dat_gpio	= OMAP_MPUIO(10),
+	.sel_gpio	= OMAP_MPUIO(11),
+};
+
+static struct platform_device nokia770_cbus_device = {
+	.name		= "cbus",
+	.id		= -1,
+	.dev		= {
+		.platform_data = &nokia770_cbus_data,
+	},
+};
+
+static struct resource retu_resource[] = {
+	{
+		.start	= -EINVAL, /* set later */
+		.flags	= IORESOURCE_IRQ,
+	},
+};
+
+static struct platform_device retu_device = {
+	.name		= "retu",
+	.id		= -1,
+	.resource	= retu_resource,
+	.num_resources	= ARRAY_SIZE(retu_resource),
+	.dev		= {
+		.parent	= &nokia770_cbus_device.dev,
+	},
+};
+
+static struct resource tahvo_resource[] = {
+	{
+		.start	= -EINVAL, /* set later */
+		.flags	= IORESOURCE_IRQ,
+	}
+};
+
+static struct platform_device tahvo_device = {
+	.name		= "tahvo",
+	.id		= -1,
+	.resource	= tahvo_resource,
+	.num_resources	= ARRAY_SIZE(tahvo_resource),
+	.dev		= {
+		.parent	= &nokia770_cbus_device.dev,
+	},
+};
+
+static void __init nokia770_cbus_init(void)
+{
+	int		ret;
+
+	platform_device_register(&nokia770_cbus_device);
+
+	ret = gpio_request(62, "RETU irq");
+	if (ret < 0) {
+		pr_err("retu: Unable to reserve IRQ GPIO\n");
+		return;
+	}
+
+	ret = gpio_direction_input(62);
+	if (ret < 0) {
+		pr_err("retu: Unable to change gpio direction\n");
+		gpio_free(62);
+		return;
+	}
+
+	irq_set_irq_type(gpio_to_irq(62), IRQ_TYPE_EDGE_RISING);
+	retu_resource[0].start = gpio_to_irq(62);
+	platform_device_register(&retu_device);
+
+	ret = gpio_request(40, "TAHVO irq");
+	if (ret) {
+		pr_err("tahvo: Unable to reserve IRQ GPIO\n");
+		gpio_free(62);
+		return;
+	}
+
+	ret = gpio_direction_input(40);
+	if (ret) {
+		pr_err("tahvo: Unable to change direction\n");
+		gpio_free(62);
+		gpio_free(40);
+		return;
+	}
+
+	tahvo_resource[0].start = gpio_to_irq(40);
+	platform_device_register(&tahvo_device);
+}
+
+#else
+static inline void __init nokia770_cbus_init(void)
+{
+}
+#endif
 
 static struct platform_device *nokia770_devices[] __initdata = {
 	&nokia770_kp_device,
@@ -185,7 +285,6 @@ static int nokia770_mmc_get_cover_state(struct device *dev, int slot)
 
 static struct omap_mmc_platform_data nokia770_mmc2_data = {
 	.nr_slots                       = 1,
-	.dma_mask			= 0xffffffff,
 	.max_freq                       = 12000000,
 	.slots[0]       = {
 		.set_power		= nokia770_mmc_set_power,
@@ -235,6 +334,7 @@ static void __init omap_nokia770_init(void)
 	/* Unmask SleepX signal */
 	omap_writew((omap_readw(0xfffb5004) & ~2), 0xfffb5004);
 
+	nokia770_cbus_init();
 	platform_add_devices(nokia770_devices, ARRAY_SIZE(nokia770_devices));
 	nokia770_spi_board_info[1].irq = gpio_to_irq(15);
 	spi_register_board_info(nokia770_spi_board_info,
