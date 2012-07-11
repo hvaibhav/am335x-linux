@@ -3463,6 +3463,13 @@ asmlinkage void __sched schedule(void)
 }
 EXPORT_SYMBOL(schedule);
 
+asmlinkage void __sched schedule_user(void)
+{
+	rcu_user_exit();
+	schedule();
+	rcu_user_enter();
+}
+
 /**
  * schedule_preempt_disabled - called with preemption disabled
  *
