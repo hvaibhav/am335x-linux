@@ -1055,25 +1055,6 @@ static int rcu_gp_init(struct rcu_state *rsp)
 	rsp->gpnum++;
 	trace_rcu_grace_period(rsp->name, rsp->gpnum, "start");
 	record_gp_stall_check_time(rsp);
-
-	/*
-	 * Because this CPU just now started the new grace period, we
-	 * know that all of its callbacks will be covered by this upcoming
-	 * grace period, even the ones that were registered arbitrarily
-	 * recently.    Therefore, advance all RCU_NEXT_TAIL callbacks
-	 * to RCU_NEXT_READY_TAIL.  When the CPU later recognizes the
-	 * start of the new grace period, it will advance all callbacks
-	 * one position, which will cause all of its current outstanding
-	 * callbacks to be handled by the newly started grace period.
-	 *
-	 * Other CPUs cannot be sure exactly when the grace period started.
-	 * Therefore, their recently registered callbacks must pass through
-	 * an additional RCU_NEXT_READY stage, so that they will be handled
-	 * by the next RCU grace period.
-	 */
-	rdp = __this_cpu_ptr(rsp->rda);
-	rdp->nxttail[RCU_NEXT_READY_TAIL] = rdp->nxttail[RCU_NEXT_TAIL];
-
 	raw_spin_unlock_irqrestore(&rnp->lock, flags);
 
 	/* Exclude any concurrent CPU-hotplug operations. */
