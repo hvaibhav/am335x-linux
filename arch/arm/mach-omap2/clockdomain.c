@@ -63,9 +63,10 @@ static struct clockdomain *_clkdm_lookup(const char *name)
  * _clkdm_register - register a clockdomain
  * @clkdm: struct clockdomain * to register
  *
- * Adds a clockdomain to the internal clockdomain list.
- * Returns -EINVAL if given a null pointer, -EEXIST if a clockdomain is
- * already registered by the provided name, or 0 upon success.
+ * Adds a clockdomain to the internal clockdomain list.  Returns
+ * -EINVAL if given a null pointer, -EEXIST if a clockdomain is
+ * already registered by the provided name or if @clkdm has already
+ * been registered, or 0 upon success.
  */
 static int _clkdm_register(struct clockdomain *clkdm)
 {
@@ -73,6 +74,11 @@ static int _clkdm_register(struct clockdomain *clkdm)
 
 	if (!clkdm || !clkdm->name)
 		return -EINVAL;
+
+	if (clkdm->_flags & _CLKDM_FLAG_REGISTERED) {
+		pr_err("clockdomain: %s: already registered\n", clkdm->name);
+		return -EEXIST;
+	}
 
 	pwrdm = pwrdm_lookup(clkdm->pwrdm.name);
 	if (!pwrdm) {
@@ -82,15 +88,18 @@ static int _clkdm_register(struct clockdomain *clkdm)
 	}
 	clkdm->pwrdm.ptr = pwrdm;
 
-	/* Verify that the clockdomain is not already registered */
-	if (_clkdm_lookup(clkdm->name))
+	if (_clkdm_lookup(clkdm->name)) {
+		pr_err("clockdomain: %s: name already registered\n",
+		       clkdm->name);
 		return -EEXIST;
+	}
 
 	list_add(&clkdm->node, &clkdm_list);
 
 	pwrdm_add_clkdm(pwrdm, clkdm);
 
 	spin_lock_init(&clkdm->lock);
+	clkdm->_flags |= _CLKDM_FLAG_REGISTERED;
 
 	pr_debug("clockdomain: registered %s\n", clkdm->name);
 
