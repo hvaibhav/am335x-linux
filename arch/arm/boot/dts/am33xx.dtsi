@@ -159,5 +159,10 @@
 			compatible = "ti,omap3-wdt";
 			ti,hwmods = "wd_timer2";
 		};
+
+		rtc {
+			compatible = "ti,da830-rtc";
+			ti,hwmods = "rtc";
+		};
 	};
 };
