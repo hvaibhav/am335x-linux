@@ -1466,6 +1466,7 @@ static struct omap_hwmod_class am33xx_rtc_hwmod_class = {
 
 static struct omap_hwmod_irq_info am33xx_rtc_irqs[] = {
 	{ .irq = 75 },
+	{ .irq = 76 },
 	{ .irq = -1 }
 };
 
@@ -2322,7 +2323,7 @@ static struct omap_hwmod_addr_space am33xx_rtc_addrs[] = {
 static struct omap_hwmod_ocp_if am33xx_l4_wkup__rtc = {
 	.master		= &am33xx_l4_wkup_hwmod,
 	.slave		= &am33xx_rtc_hwmod,
-	.clk		= "l4_rtc_gclk",
+	.clk		= "clkdiv32k_ick",
 	.addr		= am33xx_rtc_addrs,
 	.user		= OCP_USER_MPU,
 };
