@@ -20,6 +20,7 @@
 #include <linux/rtc.h>
 #include <linux/bcd.h>
 #include <linux/platform_device.h>
+#include <linux/pm_runtime.h>
 
 #include <asm/io.h>
 
@@ -322,6 +323,10 @@ static int __init omap_rtc_probe(struct platform_device *pdev)
 		goto fail;
 	}
 
+	/* Enable the clock/module so that we can access the registers */
+	pm_runtime_enable(&pdev->dev);
+	pm_runtime_get_sync(&pdev->dev);
+
 	rtc = rtc_device_register(pdev->name, &pdev->dev,
 			&omap_rtc_ops, THIS_MODULE);
 	if (IS_ERR(rtc)) {
@@ -420,6 +425,11 @@ static int __exit omap_rtc_remove(struct platform_device *pdev)
 		free_irq(omap_rtc_alarm, rtc);
 
 	rtc_device_unregister(rtc);
+
+	/* Disable the clock/module */
+	pm_runtime_put_sync(&pdev->dev);
+	pm_runtime_disable(&pdev->dev);
+
 	iounmap(rtc_base);
 	release_mem_region(mem->start, resource_size(mem));
 	return 0;
@@ -442,11 +452,17 @@ static int omap_rtc_suspend(struct platform_device *pdev, pm_message_t state)
 	else
 		rtc_write(0, OMAP_RTC_INTERRUPTS_REG);
 
+	/* Disable the clock/module */
+	pm_runtime_put_sync(&pdev->dev);
+
 	return 0;
 }
 
 static int omap_rtc_resume(struct platform_device *pdev)
 {
+	/* Enable the clock/module so that we can access the registers */
+	pm_runtime_get_sync(&pdev->dev);
+
 	if (device_may_wakeup(&pdev->dev))
 		disable_irq_wake(omap_rtc_alarm);
 	else
