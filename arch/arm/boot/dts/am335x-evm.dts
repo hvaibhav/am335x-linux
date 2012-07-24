@@ -34,5 +34,9 @@
 		uart1: serial@44E09000 {
 			status = "okay";
 		};
+
+		dcan1: d_can@481D0000 {
+			status = "okay";
+		};
 	};
 };
