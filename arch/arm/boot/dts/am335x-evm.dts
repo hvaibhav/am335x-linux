@@ -18,6 +18,18 @@
 		reg = <0x80000000 0x10000000>; /* 256 MB */
 	};
 
+	am3358_pinmux: pinmux@44E10800 {
+		pinctrl-names = "default";
+		pinctrl-0 = <&d_can1_pins>;
+
+		d_can1_pins: pinmux_d_can_pins {
+			pinctrl-single,pins = <
+				0x168 0x2	/* uart0_ctsn.d_can1_tx, OUTPUT | MODE2 */
+				0x16C 0x32	/* uart0_rtsn.d_can1_rx, INPUT_PULLUP | MODE2 */
+			>;
+		};
+	};
+
 	ocp {
 		uart1: serial@44E09000 {
 			status = "okay";
