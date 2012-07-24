@@ -38,6 +38,13 @@
 
 #include "c_can.h"
 
+#define AM33XX_SCM_BASE			0x44E10000
+#define AM33XX_L4_WK_IOOFF		0xb5000000
+#define DCAN_RAMINIT_OFF		0x0644
+#define DCAN_RAMINIT_START(n)		(0x1 << n)
+#define IOMEM(x)			((void __force __iomem *)(x))
+#define AM33XX_REGADDR(base, pa)	IOMEM((base) + (pa) + AM33XX_L4_WK_IOOFF)
+
 /*
  * 16-bit c_can registers can be arranged differently in the memory
  * architecture of different implementations. For example: 16-bit
@@ -66,6 +73,21 @@ static void c_can_plat_write_reg_aligned_to_32bit(struct c_can_priv *priv,
 						enum reg index, u16 val)
 {
 	writew(val, priv->base + 2 * priv->regs[index]);
+}
+
+void c_can_reset_ram(unsigned int instance, unsigned int enable)
+{
+	u32 val;
+
+	val = readl(AM33XX_REGADDR(AM33XX_SCM_BASE, DCAN_RAMINIT_OFF));
+	if (enable) {
+		val &= ~DCAN_RAMINIT_START(instance);
+		val |= DCAN_RAMINIT_START(instance);
+		writel(val, AM33XX_REGADDR(AM33XX_SCM_BASE, DCAN_RAMINIT_OFF));
+	} else {
+		val &= ~DCAN_RAMINIT_START(instance);
+		writel(val, AM33XX_REGADDR(AM33XX_SCM_BASE, DCAN_RAMINIT_OFF));
+	}
 }
 
 static struct platform_device_id c_can_id_table[] = {

@@ -172,5 +172,6 @@ struct net_device *alloc_c_can_dev(void);
 void free_c_can_dev(struct net_device *dev);
 int register_c_can_dev(struct net_device *dev);
 void unregister_c_can_dev(struct net_device *dev);
+void c_can_reset_ram(unsigned int instance, unsigned int enable);
 
 #endif /* C_CAN_H */

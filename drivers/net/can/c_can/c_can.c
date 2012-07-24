@@ -1071,6 +1071,8 @@ static int c_can_open(struct net_device *dev)
 	struct c_can_priv *priv = netdev_priv(dev);
 
 	c_can_pm_runtime_get_sync(priv);
+	/* Initialize DCAN RAM */
+	c_can_reset_ram(1, 1);
 
 	/* open the can device */
 	err = open_candev(dev);
@@ -1099,6 +1101,8 @@ static int c_can_open(struct net_device *dev)
 exit_irq_fail:
 	close_candev(dev);
 exit_open_fail:
+	/* De-Initialize DCAN RAM */
+	c_can_reset_ram(1, 0);
 	c_can_pm_runtime_put_sync(priv);
 	return err;
 }
@@ -1112,6 +1116,9 @@ static int c_can_close(struct net_device *dev)
 	c_can_stop(dev);
 	free_irq(dev->irq, dev);
 	close_candev(dev);
+
+	/* De-Initialize DCAN RAM */
+	c_can_reset_ram(1, 0);
 	c_can_pm_runtime_put_sync(priv);
 
 	return 0;
