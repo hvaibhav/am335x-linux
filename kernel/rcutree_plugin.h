@@ -551,6 +551,8 @@ static int rcu_preempt_offline_tasks(struct rcu_state *rsp,
 
 	/* If we are on an internal node, complain bitterly. */
 	WARN_ON_ONCE(rnp != rdp->mynode);
+	/* If any offline CPUs are blocking current GP, complain bitterly. */
+	WARN_ON_ONCE(rnp->qsmask != 0);
 
 	/*
 	 * Move tasks up to root rcu_node.  Don't try to get fancy for
@@ -561,7 +563,7 @@ static int rcu_preempt_offline_tasks(struct rcu_state *rsp,
 	 * absolutely necessary, but this is a good performance/complexity
 	 * tradeoff.
 	 */
-	if (rcu_preempt_blocked_readers_cgp(rnp) && rnp->qsmask == 0)
+	if (rcu_preempt_blocked_readers_cgp(rnp))
 		retval |= RCU_OFL_TASKS_NORM_GP;
 	if (rcu_preempted_readers_exp(rnp))
 		retval |= RCU_OFL_TASKS_EXP_GP;
