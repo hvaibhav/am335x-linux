@@ -1,0 +1,63 @@
+* Texas Instruments SoC audio setups with TLV320AIC3X Codec
+
+Required properties:
+- compatible : "ti,davinci-evm-audio"
+- ti,model : The user-visible name of this sound complex.
+- ti,audio-routing : A list of the connections between audio components.
+  Each entry is a pair of strings, the first being the connection's sink,
+  the second being the connection's source. Valid names for sources and
+  sinks are the codec's pins, and the jacks on the board:
+
+  Codec pins:
+
+  * MIC3L
+  * MIC3R
+  * LINE1L
+  * LINE2L
+  * LINE1R
+  * LINE2R
+
+  Board connectors:
+
+  * Headphone Jack
+  * Line Out
+  * Mic Jack
+
+- ti,mcasp-controller : The phandle of the McASP controller
+- ti,audio-codec : The phandle of the TLV320AIC3x audio codec
+- ti,codec-clock-rate : The Codec Clock rate (in Hz) applied to the Codec
+
+- dai-data		: A list of DAI data used by SOC code to register
+			  DAI, Codecs platform.
+			  The string index "should" be as shown below.
+dai-data =
+"<DAI Name>", 		"<DAI Stream Name>",
+"<CODEC DAI Name>",	"<true if evm_aic3x_init is required, else false>",
+"<evm ops required (evm_ops or evm_spdif_ops)>";
+
+Here fields
+"<DAI Name>"		: used to indicate the DAI Name
+"<DAI Stream Name>"	: used to indicate the Stream Name
+"<CODEC DAI Name>"	: used to bind the link between Codec DAI and ASOC DAI
+
+Machine related options
+"<true/false>"		: Whether the machine specific initialization
+			: evm_aic3x_init() is required
+
+"<evm ops required>"	: Which hardware ops function is to be used.
+			: (evm_ops or evm_spdif_ops)
+
+
+Example:
+
+sound {
+	compatible = "ti,davinci-evm-audio";
+	ti,model = "DA830 EVM";
+	ti,audio-codec = <&tlv320aic3x>;
+	ti,mcasp-controller = <&mcasp1>;
+	ti,codec-clock-rate = <12000000>;
+	dai-data =
+		"TLV320AIC3X", 		"AIC3X",
+		"tlv320aic3x-hifi",	"true",
+		"evm-ops";
+};
