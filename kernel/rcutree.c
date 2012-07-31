@@ -447,6 +447,7 @@ void rcu_irq_exit(void)
 		rcu_idle_enter_common(rdtp, oldval);
 	local_irq_restore(flags);
 }
+EXPORT_SYMBOL_GPL(rcu_irq_exit);
 
 /*
  * rcu_idle_exit_common - inform RCU that current CPU is moving away from idle
@@ -542,6 +543,7 @@ void rcu_irq_enter(void)
 		rcu_idle_exit_common(rdtp, oldval);
 	local_irq_restore(flags);
 }
+EXPORT_SYMBOL_GPL(rcu_irq_enter);
 
 /**
  * rcu_nmi_enter - inform RCU of entry to NMI context
