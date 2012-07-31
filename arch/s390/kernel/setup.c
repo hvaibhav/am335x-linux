@@ -980,6 +980,14 @@ static void __init setup_hwcaps(void)
 	 */
 	elf_hwcap |= HWCAP_S390_HIGH_GPRS;
 
+#if defined(CONFIG_64BIT)
+	/*
+	 * Transactional execution support HWCAP_S390_TE is bit 10.
+	 */
+	if (test_facility(50) && test_facility(73))
+		elf_hwcap |= HWCAP_S390_TE;
+#endif
+
 	get_cpu_id(&cpu_id);
 	switch (cpu_id.machine) {
 	case 0x9672:
