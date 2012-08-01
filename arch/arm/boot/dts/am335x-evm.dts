@@ -17,4 +17,19 @@
 		device_type = "memory";
 		reg = <0x80000000 0x10000000>; /* 256 MB */
 	};
+
 };
+
+&mcasp1 {
+	op-mode = <0>;		/* MCASP_IIS_MODE */
+	tdm-slots = <2>;
+	num-serializer = <16>;
+	serial-dir = <	/* 0: INACTIVE, 1: TX, 2: RX */
+			0 0 1 2
+			0 0 0 0
+			0 0 0 0
+			0 0 0 0 >;
+	tx-num-evt = <1>;
+	rx-num-evt = <1>;
+};
+
