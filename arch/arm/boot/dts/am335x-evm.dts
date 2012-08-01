@@ -57,3 +57,11 @@
 	rx-num-evt = <1>;
 };
 
+&i2c2 {
+	clock-frequency = <400000>;
+
+	tlv320aic3x: tlv320aic3x@1b {
+		compatible = "ti,tlv320aic3x";
+		reg = <0x1b>;
+	};
+};
