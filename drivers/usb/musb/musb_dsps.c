@@ -416,9 +416,11 @@ static int dsps_musb_init(struct musb *musb)
 {
 	struct device *dev = musb->controller;
 	struct platform_device *pdev = to_platform_device(dev);
+	struct platform_device *parent_pdev = to_platform_device(dev->parent);
 	struct dsps_glue *glue = dev_get_drvdata(dev->parent);
 	const struct dsps_musb_wrapper *wrp = glue->wrp;
 	void __iomem *reg_base = musb->ctrl_base;
+	char name[10];
 	u32 rev, val;
 	int status;
 
@@ -426,7 +428,8 @@ static int dsps_musb_init(struct musb *musb)
 	musb->mregs += wrp->musb_core_offset;
 
 	/* Get the NOP PHY */
-	musb->xceiv = usb_get_phy(USB_PHY_TYPE_USB2);
+	sprintf(name, "usb%d-phy", pdev->id);
+	musb->xceiv = devm_usb_get_phy_by_phandle(&parent_pdev->dev, name);
 	if (IS_ERR_OR_NULL(musb->xceiv))
 		return -ENODEV;
 
