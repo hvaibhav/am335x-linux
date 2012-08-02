@@ -49,6 +49,8 @@ struct thread_info {
 /* How to get the thread information struct from C.  */
 register struct thread_info *__current_thread_info __asm__("$8");
 #define current_thread_info()  __current_thread_info
+#define current_pt_regs() \
+  ((struct pt_regs *) ((char *)current_thread_info() + 2*PAGE_SIZE) - 1)
 
 #endif /* __ASSEMBLY__ */
 
