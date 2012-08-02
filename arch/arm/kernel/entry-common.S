@@ -91,6 +91,22 @@ ENTRY(ret_from_fork)
 	b	ret_slow_syscall
 ENDPROC(ret_from_fork)
 
+/*
+ * turn a kernel thread into userland process
+ * use: ret_from_kernel_execve(struct pt_regs *normal, struct pt_regs *new)
+ */
+ENTRY(ret_from_kernel_execve)
+	mov	why, #0			@ not a syscall
+	str	why, [r1, #S_R0]	@ ... and we want 0 in ->ARM_r0 as well
+	mov	r2, #S_FRAME_SIZE
+	bl	memmove			@ copy regs to normal location; return
+					@ value is in r0 and it's the same as
+					@ the first argument, so r0 is unchanged.
+	get_thread_info tsk		@ thread structure
+	mov	sp, r0			@ stack pointer just under pt_regs
+	b	ret_slow_syscall
+ENDPROC(ret_from_kernel_execve)
+
 	.equ NR_syscalls,0
 #define CALL(x) .equ NR_syscalls,NR_syscalls+1
 #include "calls.S"
