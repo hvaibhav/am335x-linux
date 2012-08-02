@@ -97,6 +97,12 @@ static inline struct thread_info *current_thread_info(void)
 	return (struct thread_info *)(sp & ~(THREAD_SIZE - 1));
 }
 
+static inline struct pt_regs *current_pt_regs(void)
+{
+	register unsigned long sp asm ("sp");
+	return (struct pt_regs *)((sp | (THREAD_SIZE - 1)) - 7) - 1;
+}
+
 #define thread_saved_pc(tsk)	\
 	((unsigned long)(task_thread_info(tsk)->cpu_context.pc))
 #define thread_saved_sp(tsk)	\
