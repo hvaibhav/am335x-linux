@@ -2319,6 +2319,22 @@ int dump_seek(struct file *file, loff_t off)
 }
 EXPORT_SYMBOL(dump_seek);
 
+#ifdef __ARCH_WANT_SYS_EXECVE
+SYSCALL_DEFINE3(execve,
+		const char __user *, filename,
+		const char __user *const __user *, argv,
+		const char __user *const __user *, envp)
+{
+	const char *path = getname(filename);
+	int error = PTR_ERR(path);
+	if (!IS_ERR(path)) {
+		error = do_execve(path, argv, envp, current_pt_regs());
+		putname(path);
+	}
+	return error;
+}
+#endif
+
 #ifdef __ARCH_WANT_KERNEL_EXECVE
 int kernel_execve(const char *filename,
 		  const char *const argv[],
