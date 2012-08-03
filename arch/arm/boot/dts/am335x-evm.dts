@@ -65,3 +65,17 @@
 		reg = <0x1b>;
 	};
 };
+
+&am3358_pinmux {
+	pinctrl-names = "default";
+	pinctrl-0 = <&evm_pins>;
+
+	evm_pins: pinmux_evm_pins {
+		pinctrl-single,pins = <
+			/* I2C1 */
+			0x158 0x62	/* spi0_d1.i2c1_sda,  MODE2 | INPUT | SLEWCTRL_SLOW */
+			0x15c 0x62	/* spi0_cs0.i2c1_scl, MODE2 | INPUT | SLEWCTRL_SLOW */
+
+		>;
+	};
+};
