@@ -76,6 +76,12 @@
 			0x158 0x62	/* spi0_d1.i2c1_sda,  MODE2 | INPUT | SLEWCTRL_SLOW */
 			0x15c 0x62	/* spi0_cs0.i2c1_scl, MODE2 | INPUT | SLEWCTRL_SLOW */
 
+			/* McASP1 */
+			0x10c 0x24	/* mii1_crs.mcasp1_aclkx,	MODE4 | INPUT_PULLDOWN */
+			0x110 0x24	/* mii1_rxerr.mcasp1_fsx,	MODE4 | INPUT_PULLDOWN */
+			0x108 0x24	/* mii1_col.mcasp1_axr2,	MODE4 | INPUT_PULLDOWN */
+			0x144 0x24	/* rmii1_refclk.mcasp1_axr3,	MODE4 | INPUT_PULLDOWN */
+
 		>;
 	};
 };
