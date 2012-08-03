@@ -592,6 +592,7 @@
 #define MIPS_CONF3_VEIC		(_ULCAST_(1) <<  6)
 #define MIPS_CONF3_LPA		(_ULCAST_(1) <<  7)
 #define MIPS_CONF3_DSP		(_ULCAST_(1) << 10)
+#define MIPS_CONF3_DSP2P	(_ULCAST_(1) << 11)
 #define MIPS_CONF3_ULRI		(_ULCAST_(1) << 13)
 
 #define MIPS_CONF4_MMUSIZEEXT	(_ULCAST_(255) << 0)
