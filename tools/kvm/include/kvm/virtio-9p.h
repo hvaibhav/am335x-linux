@@ -7,12 +7,12 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <linux/list.h>
+#include <linux/rbtree.h>
 
 #define NUM_VIRT_QUEUES		1
 #define VIRTQUEUE_NUM		128
 #define	VIRTIO_9P_DEFAULT_TAG	"kvm_9p"
 #define VIRTIO_9P_HDR_LEN	(sizeof(u32)+sizeof(u8)+sizeof(u16))
-#define VIRTIO_9P_MAX_FID	16384
 #define VIRTIO_9P_VERSION_DOTL	"9P2000.L"
 #define MAX_TAG_LEN		32
 
@@ -26,11 +26,11 @@ struct p9_msg {
 struct p9_fid {
 	u32			fid;
 	u32			uid;
-	u8			is_dir;
 	char			abs_path[PATH_MAX];
 	char			*path;
 	DIR			*dir;
 	int			fd;
+	struct rb_node		node;
 };
 
 struct p9_dev_job {
@@ -42,6 +42,7 @@ struct p9_dev_job {
 struct p9_dev {
 	struct list_head	list;
 	struct virtio_device	vdev;
+	struct rb_root		fids;
 
 	struct virtio_9p_config	*config;
 	u32			features;
@@ -49,7 +50,6 @@ struct p9_dev {
 	/* virtio queue */
 	struct virt_queue	vqs[NUM_VIRT_QUEUES];
 	struct p9_dev_job	jobs[NUM_VIRT_QUEUES];
-	struct p9_fid		fids[VIRTIO_9P_MAX_FID];
 	char			root_dir[PATH_MAX];
 };
 
