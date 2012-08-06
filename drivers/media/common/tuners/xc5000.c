@@ -54,7 +54,7 @@ struct xc5000_priv {
 	struct list_head hybrid_tuner_instance_list;
 
 	u32 if_khz;
-	u32 xtal_khz;
+	u16 xtal_khz;
 	u32 freq_hz;
 	u32 bandwidth;
 	u8  video_standard;
@@ -210,13 +210,15 @@ struct xc5000_fw_cfg {
 	u16 size;
 };
 
+#define XC5000A_FIRMWARE "dvb-fe-xc5000-1.6.114.fw"
 static const struct xc5000_fw_cfg xc5000a_1_6_114 = {
-	.name = "dvb-fe-xc5000-1.6.114.fw",
+	.name = XC5000A_FIRMWARE,
 	.size = 12401,
 };
 
+#define XC5000C_FIRMWARE "dvb-fe-xc5000c-41.024.5.fw"
 static const struct xc5000_fw_cfg xc5000c_41_024_5 = {
-	.name = "dvb-fe-xc5000c-41.024.5.fw",
+	.name = XC5000C_FIRMWARE,
 	.size = 16497,
 };
 
@@ -631,7 +633,10 @@ static int xc5000_fwupload(struct dvb_frontend *fe)
 		ret = xc_load_i2c_sequence(fe,  fw->data);
 		if (XC_RESULT_SUCCESS == ret)
 			ret = xc_set_xtal(fe);
-		printk(KERN_INFO "xc5000: firmware upload complete...\n");
+		if (XC_RESULT_SUCCESS == ret)
+			printk(KERN_INFO "xc5000: firmware upload complete...\n");
+		else
+			printk(KERN_ERR "xc5000: firmware upload failed...\n");
 	}
 
 out:
@@ -714,6 +719,12 @@ static int xc5000_set_params(struct dvb_frontend *fe)
 		priv->freq_hz = freq - 1750000;
 		priv->video_standard = DTV6;
 		break;
+	case SYS_ISDBT:
+		/* All ISDB-T are currently for 6 MHz bw */
+		if (!bw)
+			bw = 6000000;
+		/* fall to OFDM handling */
+	case SYS_DMBTH:
 	case SYS_DVBT:
 	case SYS_DVBT2:
 		dprintk(1, "%s() OFDM\n", __func__);
@@ -1250,3 +1261,5 @@ EXPORT_SYMBOL(xc5000_attach);
 MODULE_AUTHOR("Steven Toth");
 MODULE_DESCRIPTION("Xceive xc5000 silicon tuner driver");
 MODULE_LICENSE("GPL");
+MODULE_FIRMWARE(XC5000A_FIRMWARE);
+MODULE_FIRMWARE(XC5000C_FIRMWARE);

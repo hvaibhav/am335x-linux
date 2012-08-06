@@ -50,7 +50,7 @@ static const struct v4l2_file_operations ivtv_v4l2_enc_fops = {
 	.read = ivtv_v4l2_read,
 	.write = ivtv_v4l2_write,
 	.open = ivtv_v4l2_open,
-	.unlocked_ioctl = ivtv_v4l2_ioctl,
+	.unlocked_ioctl = video_ioctl2,
 	.release = ivtv_v4l2_close,
 	.poll = ivtv_v4l2_enc_poll,
 };
@@ -60,7 +60,7 @@ static const struct v4l2_file_operations ivtv_v4l2_dec_fops = {
 	.read = ivtv_v4l2_read,
 	.write = ivtv_v4l2_write,
 	.open = ivtv_v4l2_open,
-	.unlocked_ioctl = ivtv_v4l2_ioctl,
+	.unlocked_ioctl = video_ioctl2,
 	.release = ivtv_v4l2_close,
 	.poll = ivtv_v4l2_dec_poll,
 };
@@ -228,6 +228,10 @@ static int ivtv_prep_dev(struct ivtv *itv, int type)
 	s->vdev->release = video_device_release;
 	s->vdev->tvnorms = V4L2_STD_ALL;
 	s->vdev->lock = &itv->serialize_lock;
+	/* Locking in file operations other than ioctl should be done
+	   by the driver, not the V4L2 core.
+	   This driver needs auditing so that this flag can be removed. */
+	set_bit(V4L2_FL_LOCK_ALL_FOPS, &s->vdev->flags);
 	set_bit(V4L2_FL_USE_FH_PRIO, &s->vdev->flags);
 	ivtv_set_funcs(s->vdev);
 	return 0;

@@ -27,6 +27,7 @@
 #include <linux/slab.h>
 #include <linux/usb.h>
 #include <linux/vmalloc.h>
+#include <sound/ac97_codec.h>
 #include <media/v4l2-common.h>
 
 #include "em28xx.h"
@@ -139,6 +140,7 @@ int em28xx_read_reg(struct em28xx *dev, u16 reg)
 {
 	return em28xx_read_reg_req(dev, USB_REQ_GET_STATUS, reg);
 }
+EXPORT_SYMBOL_GPL(em28xx_read_reg);
 
 /*
  * em28xx_write_regs_req()
@@ -205,6 +207,7 @@ int em28xx_write_regs(struct em28xx *dev, u16 reg, char *buf, int len)
 
 	return rc;
 }
+EXPORT_SYMBOL_GPL(em28xx_write_regs);
 
 /* Write a single register */
 int em28xx_write_reg(struct em28xx *dev, u16 reg, u8 val)
@@ -239,6 +242,7 @@ int em28xx_write_reg_bits(struct em28xx *dev, u16 reg, u8 val,
 
 	return em28xx_write_regs(dev, reg, &newval, 1);
 }
+EXPORT_SYMBOL_GPL(em28xx_write_reg_bits);
 
 /*
  * em28xx_is_ac97_ready()
@@ -323,13 +327,13 @@ struct em28xx_vol_itable {
 };
 
 static struct em28xx_vol_itable inputs[] = {
-	{ EM28XX_AMUX_VIDEO, 	AC97_VIDEO_VOL   },
-	{ EM28XX_AMUX_LINE_IN,	AC97_LINEIN_VOL  },
-	{ EM28XX_AMUX_PHONE,	AC97_PHONE_VOL   },
-	{ EM28XX_AMUX_MIC,	AC97_MIC_VOL     },
-	{ EM28XX_AMUX_CD,	AC97_CD_VOL      },
-	{ EM28XX_AMUX_AUX,	AC97_AUX_VOL     },
-	{ EM28XX_AMUX_PCM_OUT,	AC97_PCM_OUT_VOL },
+	{ EM28XX_AMUX_VIDEO,	AC97_VIDEO	},
+	{ EM28XX_AMUX_LINE_IN,	AC97_LINE	},
+	{ EM28XX_AMUX_PHONE,	AC97_PHONE	},
+	{ EM28XX_AMUX_MIC,	AC97_MIC	},
+	{ EM28XX_AMUX_CD,	AC97_CD		},
+	{ EM28XX_AMUX_AUX,	AC97_AUX	},
+	{ EM28XX_AMUX_PCM_OUT,	AC97_PCM	},
 };
 
 static int set_ac97_input(struct em28xx *dev)
@@ -412,11 +416,11 @@ struct em28xx_vol_otable {
 };
 
 static const struct em28xx_vol_otable outputs[] = {
-	{ EM28XX_AOUT_MASTER, AC97_MASTER_VOL      },
-	{ EM28XX_AOUT_LINE,   AC97_LINE_LEVEL_VOL  },
-	{ EM28XX_AOUT_MONO,   AC97_MASTER_MONO_VOL },
-	{ EM28XX_AOUT_LFE,    AC97_LFE_MASTER_VOL  },
-	{ EM28XX_AOUT_SURR,   AC97_SURR_MASTER_VOL },
+	{ EM28XX_AOUT_MASTER, AC97_MASTER		},
+	{ EM28XX_AOUT_LINE,   AC97_HEADPHONE		},
+	{ EM28XX_AOUT_MONO,   AC97_MASTER_MONO		},
+	{ EM28XX_AOUT_LFE,    AC97_CENTER_LFE_MASTER	},
+	{ EM28XX_AOUT_SURR,   AC97_SURROUND_MASTER	},
 };
 
 int em28xx_audio_analog_set(struct em28xx *dev)
@@ -456,9 +460,9 @@ int em28xx_audio_analog_set(struct em28xx *dev)
 	if (dev->audio_mode.ac97 != EM28XX_NO_AC97) {
 		int vol;
 
-		em28xx_write_ac97(dev, AC97_POWER_DOWN_CTRL, 0x4200);
-		em28xx_write_ac97(dev, AC97_EXT_AUD_CTRL, 0x0031);
-		em28xx_write_ac97(dev, AC97_PCM_IN_SRATE, 0xbb80);
+		em28xx_write_ac97(dev, AC97_POWERDOWN, 0x4200);
+		em28xx_write_ac97(dev, AC97_EXTENDED_STATUS, 0x0031);
+		em28xx_write_ac97(dev, AC97_PCM_LR_ADC_RATE, 0xbb80);
 
 		/* LSB: left channel - both channels with the same level */
 		vol = (0x1f - dev->volume) | ((0x1f - dev->volume) << 8);
@@ -484,7 +488,7 @@ int em28xx_audio_analog_set(struct em28xx *dev)
 			   channels */
 			sel |= (sel << 8);
 
-			em28xx_write_ac97(dev, AC97_RECORD_SELECT, sel);
+			em28xx_write_ac97(dev, AC97_REC_SEL, sel);
 		}
 	}
 
@@ -666,7 +670,6 @@ int em28xx_capture_start(struct em28xx *dev, int start)
 
 	return rc;
 }
-EXPORT_SYMBOL_GPL(em28xx_capture_start);
 
 int em28xx_vbi_supported(struct em28xx *dev)
 {
@@ -975,7 +978,6 @@ void em28xx_uninit_isoc(struct em28xx *dev, enum em28xx_mode mode)
 	else
 		isoc_bufs = &dev->isoc_ctl.analog_bufs;
 
-	dev->isoc_ctl.nfields = -1;
 	for (i = 0; i < isoc_bufs->num_bufs; i++) {
 		urb = isoc_bufs->urb[i];
 		if (urb) {
@@ -1006,6 +1008,31 @@ void em28xx_uninit_isoc(struct em28xx *dev, enum em28xx_mode mode)
 	em28xx_capture_start(dev, 0);
 }
 EXPORT_SYMBOL_GPL(em28xx_uninit_isoc);
+
+/*
+ * Stop URBs
+ */
+void em28xx_stop_urbs(struct em28xx *dev)
+{
+	int i;
+	struct urb *urb;
+	struct em28xx_usb_isoc_bufs *isoc_bufs = &dev->isoc_ctl.digital_bufs;
+
+	em28xx_isocdbg("em28xx: called em28xx_stop_urbs\n");
+
+	for (i = 0; i < isoc_bufs->num_bufs; i++) {
+		urb = isoc_bufs->urb[i];
+		if (urb) {
+			if (!irqs_disabled())
+				usb_kill_urb(urb);
+			else
+				usb_unlink_urb(urb);
+		}
+	}
+
+	em28xx_capture_start(dev, 0);
+}
+EXPORT_SYMBOL_GPL(em28xx_stop_urbs);
 
 /*
  * Allocate URBs

@@ -637,11 +637,9 @@ static void stb0899_init_calc(struct stb0899_state *state)
 	struct stb0899_internal *internal = &state->internal;
 	int master_clk;
 	u8 agc[2];
-	u8 agc1cn;
 	u32 reg;
 
 	/* Read registers (in burst mode)	*/
-	agc1cn = stb0899_read_reg(state, STB0899_AGC1CN);
 	stb0899_read_regs(state, STB0899_AGC1REF, agc, 2); /* AGC1R and AGC2O	*/
 
 	/* Initial calculations	*/
@@ -823,15 +821,12 @@ static int stb0899_send_diseqc_burst(struct dvb_frontend *fe, fe_sec_mini_cmd_t 
 
 static int stb0899_diseqc_init(struct stb0899_state *state)
 {
-	struct dvb_diseqc_master_cmd tx_data;
 /*
 	struct dvb_diseqc_slave_reply rx_data;
 */
-	u8 f22_tx, f22_rx, reg;
+	u8 f22_tx, reg;
 
 	u32 mclk, tx_freq = 22000;/* count = 0, i; */
-	tx_data.msg[0] = 0xe2;
-	tx_data.msg_len = 3;
 	reg = stb0899_read_reg(state, STB0899_DISCNTRL2);
 	STB0899_SETFIELD_VAL(ONECHIP_TRX, reg, 0);
 	stb0899_write_reg(state, STB0899_DISCNTRL2, reg);
@@ -849,7 +844,6 @@ static int stb0899_diseqc_init(struct stb0899_state *state)
 	f22_tx = mclk / (tx_freq * 32);
 	stb0899_write_reg(state, STB0899_DISF22, f22_tx); /* DiSEqC Tx freq	*/
 	state->rx_freq = 20000;
-	f22_rx = mclk / (state->rx_freq * 32);
 
 	return 0;
 }
@@ -1135,7 +1129,6 @@ static int stb0899_read_ber(struct dvb_frontend *fe, u32 *ber)
 	struct stb0899_internal *internal	= &state->internal;
 
 	u8  lsb, msb;
-	u32 i;
 
 	*ber = 0;
 
@@ -1143,14 +1136,9 @@ static int stb0899_read_ber(struct dvb_frontend *fe, u32 *ber)
 	case SYS_DVBS:
 	case SYS_DSS:
 		if (internal->lock) {
-			/* average 5 BER values	*/
-			for (i = 0; i < 5; i++) {
-				msleep(100);
-				lsb = stb0899_read_reg(state, STB0899_ECNT1L);
-				msb = stb0899_read_reg(state, STB0899_ECNT1M);
-				*ber += MAKEWORD16(msb, lsb);
-			}
-			*ber /= 5;
+			lsb = stb0899_read_reg(state, STB0899_ECNT1L);
+			msb = stb0899_read_reg(state, STB0899_ECNT1M);
+			*ber = MAKEWORD16(msb, lsb);
 			/* Viterbi Check	*/
 			if (STB0899_GETFIELD(VSTATUS_PRFVIT, internal->v_status)) {
 				/* Error Rate		*/
@@ -1163,13 +1151,9 @@ static int stb0899_read_ber(struct dvb_frontend *fe, u32 *ber)
 		break;
 	case SYS_DVBS2:
 		if (internal->lock) {
-			/* Average 5 PER values	*/
-			for (i = 0; i < 5; i++) {
-				msleep(100);
-				lsb = stb0899_read_reg(state, STB0899_ECNT1L);
-				msb = stb0899_read_reg(state, STB0899_ECNT1M);
-				*ber += MAKEWORD16(msb, lsb);
-			}
+			lsb = stb0899_read_reg(state, STB0899_ECNT1L);
+			msb = stb0899_read_reg(state, STB0899_ECNT1M);
+			*ber = MAKEWORD16(msb, lsb);
 			/* ber = ber * 10 ^ 7	*/
 			*ber *= 10000000;
 			*ber /= (-1 + (1 << (4 + 2 * STB0899_GETFIELD(NOE, internal->err_ctrl))));

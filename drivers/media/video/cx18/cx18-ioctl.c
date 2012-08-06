@@ -1137,27 +1137,9 @@ static long cx18_default(struct file *file, void *fh, bool valid_prio,
 	}
 
 	default:
-		return -EINVAL;
+		return -ENOTTY;
 	}
 	return 0;
-}
-
-long cx18_v4l2_ioctl(struct file *filp, unsigned int cmd,
-		    unsigned long arg)
-{
-	struct video_device *vfd = video_devdata(filp);
-	struct cx18_open_id *id = file2id(filp);
-	struct cx18 *cx = id->cx;
-	long res;
-
-	mutex_lock(&cx->serialize_lock);
-
-	if (cx18_debug & CX18_DBGFLG_IOCTL)
-		vfd->debug = V4L2_DEBUG_IOCTL | V4L2_DEBUG_IOCTL_ARG;
-	res = video_ioctl2(filp, cmd, arg);
-	vfd->debug = 0;
-	mutex_unlock(&cx->serialize_lock);
-	return res;
 }
 
 static const struct v4l2_ioctl_ops cx18_ioctl_ops = {

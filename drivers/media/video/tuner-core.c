@@ -228,6 +228,16 @@ static int fe_has_signal(struct dvb_frontend *fe)
 	return strength;
 }
 
+static int fe_get_afc(struct dvb_frontend *fe)
+{
+	s32 afc = 0;
+
+	if (fe->ops.tuner_ops.get_afc)
+		fe->ops.tuner_ops.get_afc(fe, &afc);
+
+	return 0;
+}
+
 static int fe_set_config(struct dvb_frontend *fe, void *priv_cfg)
 {
 	struct dvb_tuner_ops *fe_tuner_ops = &fe->ops.tuner_ops;
@@ -247,6 +257,7 @@ static struct analog_demod_ops tuner_analog_ops = {
 	.set_params     = fe_set_params,
 	.standby        = fe_standby,
 	.has_signal     = fe_has_signal,
+	.get_afc        = fe_get_afc,
 	.set_config     = fe_set_config,
 	.tuner_status   = tuner_status
 };
@@ -1178,7 +1189,9 @@ static int tuner_g_tuner(struct v4l2_subdev *sd, struct v4l2_tuner *vt)
 		return 0;
 	if (vt->type == t->mode && analog_ops->get_afc)
 		vt->afc = analog_ops->get_afc(&t->fe);
-	if (t->mode != V4L2_TUNER_RADIO) {
+	if (analog_ops->has_signal)
+		vt->signal = analog_ops->has_signal(&t->fe);
+	if (vt->type != V4L2_TUNER_RADIO) {
 		vt->capability |= V4L2_TUNER_CAP_NORM;
 		vt->rangelow = tv_range[0] * 16;
 		vt->rangehigh = tv_range[1] * 16;
@@ -1197,8 +1210,6 @@ static int tuner_g_tuner(struct v4l2_subdev *sd, struct v4l2_tuner *vt)
 				V4L2_TUNER_SUB_STEREO :
 				V4L2_TUNER_SUB_MONO;
 		}
-		if (analog_ops->has_signal)
-			vt->signal = analog_ops->has_signal(&t->fe);
 		vt->audmode = t->audmode;
 	}
 	vt->capability |= V4L2_TUNER_CAP_LOW | V4L2_TUNER_CAP_STEREO;
@@ -1241,8 +1252,10 @@ static int tuner_log_status(struct v4l2_subdev *sd)
 	return 0;
 }
 
-static int tuner_suspend(struct i2c_client *c, pm_message_t state)
+#ifdef CONFIG_PM_SLEEP
+static int tuner_suspend(struct device *dev)
 {
+	struct i2c_client *c = to_i2c_client(dev);
 	struct tuner *t = to_tuner(i2c_get_clientdata(c));
 	struct analog_demod_ops *analog_ops = &t->fe.ops.analog_ops;
 
@@ -1254,8 +1267,9 @@ static int tuner_suspend(struct i2c_client *c, pm_message_t state)
 	return 0;
 }
 
-static int tuner_resume(struct i2c_client *c)
+static int tuner_resume(struct device *dev)
 {
+	struct i2c_client *c = to_i2c_client(dev);
 	struct tuner *t = to_tuner(i2c_get_clientdata(c));
 
 	tuner_dbg("resume\n");
@@ -1266,6 +1280,7 @@ static int tuner_resume(struct i2c_client *c)
 
 	return 0;
 }
+#endif
 
 static int tuner_command(struct i2c_client *client, unsigned cmd, void *arg)
 {
@@ -1310,6 +1325,10 @@ static const struct v4l2_subdev_ops tuner_ops = {
  * I2C structs and module init functions
  */
 
+static const struct dev_pm_ops tuner_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(tuner_suspend, tuner_resume)
+};
+
 static const struct i2c_device_id tuner_id[] = {
 	{ "tuner", }, /* autodetect */
 	{ }
@@ -1320,12 +1339,11 @@ static struct i2c_driver tuner_driver = {
 	.driver = {
 		.owner	= THIS_MODULE,
 		.name	= "tuner",
+		.pm	= &tuner_pm_ops,
 	},
 	.probe		= tuner_probe,
 	.remove		= tuner_remove,
 	.command	= tuner_command,
-	.suspend	= tuner_suspend,
-	.resume		= tuner_resume,
 	.id_table	= tuner_id,
 };
 

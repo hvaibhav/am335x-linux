@@ -475,6 +475,7 @@ static struct i2c_client em28xx_client_template = {
  */
 static char *i2c_devs[128] = {
 	[0x4a >> 1] = "saa7113h",
+	[0x52 >> 1] = "drxk",
 	[0x60 >> 1] = "remote IR sensor",
 	[0x8e >> 1] = "remote IR sensor",
 	[0x86 >> 1] = "tda9887",
@@ -552,9 +553,6 @@ int em28xx_i2c_register(struct em28xx *dev)
 
 	if (i2c_scan)
 		em28xx_do_i2c_scan(dev);
-
-	/* Instantiate the IR receiver device, if present */
-	em28xx_register_i2c_ir(dev);
 
 	return 0;
 }
