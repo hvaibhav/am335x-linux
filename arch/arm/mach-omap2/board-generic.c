@@ -37,11 +37,27 @@ static struct of_device_id omap_dt_match_table[] __initdata = {
 	{ }
 };
 
+/*
+ * Lookup table for attaching a specific name and platform_data pointer to
+ * devices as they get created by of_platform_populate(). Ideally this table
+ * would not exist, but the current clock implementation depends on some devices
+ * having a specific name OR to satisfy NULL con_id requirement from driver.
+ */
+static const struct of_dev_auxdata am33xx_auxdata_lookup[] __initconst = {
+	OF_DEV_AUXDATA("bosch,d_can", 0x481cc000, "d_can.0", NULL),
+	OF_DEV_AUXDATA("bosch,d_can", 0x481d0000, "d_can.1", NULL),
+	{ },
+};
+
 static void __init omap_generic_init(void)
 {
 	omap_sdrc_init(NULL, NULL);
 
-	of_platform_populate(NULL, omap_dt_match_table, NULL, NULL);
+	if (of_machine_is_compatible("ti,am33xx"))
+		of_platform_populate(NULL, omap_dt_match_table,
+				am33xx_auxdata_lookup, NULL);
+	else
+		of_platform_populate(NULL, omap_dt_match_table, NULL, NULL);
 }
 
 #ifdef CONFIG_SOC_OMAP2420
