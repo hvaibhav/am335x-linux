@@ -30,15 +30,22 @@ struct rmobile_pm_domain *to_rmobile_pd(struct generic_pm_domain *d)
 }
 
 #ifdef CONFIG_PM
-extern void rmobile_init_pm_domain(struct rmobile_pm_domain *rmobile_pd);
-extern void rmobile_add_device_to_domain(struct rmobile_pm_domain *rmobile_pd,
-					struct platform_device *pdev);
-extern void rmobile_pm_add_subdomain(struct rmobile_pm_domain *rmobile_pd,
-				    struct rmobile_pm_domain *rmobile_sd);
+extern void rmobile_init_domains(struct rmobile_pm_domain domains[], int num);
+extern void rmobile_add_device_to_domain_td(const char *domain_name,
+					    struct platform_device *pdev,
+					    struct gpd_timing_data *td);
+
+static inline void rmobile_add_device_to_domain(const char *domain_name,
+						struct platform_device *pdev)
+{
+	rmobile_add_device_to_domain_td(domain_name, pdev, NULL);
+}
+
 #else
-#define rmobile_init_pm_domain(pd) do { } while (0)
-#define rmobile_add_device_to_domain(pd, pdev) do { } while (0)
-#define rmobile_pm_add_subdomain(pd, sd) do { } while (0)
+
+#define rmobile_init_domains(domains, num) do { } while (0)
+#define rmobile_add_device_to_domain_td(name, pdev, td) do { } while (0)
+#define rmobile_add_device_to_domain(name, pdev) do { } while (0)
 #endif /* CONFIG_PM */
 
 #endif /* PM_RMOBILE_H */

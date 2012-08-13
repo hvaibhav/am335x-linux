@@ -71,20 +71,7 @@
 
 #ifdef CONFIG_PM
 
-struct rmobile_pm_domain sh7372_pd_a4lc = {
-	.genpd.name = "A4LC",
-	.bit_shift = 1,
-};
-
-struct rmobile_pm_domain sh7372_pd_a4mp = {
-	.genpd.name = "A4MP",
-	.bit_shift = 2,
-};
-
-struct rmobile_pm_domain sh7372_pd_d4 = {
-	.genpd.name = "D4",
-	.bit_shift = 3,
-};
+#define PM_DOMAIN_ON_OFF_LATENCY_NS	250000
 
 static int sh7372_a4r_pd_suspend(void)
 {
@@ -93,39 +80,25 @@ static int sh7372_a4r_pd_suspend(void)
 	return 0;
 }
 
-struct rmobile_pm_domain sh7372_pd_a4r = {
-	.genpd.name = "A4R",
-	.bit_shift = 5,
-	.suspend = sh7372_a4r_pd_suspend,
-	.resume = sh7372_intcs_resume,
-};
+static bool a4s_suspend_ready;
 
-struct rmobile_pm_domain sh7372_pd_a3rv = {
-	.genpd.name = "A3RV",
-	.bit_shift = 6,
-};
-
-struct rmobile_pm_domain sh7372_pd_a3ri = {
-	.genpd.name = "A3RI",
-	.bit_shift = 8,
-};
-
-static int sh7372_pd_a4s_suspend(void)
+static int sh7372_a4s_pd_suspend(void)
 {
 	/*
 	 * The A4S domain contains the CPU core and therefore it should
-	 * only be turned off if the CPU is in use.
+	 * only be turned off if the CPU is not in use.  This may happen
+	 * during system suspend, when SYSC is going to be used for generating
+	 * resume signals and a4s_suspend_ready is set to let
+	 * sh7372_enter_suspend() know that it can turn A4S off.
 	 */
+	a4s_suspend_ready = true;
 	return -EBUSY;
 }
 
-struct rmobile_pm_domain sh7372_pd_a4s = {
-	.genpd.name = "A4S",
-	.bit_shift = 10,
-	.gov = &pm_domain_always_on_gov,
-	.no_debug = true,
-	.suspend = sh7372_pd_a4s_suspend,
-};
+static void sh7372_a4s_pd_resume(void)
+{
+	a4s_suspend_ready = false;
+}
 
 static int sh7372_a3sp_pd_suspend(void)
 {
@@ -136,18 +109,80 @@ static int sh7372_a3sp_pd_suspend(void)
 	return console_suspend_enabled ? 0 : -EBUSY;
 }
 
-struct rmobile_pm_domain sh7372_pd_a3sp = {
-	.genpd.name = "A3SP",
-	.bit_shift = 11,
-	.gov = &pm_domain_always_on_gov,
-	.no_debug = true,
-	.suspend = sh7372_a3sp_pd_suspend,
+static struct rmobile_pm_domain sh7372_pm_domains[] = {
+	{
+		.genpd.name = "A4LC",
+		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.bit_shift = 1,
+	},
+	{
+		.genpd.name = "A4MP",
+		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.bit_shift = 2,
+	},
+	{
+		.genpd.name = "D4",
+		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.bit_shift = 3,
+	},
+	{
+		.genpd.name = "A4R",
+		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.bit_shift = 5,
+		.suspend = sh7372_a4r_pd_suspend,
+		.resume = sh7372_intcs_resume,
+	},
+	{
+		.genpd.name = "A3RV",
+		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.bit_shift = 6,
+	},
+	{
+		.genpd.name = "A3RI",
+		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.bit_shift = 8,
+	},
+	{
+		.genpd.name = "A4S",
+		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.bit_shift = 10,
+		.gov = &pm_domain_always_on_gov,
+		.no_debug = true,
+		.suspend = sh7372_a4s_pd_suspend,
+		.resume = sh7372_a4s_pd_resume,
+	},
+	{
+		.genpd.name = "A3SP",
+		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.bit_shift = 11,
+		.gov = &pm_domain_always_on_gov,
+		.no_debug = true,
+		.suspend = sh7372_a3sp_pd_suspend,
+	},
+	{
+		.genpd.name = "A3SG",
+		.genpd.power_on_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.genpd.power_off_latency_ns = PM_DOMAIN_ON_OFF_LATENCY_NS,
+		.bit_shift = 13,
+	},
 };
 
-struct rmobile_pm_domain sh7372_pd_a3sg = {
-	.genpd.name = "A3SG",
-	.bit_shift = 13,
-};
+void __init sh7372_init_pm_domains(void)
+{
+	rmobile_init_domains(sh7372_pm_domains, ARRAY_SIZE(sh7372_pm_domains));
+	pm_genpd_add_subdomain_names("A4LC", "A3RV");
+	pm_genpd_add_subdomain_names("A4R", "A4LC");
+	pm_genpd_add_subdomain_names("A4S", "A3SG");
+	pm_genpd_add_subdomain_names("A4S", "A3SP");
+}
 
 #endif /* CONFIG_PM */
 
@@ -390,8 +425,7 @@ static int sh7372_enter_suspend(suspend_state_t suspend_state)
 
 	/* check active clocks to determine potential wakeup sources */
 	if (sh7372_sysc_valid(&msk, &msk2)) {
-		if (!console_suspend_enabled &&
-		    sh7372_pd_a4s.genpd.status == GPD_STATE_POWER_OFF) {
+		if (!console_suspend_enabled && a4s_suspend_ready) {
 			/* convert INTC mask/sense to SYSC mask/sense */
 			sh7372_setup_sysc(msk, msk2);
 
@@ -425,7 +459,7 @@ static int sh7372_pm_notifier_fn(struct notifier_block *notifier,
 		 * executed during system suspend and resume, respectively, so
 		 * that those functions don't crash while accessing the INTCS.
 		 */
-		pm_genpd_poweron(&sh7372_pd_a4r.genpd);
+		pm_genpd_name_poweron("A4R");
 		break;
 	case PM_POST_SUSPEND:
 		pm_genpd_poweroff_unused();
