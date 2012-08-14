@@ -578,6 +578,7 @@ static struct kmemleak_object *create_object(unsigned long ptr, size_t size,
 	if (node != &object->tree_node) {
 		kmemleak_stop("Cannot insert 0x%lx into the object search tree "
 			      "(already existing)\n", ptr);
+		kmem_cache_free(object_cache, object);
 		object = lookup_object(ptr, 1);
 		spin_lock(&object->lock);
 		dump_object_info(object);
