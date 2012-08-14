@@ -386,6 +386,10 @@ enum {
 /* DIGITAL2 bits */
 #define AC_DIG2_CC			(0x7f<<0)
 
+/* DIGITAL3 bits */
+#define AC_DIG3_ICT			(0xf<<0)
+#define AC_DIG3_KAE			(1<<7)
+
 /* Pin widget control - 8bit */
 #define AC_PINCTL_EPT			(0x3<<0)
 #define AC_PINCTL_EPT_NATIVE		0
@@ -1072,7 +1076,7 @@ static inline void snd_hda_power_down(struct hda_codec *codec) {}
 /*
  * patch firmware
  */
-int snd_hda_load_patch(struct hda_bus *bus, const char *patch);
+int snd_hda_load_patch(struct hda_bus *bus, size_t size, const void *buf);
 #endif
 
 /*
