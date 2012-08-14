@@ -465,7 +465,7 @@ int __init fsl_add_bridge(struct device_node *dev, int is_primary)
 			iounmap(hose->cfg_data);
 		iounmap(hose->cfg_addr);
 		pcibios_free_controller(hose);
-		return 0;
+		return -ENODEV;
 	}
 
 	setup_pci_cmd(hose);
@@ -818,6 +818,7 @@ static const struct of_device_id pci_ids[] = {
 	{ .compatible = "fsl,p1010-pcie", },
 	{ .compatible = "fsl,p1023-pcie", },
 	{ .compatible = "fsl,p4080-pcie", },
+	{ .compatible = "fsl,qoriq-pcie-v2.4", },
 	{ .compatible = "fsl,qoriq-pcie-v2.3", },
 	{ .compatible = "fsl,qoriq-pcie-v2.2", },
 	{},
@@ -827,6 +828,7 @@ struct device_node *fsl_pci_primary;
 
 void __devinit fsl_pci_init(void)
 {
+	int ret;
 	struct device_node *node;
 	struct pci_controller *hose;
 	dma_addr_t max = 0xffffffff;
@@ -855,10 +857,12 @@ void __devinit fsl_pci_init(void)
 			if (!fsl_pci_primary)
 				fsl_pci_primary = node;
 
-			fsl_add_bridge(node, fsl_pci_primary == node);
-			hose = pci_find_hose_for_OF_device(node);
-			max = min(max, hose->dma_window_base_cur +
-					hose->dma_window_size);
+			ret = fsl_add_bridge(node, fsl_pci_primary == node);
+			if (ret == 0) {
+				hose = pci_find_hose_for_OF_device(node);
+				max = min(max, hose->dma_window_base_cur +
+						hose->dma_window_size);
+			}
 		}
 	}
 
@@ -868,11 +872,8 @@ void __devinit fsl_pci_init(void)
 	 * we need SWIOTLB to handle buffers located outside of
 	 * dma capable memory region
 	 */
-	if (memblock_end_of_DRAM() - 1 > max) {
+	if (memblock_end_of_DRAM() - 1 > max)
 		ppc_swiotlb_enable = 1;
-		set_pci_dma_ops(&swiotlb_dma_ops);
-		ppc_md.pci_dma_dev_setup = pci_dma_dev_setup_swiotlb;
-	}
 #endif
 }
 #endif
