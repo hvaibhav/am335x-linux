@@ -423,12 +423,12 @@ static int __init dmi_present(const char __iomem *p)
 
 		if (dmi_walk_early(dmi_decode) == 0) {
 			if (dmi_ver)
-				printk(KERN_INFO "SMBIOS %d.%d present.\n",
+				pr_info("SMBIOS %d.%d present.\n",
 				       dmi_ver >> 8, dmi_ver & 0xFF);
 			else {
 				dmi_ver = (buf[14] & 0xF0) << 4 |
 					   (buf[14] & 0x0F);
-				printk(KERN_INFO "Legacy DMI %d.%d present.\n",
+				pr_info("Legacy DMI %d.%d present.\n",
 				       dmi_ver >> 8, dmi_ver & 0xFF);
 			}
 			dmi_dump_ids();
@@ -452,13 +452,12 @@ static int __init smbios_present(const char __iomem *p)
 		switch (dmi_ver) {
 		case 0x021F:
 		case 0x0221:
-			printk(KERN_DEBUG "SMBIOS version fixup(2.%d->2.%d)\n",
+			pr_debug("SMBIOS version fixup(2.%d->2.%d)\n",
 			       dmi_ver & 0xFF, 3);
 			dmi_ver = 0x0203;
 			break;
 		case 0x0233:
-			printk(KERN_DEBUG "SMBIOS version fixup(2.%d->2.%d)\n",
-			       51, 6);
+			pr_debug("SMBIOS version fixup(2.%d->2.%d)\n", 51, 6);
 			dmi_ver = 0x0206;
 			break;
 		}
