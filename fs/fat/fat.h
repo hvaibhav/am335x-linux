@@ -5,6 +5,7 @@
 #include <linux/string.h>
 #include <linux/nls.h>
 #include <linux/fs.h>
+#include <linux/hash.h>
 #include <linux/mutex.h>
 #include <linux/ratelimit.h>
 #include <linux/msdos_fs.h>
@@ -46,7 +47,8 @@ struct fat_mount_options {
 		 usefree:1,	  /* Use free_clusters for FAT32 */
 		 tz_utc:1,	  /* Filesystem timestamps are in UTC */
 		 rodir:1,	  /* allow ATTR_RO for directory */
-		 discard:1;	  /* Issue discard requests on deletions */
+		 discard:1,	  /* Issue discard requests on deletions */
+		 nfs:1;		  /* Do extra work needed for NFS export */
 };
 
 #define FAT_HASH_BITS	8
@@ -88,6 +90,9 @@ struct msdos_sb_info {
 
 	spinlock_t inode_hash_lock;
 	struct hlist_head inode_hashtable[FAT_HASH_SIZE];
+
+	spinlock_t dir_hash_lock;
+	struct hlist_head dir_hashtable[FAT_HASH_SIZE];
 };
 
 #define FAT_CACHE_VALID	0	/* special case for valid cache */
@@ -110,6 +115,7 @@ struct msdos_inode_info {
 	int i_attrs;		/* unused attribute bits */
 	loff_t i_pos;		/* on-disk position of directory entry or 0 */
 	struct hlist_node i_fat_hash;	/* hash by i_location */
+	struct hlist_node i_dir_hash;	/* hash by i_logstart */
 	struct rw_semaphore truncate_lock; /* protect bmap against truncate */
 	struct inode vfs_inode;
 };
@@ -262,7 +268,7 @@ extern int fat_subdirs(struct inode *dir);
 extern int fat_scan(struct inode *dir, const unsigned char *name,
 		    struct fat_slot_info *sinfo);
 extern int fat_get_dotdot_entry(struct inode *dir, struct buffer_head **bh,
-				struct msdos_dir_entry **de, loff_t *i_pos);
+				struct msdos_dir_entry **de);
 extern int fat_alloc_new_dir(struct inode *dir, struct timespec *ts);
 extern int fat_add_entries(struct inode *dir, void *slots, int nr_slots,
 			   struct fat_slot_info *sinfo);
@@ -341,6 +347,11 @@ extern int fat_fill_super(struct super_block *sb, void *data, int silent,
 
 extern int fat_flush_inodes(struct super_block *sb, struct inode *i1,
 		            struct inode *i2);
+static inline unsigned long fat_dir_hash(int logstart)
+{
+	return hash_32(logstart, FAT_HASH_BITS);
+}
+
 /* fat/misc.c */
 extern __printf(3, 4) __cold
 void __fat_fs_error(struct super_block *sb, int report, const char *fmt, ...);
@@ -365,6 +376,14 @@ extern int fat_sync_bhs(struct buffer_head **bhs, int nr_bhs);
 
 int fat_cache_init(void);
 void fat_cache_destroy(void);
+
+/* fat/nfs.c */
+struct fid;
+extern struct dentry *fat_fh_to_dentry(struct super_block *sb, struct fid *fid,
+				       int fh_len, int fh_type);
+extern struct dentry *fat_fh_to_parent(struct super_block *sb, struct fid *fid,
+				       int fh_len, int fh_type);
+extern struct dentry *fat_get_parent(struct dentry *child_dir);
 
 /* helper for printk */
 typedef unsigned long long	llu;
