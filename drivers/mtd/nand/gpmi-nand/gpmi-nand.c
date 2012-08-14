@@ -27,6 +27,7 @@
 #include <linux/pinctrl/consumer.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
+#include <linux/of_mtd.h>
 #include "gpmi-nand.h"
 
 /* add our owner bbt descriptor */
@@ -930,7 +931,7 @@ exit_nfc:
 	return ret;
 }
 
-static void gpmi_ecc_write_page(struct mtd_info *mtd, struct nand_chip *chip,
+static int gpmi_ecc_write_page(struct mtd_info *mtd, struct nand_chip *chip,
 				const uint8_t *buf, int oob_required)
 {
 	struct gpmi_nand_data *this = chip->priv;
@@ -972,7 +973,7 @@ static void gpmi_ecc_write_page(struct mtd_info *mtd, struct nand_chip *chip,
 				&payload_virt, &payload_phys);
 		if (ret) {
 			pr_err("Inadequate payload DMA buffer\n");
-			return;
+			return 0;
 		}
 
 		ret = send_page_prepare(this,
@@ -1002,6 +1003,8 @@ exit_auxiliary:
 				nfc_geo->payload_size,
 				payload_virt, payload_phys);
 	}
+
+	return 0;
 }
 
 /*
@@ -1063,6 +1066,9 @@ exit_auxiliary:
  * ecc.read_page or ecc.read_page_raw function. Thus, the fact that MTD wants an
  * ECC-based or raw view of the page is implicit in which function it calls
  * (there is a similar pair of ECC-based/raw functions for writing).
+ *
+ * FIXME: The following paragraph is incorrect, now that there exist
+ * ecc.read_oob_raw and ecc.write_oob_raw functions.
  *
  * Since MTD assumes the OOB is not covered by ECC, there is no pair of
  * ECC-based/raw functions for reading or or writing the OOB. The fact that the
@@ -1436,6 +1442,7 @@ static int gpmi_pre_bbt_scan(struct gpmi_nand_data  *this)
 	/* Adjust the ECC strength according to the chip. */
 	this->nand.ecc.strength = this->bch_geometry.ecc_strength;
 	this->mtd.ecc_strength = this->bch_geometry.ecc_strength;
+	this->mtd.bitflip_threshold = this->bch_geometry.ecc_strength;
 
 	/* NAND boot init, depends on the gpmi_set_geometry(). */
 	return nand_boot_init(this);
@@ -1497,6 +1504,8 @@ static int __devinit gpmi_nfc_init(struct gpmi_nand_data *this)
 	chip->ecc.size		= 1;
 	chip->ecc.strength	= 8;
 	chip->ecc.layout	= &gpmi_hw_ecclayout;
+	if (of_get_nand_on_flash_bbt(this->dev->of_node))
+		chip->bbt_options |= NAND_BBT_USE_FLASH | NAND_BBT_NO_OOB;
 
 	/* Allocate a temporary DMA buffer for reading ID in the nand_scan() */
 	this->bch_geometry.payload_size = 1024;

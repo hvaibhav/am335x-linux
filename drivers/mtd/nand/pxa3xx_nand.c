@@ -681,11 +681,13 @@ static void pxa3xx_nand_cmdfunc(struct mtd_info *mtd, unsigned command,
 	info->state = STATE_IDLE;
 }
 
-static void pxa3xx_nand_write_page_hwecc(struct mtd_info *mtd,
+static int pxa3xx_nand_write_page_hwecc(struct mtd_info *mtd,
 		struct nand_chip *chip, const uint8_t *buf, int oob_required)
 {
 	chip->write_buf(mtd, buf, mtd->writesize);
 	chip->write_buf(mtd, chip->oob_poi, mtd->oobsize);
+
+	return 0;
 }
 
 static int pxa3xx_nand_read_page_hwecc(struct mtd_info *mtd,
@@ -1005,7 +1007,6 @@ KEEP_CONFIG:
 	chip->ecc.size = host->page_size;
 	chip->ecc.strength = 1;
 
-	chip->options |= NAND_NO_READRDY;
 	if (host->reg_ndcr & NDCR_DWIDTH_M)
 		chip->options |= NAND_BUSWIDTH_16;
 
