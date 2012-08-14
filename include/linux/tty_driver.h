@@ -45,14 +45,9 @@
  *
  * void (*shutdown)(struct tty_struct * tty);
  *
- * 	This routine is called synchronously when a particular tty device
- *	is closed for the last time freeing up the resources.
- *	Note that tty_shutdown() is not called if ops->shutdown is defined.
- *	This means one is responsible to take care of calling ops->remove (e.g.
- *	via tty_driver_remove_tty) and releasing tty->termios.
- *	Note that this hook may be called from *all* the contexts where one
- *	uses tty refcounting (e.g. tty_port_tty_get).
- *
+ * 	This routine is called under the tty lock when a particular tty device
+ *	is closed for the last time. It executes before the tty resources
+ *	are freed so may execute while another function holds a tty kref.
  *
  * void (*cleanup)(struct tty_struct * tty);
  *
@@ -301,11 +296,11 @@ struct tty_driver {
 	int	name_base;	/* offset of printed name */
 	int	major;		/* major device number */
 	int	minor_start;	/* start of minor device number */
-	int	num;		/* number of devices allocated */
+	unsigned int	num;	/* number of devices allocated */
 	short	type;		/* type of tty driver */
 	short	subtype;	/* subtype of tty driver */
 	struct ktermios init_termios; /* Initial termios */
-	int	flags;		/* tty driver flags */
+	unsigned long	flags;		/* tty driver flags */
 	struct proc_dir_entry *proc_entry; /* /proc fs entry */
 	struct tty_driver *other; /* only used for the PTY driver */
 
@@ -313,6 +308,7 @@ struct tty_driver {
 	 * Pointer to the tty data structures
 	 */
 	struct tty_struct **ttys;
+	struct tty_port **ports;
 	struct ktermios **termios;
 	void *driver_state;
 
@@ -326,7 +322,8 @@ struct tty_driver {
 
 extern struct list_head tty_drivers;
 
-extern struct tty_driver *__alloc_tty_driver(int lines, struct module *owner);
+extern struct tty_driver *__tty_alloc_driver(unsigned int lines,
+		struct module *owner, unsigned long flags);
 extern void put_tty_driver(struct tty_driver *driver);
 extern void tty_set_operations(struct tty_driver *driver,
 			const struct tty_operations *op);
@@ -334,7 +331,21 @@ extern struct tty_driver *tty_find_polling_driver(char *name, int *line);
 
 extern void tty_driver_kref_put(struct tty_driver *driver);
 
-#define alloc_tty_driver(lines) __alloc_tty_driver(lines, THIS_MODULE)
+/* Use TTY_DRIVER_* flags below */
+#define tty_alloc_driver(lines, flags) \
+		__tty_alloc_driver(lines, THIS_MODULE, flags)
+
+/*
+ * DEPRECATED Do not use this in new code, use tty_alloc_driver instead.
+ * (And change the return value checks.)
+ */
+static inline struct tty_driver *alloc_tty_driver(unsigned int lines)
+{
+	struct tty_driver *ret = tty_alloc_driver(lines, 0);
+	if (IS_ERR(ret))
+		return NULL;
+	return ret;
+}
 
 static inline struct tty_driver *tty_driver_kref_get(struct tty_driver *d)
 {

@@ -1061,7 +1061,7 @@ static void gsm_process_modem(struct tty_struct *tty, struct gsm_dlci *dlci,
 	/* Carrier drop -> hangup */
 	if (tty) {
 		if ((mlines & TIOCM_CD) == 0 && (dlci->modem_rx & TIOCM_CD))
-			if (!(tty->termios->c_cflag & CLOCAL))
+			if (!(tty->termios.c_cflag & CLOCAL))
 				tty_hangup(tty);
 		if (brk & 0x01)
 			tty_insert_flip_char(tty, 0, TTY_BREAK);
@@ -2868,14 +2868,14 @@ static const struct tty_port_operations gsm_port_ops = {
 	.dtr_rts = gsm_dtr_rts,
 };
 
-
-static int gsmtty_open(struct tty_struct *tty, struct file *filp)
+static int gsmtty_install(struct tty_driver *driver, struct tty_struct *tty)
 {
 	struct gsm_mux *gsm;
 	struct gsm_dlci *dlci;
-	struct tty_port *port;
 	unsigned int line = tty->index;
 	unsigned int mux = line >> 6;
+	bool alloc = false;
+	int ret;
 
 	line = line & 0x3F;
 
@@ -2890,13 +2890,30 @@ static int gsmtty_open(struct tty_struct *tty, struct file *filp)
 	if (gsm->dead)
 		return -EL2HLT;
 	dlci = gsm->dlci[line];
-	if (dlci == NULL)
+	if (dlci == NULL) {
+		alloc = true;
 		dlci = gsm_dlci_alloc(gsm, line);
+	}
 	if (dlci == NULL)
 		return -ENOMEM;
-	port = &dlci->port;
-	port->count++;
+	ret = tty_port_install(&dlci->port, driver, tty);
+	if (ret) {
+		if (alloc)
+			dlci_put(dlci);
+		return ret;
+	}
+
 	tty->driver_data = dlci;
+
+	return 0;
+}
+
+static int gsmtty_open(struct tty_struct *tty, struct file *filp)
+{
+	struct gsm_dlci *dlci = tty->driver_data;
+	struct tty_port *port = &dlci->port;
+
+	port->count++;
 	dlci_get(dlci);
 	dlci_get(dlci->gsm->dlci[0]);
 	mux_get(dlci->gsm);
@@ -3043,13 +3060,13 @@ static void gsmtty_set_termios(struct tty_struct *tty, struct ktermios *old)
 	   the RPN control message. This however rapidly gets nasty as we
 	   then have to remap modem signals each way according to whether
 	   our virtual cable is null modem etc .. */
-	tty_termios_copy_hw(tty->termios, old);
+	tty_termios_copy_hw(&tty->termios, old);
 }
 
 static void gsmtty_throttle(struct tty_struct *tty)
 {
 	struct gsm_dlci *dlci = tty->driver_data;
-	if (tty->termios->c_cflag & CRTSCTS)
+	if (tty->termios.c_cflag & CRTSCTS)
 		dlci->modem_tx &= ~TIOCM_DTR;
 	dlci->throttled = 1;
 	/* Send an MSC with DTR cleared */
@@ -3059,7 +3076,7 @@ static void gsmtty_throttle(struct tty_struct *tty)
 static void gsmtty_unthrottle(struct tty_struct *tty)
 {
 	struct gsm_dlci *dlci = tty->driver_data;
-	if (tty->termios->c_cflag & CRTSCTS)
+	if (tty->termios.c_cflag & CRTSCTS)
 		dlci->modem_tx |= TIOCM_DTR;
 	dlci->throttled = 0;
 	/* Send an MSC with DTR set */
@@ -3085,6 +3102,7 @@ static int gsmtty_break_ctl(struct tty_struct *tty, int state)
 
 /* Virtual ttys for the demux */
 static const struct tty_operations gsmtty_ops = {
+	.install		= gsmtty_install,
 	.open			= gsmtty_open,
 	.close			= gsmtty_close,
 	.write			= gsmtty_write,
