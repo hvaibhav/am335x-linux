@@ -1044,7 +1044,7 @@ static enum sci_status sci_controller_start(struct isci_host *ihost,
 	return SCI_SUCCESS;
 }
 
-void isci_host_scan_start(struct Scsi_Host *shost)
+void isci_host_start(struct Scsi_Host *shost)
 {
 	struct isci_host *ihost = SHOST_TO_SAS_HA(shost)->lldd_ha;
 	unsigned long tmo = sci_controller_get_suggested_start_timeout(ihost);
@@ -1973,7 +1973,7 @@ static void sci_controller_afe_initialization(struct isci_host *ihost)
 	}
 
 	for (phy_id = 0; phy_id < SCI_MAX_PHYS; phy_id++) {
-		struct scu_afe_transceiver *xcvr = &afe->scu_afe_xcvr[phy_id];
+		struct scu_afe_transceiver __iomem *xcvr = &afe->scu_afe_xcvr[phy_id];
 		const struct sci_phy_oem_params *oem_phy = &oem->phys[phy_id];
 		int cable_length_long =
 			is_long_cable(phy_id, cable_selection_mask);
