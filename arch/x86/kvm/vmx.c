@@ -596,10 +596,9 @@ static inline struct vmcs12 *get_vmcs12(struct kvm_vcpu *vcpu)
 static struct page *nested_get_page(struct kvm_vcpu *vcpu, gpa_t addr)
 {
 	struct page *page = gfn_to_page(vcpu->kvm, addr >> PAGE_SHIFT);
-	if (is_error_page(page)) {
-		kvm_release_page_clean(page);
+	if (is_error_page(page))
 		return NULL;
-	}
+
 	return page;
 }
 
@@ -1343,7 +1342,7 @@ static bool update_transition_efer(struct vcpu_vmx *vmx, int efer_offset)
 	guest_efer = vmx->vcpu.arch.efer;
 
 	/*
-	 * NX is emulated; LMA and LME handled by hardware; SCE meaninless
+	 * NX is emulated; LMA and LME handled by hardware; SCE meaningless
 	 * outside long mode
 	 */
 	ignore_bits = EFER_NX | EFER_SCE;
@@ -3254,7 +3253,7 @@ static void vmx_set_segment(struct kvm_vcpu *vcpu,
 	 * qemu binaries.
 	 *   IA32 arch specifies that at the time of processor reset the
 	 * "Accessed" bit in the AR field of segment registers is 1. And qemu
-	 * is setting it to 0 in the usedland code. This causes invalid guest
+	 * is setting it to 0 in the userland code. This causes invalid guest
 	 * state vmexit when "unrestricted guest" mode is turned on.
 	 *    Fix for this setup issue in cpu_reset is being pushed in the qemu
 	 * tree. Newer qemu binaries with that qemu fix would not need this
@@ -4439,7 +4438,7 @@ vmx_patch_hypercall(struct kvm_vcpu *vcpu, unsigned char *hypercall)
 	hypercall[2] = 0xc1;
 }
 
-/* called to set cr0 as approriate for a mov-to-cr0 exit. */
+/* called to set cr0 as appropriate for a mov-to-cr0 exit. */
 static int handle_set_cr0(struct kvm_vcpu *vcpu, unsigned long val)
 {
 	if (to_vmx(vcpu)->nested.vmxon &&
