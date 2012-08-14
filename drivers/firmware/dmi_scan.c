@@ -16,7 +16,7 @@
  */
 static char dmi_empty_string[] = "        ";
 
-static u16  __initdata dmi_ver;
+static u16 __initdata dmi_ver;
 /*
  * Catch too early calls to dmi_check_system():
  */
@@ -176,11 +176,10 @@ static void __init dmi_save_uuid(const struct dmi_header *dm, int slot, int inde
 		return;
 
 	/*
-	 * As of version 2.6 of the SMBIOS specification, the first 3
-	 * fields of the UUID are supposed to be encoded on little-endian.
-	 * The specification says that this is the defacto standard,
-	 * update kernel code to match dmidecode data.
-	*/
+	 * As of version 2.6 of the SMBIOS specification, the first 3 fields of
+	 * the UUID are supposed to be little-endian encoded.  The specification
+	 * says that this is the defacto standard.
+	 */
 	if (dmi_ver >= 0x0206)
 		sprintf(s, "%pUL", d);
 	else
