@@ -299,6 +299,7 @@ int apply_relocate(Elf_Shdr *sechdrs, const char *strtab,
 	return 0;
 }
 
+#ifdef CONFIG_MODULES_USE_ELF_RELA
 int apply_relocate_add(Elf_Shdr *sechdrs, const char *strtab,
 		       unsigned int symindex, unsigned int relsec,
 		       struct module *me)
@@ -338,6 +339,7 @@ int apply_relocate_add(Elf_Shdr *sechdrs, const char *strtab,
 
 	return 0;
 }
+#endif
 
 /* Given an address, look for it in the module exception tables. */
 const struct exception_table_entry *search_module_dbetables(unsigned long addr)
