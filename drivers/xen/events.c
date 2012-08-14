@@ -869,7 +869,6 @@ static int bind_ipi_to_irq(unsigned int ipi, unsigned int cpu)
 		struct irq_info *info = info_for_irq(irq);
 		WARN_ON(info == NULL || info->type != IRQT_IPI);
 	}
-
  out:
 	mutex_unlock(&irq_mapping_update_lock);
 	return irq;
@@ -949,7 +948,6 @@ int bind_virq_to_irq(unsigned int virq, unsigned int cpu)
 		struct irq_info *info = info_for_irq(irq);
 		WARN_ON(info == NULL || info->type != IRQT_VIRQ);
 	}
-
 out:
 	mutex_unlock(&irq_mapping_update_lock);
 
