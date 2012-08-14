@@ -238,9 +238,10 @@ static int mc13783_powermisc_rmw(struct mc13xxx_regulator_priv *priv, u32 mask,
 
 	BUG_ON(val & ~mask);
 
+	mc13xxx_lock(priv->mc13xxx);
 	ret = mc13xxx_reg_read(mc13783, MC13783_REG_POWERMISC, &valread);
 	if (ret)
-		return ret;
+		goto out;
 
 	/* Update the stored state for Power Gates. */
 	priv->powermisc_pwgt_state =
@@ -253,7 +254,10 @@ static int mc13783_powermisc_rmw(struct mc13xxx_regulator_priv *priv, u32 mask,
 	valread = (valread & ~MC13783_REG_POWERMISC_PWGTSPI_M) |
 						priv->powermisc_pwgt_state;
 
-	return mc13xxx_reg_write(mc13783, MC13783_REG_POWERMISC, valread);
+	ret = mc13xxx_reg_write(mc13783, MC13783_REG_POWERMISC, valread);
+out:
+	mc13xxx_unlock(priv->mc13xxx);
+	return ret;
 }
 
 static int mc13783_gpo_regulator_enable(struct regulator_dev *rdev)
@@ -261,7 +265,6 @@ static int mc13783_gpo_regulator_enable(struct regulator_dev *rdev)
 	struct mc13xxx_regulator_priv *priv = rdev_get_drvdata(rdev);
 	struct mc13xxx_regulator *mc13xxx_regulators = priv->mc13xxx_regulators;
 	int id = rdev_get_id(rdev);
-	int ret;
 	u32 en_val = mc13xxx_regulators[id].enable_bit;
 
 	dev_dbg(rdev_get_dev(rdev), "%s id: %d\n", __func__, id);
@@ -271,12 +274,8 @@ static int mc13783_gpo_regulator_enable(struct regulator_dev *rdev)
 	    id == MC13783_REG_PWGT2SPI)
 		en_val = 0;
 
-	mc13xxx_lock(priv->mc13xxx);
-	ret = mc13783_powermisc_rmw(priv, mc13xxx_regulators[id].enable_bit,
+	return mc13783_powermisc_rmw(priv, mc13xxx_regulators[id].enable_bit,
 					en_val);
-	mc13xxx_unlock(priv->mc13xxx);
-
-	return ret;
 }
 
 static int mc13783_gpo_regulator_disable(struct regulator_dev *rdev)
@@ -284,7 +283,6 @@ static int mc13783_gpo_regulator_disable(struct regulator_dev *rdev)
 	struct mc13xxx_regulator_priv *priv = rdev_get_drvdata(rdev);
 	struct mc13xxx_regulator *mc13xxx_regulators = priv->mc13xxx_regulators;
 	int id = rdev_get_id(rdev);
-	int ret;
 	u32 dis_val = 0;
 
 	dev_dbg(rdev_get_dev(rdev), "%s id: %d\n", __func__, id);
@@ -294,12 +292,8 @@ static int mc13783_gpo_regulator_disable(struct regulator_dev *rdev)
 	    id == MC13783_REG_PWGT2SPI)
 		dis_val = mc13xxx_regulators[id].enable_bit;
 
-	mc13xxx_lock(priv->mc13xxx);
-	ret = mc13783_powermisc_rmw(priv, mc13xxx_regulators[id].enable_bit,
+	return mc13783_powermisc_rmw(priv, mc13xxx_regulators[id].enable_bit,
 					dis_val);
-	mc13xxx_unlock(priv->mc13xxx);
-
-	return ret;
 }
 
 static int mc13783_gpo_regulator_is_enabled(struct regulator_dev *rdev)
@@ -330,7 +324,6 @@ static struct regulator_ops mc13783_gpo_regulator_ops = {
 	.is_enabled = mc13783_gpo_regulator_is_enabled,
 	.list_voltage = regulator_list_voltage_table,
 	.set_voltage = mc13xxx_fixed_regulator_set_voltage,
-	.get_voltage = mc13xxx_fixed_regulator_get_voltage,
 };
 
 static int __devinit mc13783_regulator_probe(struct platform_device *pdev)

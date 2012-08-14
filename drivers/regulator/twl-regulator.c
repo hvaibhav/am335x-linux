@@ -624,17 +624,8 @@ static int twlfixed_list_voltage(struct regulator_dev *rdev, unsigned index)
 	return info->min_mV * 1000;
 }
 
-static int twlfixed_get_voltage(struct regulator_dev *rdev)
-{
-	struct twlreg_info	*info = rdev_get_drvdata(rdev);
-
-	return info->min_mV * 1000;
-}
-
 static struct regulator_ops twl4030fixed_ops = {
 	.list_voltage	= twlfixed_list_voltage,
-
-	.get_voltage	= twlfixed_get_voltage,
 
 	.enable		= twl4030reg_enable,
 	.disable	= twl4030reg_disable,
@@ -647,8 +638,6 @@ static struct regulator_ops twl4030fixed_ops = {
 
 static struct regulator_ops twl6030fixed_ops = {
 	.list_voltage	= twlfixed_list_voltage,
-
-	.get_voltage	= twlfixed_get_voltage,
 
 	.enable		= twl6030reg_enable,
 	.disable	= twl6030reg_disable,
@@ -757,37 +746,32 @@ static int twl6030smps_list_voltage(struct regulator_dev *rdev, unsigned index)
 	return voltage;
 }
 
-static int
-twl6030smps_set_voltage(struct regulator_dev *rdev, int min_uV, int max_uV,
-			unsigned int *selector)
+static int twl6030smps_map_voltage(struct regulator_dev *rdev, int min_uV,
+				   int max_uV)
 {
-	struct twlreg_info	*info = rdev_get_drvdata(rdev);
-	int	vsel = 0;
+	struct twlreg_info *info = rdev_get_drvdata(rdev);
+	int vsel = 0;
 
 	switch (info->flags) {
 	case 0:
 		if (min_uV == 0)
 			vsel = 0;
 		else if ((min_uV >= 600000) && (min_uV <= 1300000)) {
-			int calc_uV;
 			vsel = DIV_ROUND_UP(min_uV - 600000, 12500);
 			vsel++;
-			calc_uV = twl6030smps_list_voltage(rdev, vsel);
-			if (calc_uV > max_uV)
-				return -EINVAL;
 		}
 		/* Values 1..57 for vsel are linear and can be calculated
 		 * values 58..62 are non linear.
 		 */
-		else if ((min_uV > 1900000) && (max_uV >= 2100000))
+		else if ((min_uV > 1900000) && (min_uV <= 2100000))
 			vsel = 62;
-		else if ((min_uV > 1800000) && (max_uV >= 1900000))
+		else if ((min_uV > 1800000) && (min_uV <= 1900000))
 			vsel = 61;
-		else if ((min_uV > 1500000) && (max_uV >= 1800000))
+		else if ((min_uV > 1500000) && (min_uV <= 1800000))
 			vsel = 60;
-		else if ((min_uV > 1350000) && (max_uV >= 1500000))
+		else if ((min_uV > 1350000) && (min_uV <= 1500000))
 			vsel = 59;
-		else if ((min_uV > 1300000) && (max_uV >= 1350000))
+		else if ((min_uV > 1300000) && (min_uV <= 1350000))
 			vsel = 58;
 		else
 			return -EINVAL;
@@ -796,25 +780,21 @@ twl6030smps_set_voltage(struct regulator_dev *rdev, int min_uV, int max_uV,
 		if (min_uV == 0)
 			vsel = 0;
 		else if ((min_uV >= 700000) && (min_uV <= 1420000)) {
-			int calc_uV;
 			vsel = DIV_ROUND_UP(min_uV - 700000, 12500);
 			vsel++;
-			calc_uV = twl6030smps_list_voltage(rdev, vsel);
-			if (calc_uV > max_uV)
-				return -EINVAL;
 		}
 		/* Values 1..57 for vsel are linear and can be calculated
 		 * values 58..62 are non linear.
 		 */
-		else if ((min_uV > 1900000) && (max_uV >= 2100000))
+		else if ((min_uV > 1900000) && (min_uV <= 2100000))
 			vsel = 62;
-		else if ((min_uV > 1800000) && (max_uV >= 1900000))
+		else if ((min_uV > 1800000) && (min_uV <= 1900000))
 			vsel = 61;
-		else if ((min_uV > 1350000) && (max_uV >= 1800000))
+		else if ((min_uV > 1350000) && (min_uV <= 1800000))
 			vsel = 60;
-		else if ((min_uV > 1350000) && (max_uV >= 1500000))
+		else if ((min_uV > 1350000) && (min_uV <= 1500000))
 			vsel = 59;
-		else if ((min_uV > 1300000) && (max_uV >= 1350000))
+		else if ((min_uV > 1300000) && (min_uV <= 1350000))
 			vsel = 58;
 		else
 			return -EINVAL;
@@ -830,17 +810,23 @@ twl6030smps_set_voltage(struct regulator_dev *rdev, int min_uV, int max_uV,
 	case SMPS_OFFSET_EN|SMPS_EXTENDED_EN:
 		if (min_uV == 0) {
 			vsel = 0;
-		} else if ((min_uV >= 2161000) && (max_uV <= 4321000)) {
+		} else if ((min_uV >= 2161000) && (min_uV <= 4321000)) {
 			vsel = DIV_ROUND_UP(min_uV - 2161000, 38600);
 			vsel++;
 		}
 		break;
 	}
 
-	*selector = vsel;
+	return vsel;
+}
+
+static int twl6030smps_set_voltage_sel(struct regulator_dev *rdev,
+				       unsigned int selector)
+{
+	struct twlreg_info *info = rdev_get_drvdata(rdev);
 
 	return twlreg_write(info, TWL_MODULE_PM_RECEIVER, VREG_VOLTAGE_SMPS,
-							vsel);
+			    selector);
 }
 
 static int twl6030smps_get_voltage_sel(struct regulator_dev *rdev)
@@ -852,8 +838,9 @@ static int twl6030smps_get_voltage_sel(struct regulator_dev *rdev)
 
 static struct regulator_ops twlsmps_ops = {
 	.list_voltage		= twl6030smps_list_voltage,
+	.map_voltage		= twl6030smps_map_voltage,
 
-	.set_voltage		= twl6030smps_set_voltage,
+	.set_voltage_sel	= twl6030smps_set_voltage_sel,
 	.get_voltage_sel	= twl6030smps_get_voltage_sel,
 
 	.enable			= twl6030reg_enable,
@@ -1048,7 +1035,6 @@ TWL6030_FIXED_LDO(VDAC, 0x64, 1800, 0);
 TWL6030_FIXED_LDO(VUSB, 0x70, 3300, 0);
 TWL6030_FIXED_LDO(V1V8, 0x16, 1800, 0);
 TWL6030_FIXED_LDO(V2V1, 0x1c, 2100, 0);
-TWL6030_FIXED_RESOURCE(CLK32KG, 0x8C, 0);
 TWL6025_ADJUSTABLE_SMPS(SMPS3, 0x34);
 TWL6025_ADJUSTABLE_SMPS(SMPS4, 0x10);
 TWL6025_ADJUSTABLE_SMPS(VIO, 0x16);
