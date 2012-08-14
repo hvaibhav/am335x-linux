@@ -11,6 +11,7 @@ config XTENSA
 	select HAVE_GENERIC_HARDIRQS
 	select GENERIC_IRQ_SHOW
 	select GENERIC_CPU_DEVICES
+	select GENERIC_PCI_IOMAP
 	help
 	  Xtensa processors are 32-bit RISC machines designed by Tensilica
 	  primarily for embedded systems.  These processors are both
@@ -59,6 +60,7 @@ choice
 config XTENSA_VARIANT_FSF
 	bool "fsf - default (not generic) configuration"
 	select MMU
+	select ARCH_WANT_OPTIONAL_GPIOLIB
 
 config XTENSA_VARIANT_DC232B
 	bool "dc232b - Diamond 232L Standard Core Rev.B (LE)"

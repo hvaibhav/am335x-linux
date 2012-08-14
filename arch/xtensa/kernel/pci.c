@@ -25,6 +25,7 @@
 #include <linux/sched.h>
 #include <linux/errno.h>
 #include <linux/bootmem.h>
+#include <linux/module.h>
 
 #include <asm/pci-bridge.h>
 #include <asm/platform.h>
@@ -341,7 +342,7 @@ __pci_mmap_set_pgprot(struct pci_dev *dev, struct vm_area_struct *vma,
 	int prot = pgprot_val(vma->vm_page_prot);
 
 	/* Set to write-through */
-	prot &= ~_PAGE_NO_CACHE;
+	prot = (prot & _PAGE_CA_MASK) | _PAGE_CA_WT;
 #if 0
 	if (!write_combine)
 		prot |= _PAGE_WRITETHRU;
@@ -376,3 +377,9 @@ int pci_mmap_page_range(struct pci_dev *dev, struct vm_area_struct *vma,
 
 	return ret;
 }
+
+void pci_iounmap(struct pci_dev *dev, void __iomem *addr)
+{
+	iounmap(addr);
+}
+EXPORT_SYMBOL(pci_iounmap);
