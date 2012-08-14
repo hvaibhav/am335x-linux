@@ -67,6 +67,9 @@ struct team_port {
 	struct netpoll *np;
 #endif
 
+	s32 priority; /* lower number ~ higher priority */
+	u16 queue_id;
+	struct list_head qom_list; /* node in queue override mapping list */
 	long mode_priv[0];
 };
 
@@ -130,6 +133,7 @@ enum team_option_type {
 	TEAM_OPTION_TYPE_STRING,
 	TEAM_OPTION_TYPE_BINARY,
 	TEAM_OPTION_TYPE_BOOL,
+	TEAM_OPTION_TYPE_S32,
 };
 
 struct team_option_inst_info {
@@ -146,6 +150,7 @@ struct team_gsetter_ctx {
 			u32 len;
 		} bin_val;
 		bool bool_val;
+		s32 s32_val;
 	} data;
 	struct team_option_inst_info *info;
 };
@@ -197,6 +202,8 @@ struct team {
 
 	const struct team_mode *mode;
 	struct team_mode_ops ops;
+	bool queue_override_enabled;
+	struct list_head *qom_lists; /* array of queue override mapping lists */
 	long mode_priv[TEAM_MODE_PRIV_LONGS];
 };
 
