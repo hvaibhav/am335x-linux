@@ -1037,10 +1037,16 @@ static int do_test(int m)
 
 	case 14:
 		ret += tcrypt_test("ecb(cast5)");
+		ret += tcrypt_test("cbc(cast5)");
+		ret += tcrypt_test("ctr(cast5)");
 		break;
 
 	case 15:
 		ret += tcrypt_test("ecb(cast6)");
+		ret += tcrypt_test("cbc(cast6)");
+		ret += tcrypt_test("ctr(cast6)");
+		ret += tcrypt_test("lrw(cast6)");
+		ret += tcrypt_test("xts(cast6)");
 		break;
 
 	case 16:
@@ -1359,6 +1365,44 @@ static int do_test(int m)
 				  speed_template_8);
 		break;
 
+	case 209:
+		test_cipher_speed("ecb(cast5)", ENCRYPT, sec, NULL, 0,
+				  speed_template_8_16);
+		test_cipher_speed("ecb(cast5)", DECRYPT, sec, NULL, 0,
+				  speed_template_8_16);
+		test_cipher_speed("cbc(cast5)", ENCRYPT, sec, NULL, 0,
+				  speed_template_8_16);
+		test_cipher_speed("cbc(cast5)", DECRYPT, sec, NULL, 0,
+				  speed_template_8_16);
+		test_cipher_speed("ctr(cast5)", ENCRYPT, sec, NULL, 0,
+				  speed_template_8_16);
+		test_cipher_speed("ctr(cast5)", DECRYPT, sec, NULL, 0,
+				  speed_template_8_16);
+		break;
+
+	case 210:
+		test_cipher_speed("ecb(cast6)", ENCRYPT, sec, NULL, 0,
+				  speed_template_16_32);
+		test_cipher_speed("ecb(cast6)", DECRYPT, sec, NULL, 0,
+				  speed_template_16_32);
+		test_cipher_speed("cbc(cast6)", ENCRYPT, sec, NULL, 0,
+				  speed_template_16_32);
+		test_cipher_speed("cbc(cast6)", DECRYPT, sec, NULL, 0,
+				  speed_template_16_32);
+		test_cipher_speed("ctr(cast6)", ENCRYPT, sec, NULL, 0,
+				  speed_template_16_32);
+		test_cipher_speed("ctr(cast6)", DECRYPT, sec, NULL, 0,
+				  speed_template_16_32);
+		test_cipher_speed("lrw(cast6)", ENCRYPT, sec, NULL, 0,
+				  speed_template_32_48);
+		test_cipher_speed("lrw(cast6)", DECRYPT, sec, NULL, 0,
+				  speed_template_32_48);
+		test_cipher_speed("xts(cast6)", ENCRYPT, sec, NULL, 0,
+				  speed_template_32_64);
+		test_cipher_speed("xts(cast6)", DECRYPT, sec, NULL, 0,
+				  speed_template_32_64);
+		break;
+
 	case 300:
 		/* fall through */
 
@@ -1637,6 +1681,44 @@ static int do_test(int m)
 	case 505:
 		test_acipher_speed("ecb(arc4)", ENCRYPT, sec, NULL, 0,
 				   speed_template_8);
+		break;
+
+	case 506:
+		test_acipher_speed("ecb(cast5)", ENCRYPT, sec, NULL, 0,
+				   speed_template_8_16);
+		test_acipher_speed("ecb(cast5)", DECRYPT, sec, NULL, 0,
+				   speed_template_8_16);
+		test_acipher_speed("cbc(cast5)", ENCRYPT, sec, NULL, 0,
+				   speed_template_8_16);
+		test_acipher_speed("cbc(cast5)", DECRYPT, sec, NULL, 0,
+				   speed_template_8_16);
+		test_acipher_speed("ctr(cast5)", ENCRYPT, sec, NULL, 0,
+				   speed_template_8_16);
+		test_acipher_speed("ctr(cast5)", DECRYPT, sec, NULL, 0,
+				   speed_template_8_16);
+		break;
+
+	case 507:
+		test_acipher_speed("ecb(cast6)", ENCRYPT, sec, NULL, 0,
+				   speed_template_16_32);
+		test_acipher_speed("ecb(cast6)", DECRYPT, sec, NULL, 0,
+				   speed_template_16_32);
+		test_acipher_speed("cbc(cast6)", ENCRYPT, sec, NULL, 0,
+				   speed_template_16_32);
+		test_acipher_speed("cbc(cast6)", DECRYPT, sec, NULL, 0,
+				   speed_template_16_32);
+		test_acipher_speed("ctr(cast6)", ENCRYPT, sec, NULL, 0,
+				   speed_template_16_32);
+		test_acipher_speed("ctr(cast6)", DECRYPT, sec, NULL, 0,
+				   speed_template_16_32);
+		test_acipher_speed("lrw(cast6)", ENCRYPT, sec, NULL, 0,
+				   speed_template_32_48);
+		test_acipher_speed("lrw(cast6)", DECRYPT, sec, NULL, 0,
+				   speed_template_32_48);
+		test_acipher_speed("xts(cast6)", ENCRYPT, sec, NULL, 0,
+				   speed_template_32_64);
+		test_acipher_speed("xts(cast6)", DECRYPT, sec, NULL, 0,
+				   speed_template_32_64);
 		break;
 
 	case 1000:

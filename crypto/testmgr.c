@@ -1534,6 +1534,36 @@ static int alg_test_null(const struct alg_test_desc *desc,
 /* Please keep this list sorted by algorithm name. */
 static const struct alg_test_desc alg_test_descs[] = {
 	{
+		.alg = "__cbc-cast5-avx",
+		.test = alg_test_null,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = NULL,
+					.count = 0
+				},
+				.dec = {
+					.vecs = NULL,
+					.count = 0
+				}
+			}
+		}
+	}, {
+		.alg = "__cbc-cast6-avx",
+		.test = alg_test_null,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = NULL,
+					.count = 0
+				},
+				.dec = {
+					.vecs = NULL,
+					.count = 0
+				}
+			}
+		}
+	}, {
 		.alg = "__cbc-serpent-avx",
 		.test = alg_test_null,
 		.suite = {
@@ -1595,6 +1625,36 @@ static const struct alg_test_desc alg_test_descs[] = {
 			}
 		}
 	}, {
+		.alg = "__driver-cbc-cast5-avx",
+		.test = alg_test_null,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = NULL,
+					.count = 0
+				},
+				.dec = {
+					.vecs = NULL,
+					.count = 0
+				}
+			}
+		}
+	}, {
+		.alg = "__driver-cbc-cast6-avx",
+		.test = alg_test_null,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = NULL,
+					.count = 0
+				},
+				.dec = {
+					.vecs = NULL,
+					.count = 0
+				}
+			}
+		}
+	}, {
 		.alg = "__driver-cbc-serpent-avx",
 		.test = alg_test_null,
 		.suite = {
@@ -1643,6 +1703,36 @@ static const struct alg_test_desc alg_test_descs[] = {
 		.alg = "__driver-ecb-aes-aesni",
 		.test = alg_test_null,
 		.fips_allowed = 1,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = NULL,
+					.count = 0
+				},
+				.dec = {
+					.vecs = NULL,
+					.count = 0
+				}
+			}
+		}
+	}, {
+		.alg = "__driver-ecb-cast5-avx",
+		.test = alg_test_null,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = NULL,
+					.count = 0
+				},
+				.dec = {
+					.vecs = NULL,
+					.count = 0
+				}
+			}
+		}
+	}, {
+		.alg = "__driver-ecb-cast6-avx",
+		.test = alg_test_null,
 		.suite = {
 			.cipher = {
 				.enc = {
@@ -1818,6 +1908,36 @@ static const struct alg_test_desc alg_test_descs[] = {
 			}
 		}
 	}, {
+		.alg = "cbc(cast5)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = cast5_cbc_enc_tv_template,
+					.count = CAST5_CBC_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = cast5_cbc_dec_tv_template,
+					.count = CAST5_CBC_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
+		.alg = "cbc(cast6)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = cast6_cbc_enc_tv_template,
+					.count = CAST6_CBC_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = cast6_cbc_dec_tv_template,
+					.count = CAST6_CBC_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
 		.alg = "cbc(des)",
 		.test = alg_test_skcipher,
 		.suite = {
@@ -1924,6 +2044,36 @@ static const struct alg_test_desc alg_test_descs[] = {
 		.alg = "cryptd(__driver-ecb-aes-aesni)",
 		.test = alg_test_null,
 		.fips_allowed = 1,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = NULL,
+					.count = 0
+				},
+				.dec = {
+					.vecs = NULL,
+					.count = 0
+				}
+			}
+		}
+	}, {
+		.alg = "cryptd(__driver-ecb-cast5-avx)",
+		.test = alg_test_null,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = NULL,
+					.count = 0
+				},
+				.dec = {
+					.vecs = NULL,
+					.count = 0
+				}
+			}
+		}
+	}, {
+		.alg = "cryptd(__driver-ecb-cast6-avx)",
+		.test = alg_test_null,
 		.suite = {
 			.cipher = {
 				.enc = {
@@ -2050,6 +2200,36 @@ static const struct alg_test_desc alg_test_descs[] = {
 				.dec = {
 					.vecs = camellia_ctr_dec_tv_template,
 					.count = CAMELLIA_CTR_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
+		.alg = "ctr(cast5)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = cast5_ctr_enc_tv_template,
+					.count = CAST5_CTR_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = cast5_ctr_dec_tv_template,
+					.count = CAST5_CTR_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
+		.alg = "ctr(cast6)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = cast6_ctr_enc_tv_template,
+					.count = CAST6_CTR_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = cast6_ctr_dec_tv_template,
+					.count = CAST6_CTR_DEC_TEST_VECTORS
 				}
 			}
 		}
@@ -2530,6 +2710,21 @@ static const struct alg_test_desc alg_test_descs[] = {
 			}
 		}
 	}, {
+		.alg = "lrw(cast6)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = cast6_lrw_enc_tv_template,
+					.count = CAST6_LRW_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = cast6_lrw_dec_tv_template,
+					.count = CAST6_LRW_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
 		.alg = "lrw(serpent)",
 		.test = alg_test_skcipher,
 		.suite = {
@@ -2878,6 +3073,21 @@ static const struct alg_test_desc alg_test_descs[] = {
 				.dec = {
 					.vecs = camellia_xts_dec_tv_template,
 					.count = CAMELLIA_XTS_DEC_TEST_VECTORS
+				}
+			}
+		}
+	}, {
+		.alg = "xts(cast6)",
+		.test = alg_test_skcipher,
+		.suite = {
+			.cipher = {
+				.enc = {
+					.vecs = cast6_xts_enc_tv_template,
+					.count = CAST6_XTS_ENC_TEST_VECTORS
+				},
+				.dec = {
+					.vecs = cast6_xts_dec_tv_template,
+					.count = CAST6_XTS_DEC_TEST_VECTORS
 				}
 			}
 		}
