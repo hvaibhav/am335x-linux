@@ -29,6 +29,8 @@
 #include <linux/i2c.h>
 #include <linux/delay.h>
 #include <linux/regulator/consumer.h>
+#include <linux/of_device.h>
+#include <linux/of_gpio.h>
 
 /*
  * The codec isn't really big-endian or little-endian, since the I2S
@@ -639,6 +641,15 @@ static const struct snd_soc_codec_driver soc_codec_device_cs4270 = {
 	.reg_cache_default =	cs4270_default_reg_cache,
 };
 
+/*
+ * cs4270_of_match - the device tree bindings
+ */
+static const struct of_device_id cs4270_of_match[] = {
+	{ .compatible = "cirrus,cs4270", },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, cs4270_of_match);
+
 /**
  * cs4270_i2c_probe - initialize the I2C interface of the CS4270
  * @i2c_client: the I2C client object
@@ -650,8 +661,24 @@ static const struct snd_soc_codec_driver soc_codec_device_cs4270 = {
 static int cs4270_i2c_probe(struct i2c_client *i2c_client,
 	const struct i2c_device_id *id)
 {
+	struct device_node *np = i2c_client->dev.of_node;
 	struct cs4270_private *cs4270;
 	int ret;
+
+	/* See if we have a way to bring the codec out of reset */
+	if (np) {
+		enum of_gpio_flags flags;
+		int gpio = of_get_named_gpio_flags(np, "reset-gpio", 0, &flags);
+
+		if (gpio_is_valid(gpio)) {
+			ret = devm_gpio_request_one(&i2c_client->dev, gpio,
+				     flags & OF_GPIO_ACTIVE_LOW ?
+					GPIOF_OUT_INIT_LOW : GPIOF_OUT_INIT_HIGH,
+				     "cs4270 reset");
+			if (ret < 0)
+				return ret;
+		}
+	}
 
 	/* Verify that we have a CS4270 */
 
@@ -718,23 +745,14 @@ static struct i2c_driver cs4270_i2c_driver = {
 	.driver = {
 		.name = "cs4270",
 		.owner = THIS_MODULE,
+		.of_match_table = cs4270_of_match,
 	},
 	.id_table = cs4270_id,
 	.probe = cs4270_i2c_probe,
 	.remove = cs4270_i2c_remove,
 };
 
-static int __init cs4270_init(void)
-{
-	return i2c_add_driver(&cs4270_i2c_driver);
-}
-module_init(cs4270_init);
-
-static void __exit cs4270_exit(void)
-{
-	i2c_del_driver(&cs4270_i2c_driver);
-}
-module_exit(cs4270_exit);
+module_i2c_driver(cs4270_i2c_driver);
 
 MODULE_AUTHOR("Timur Tabi <timur@freescale.com>");
 MODULE_DESCRIPTION("Cirrus Logic CS4270 ALSA SoC Codec Driver");
