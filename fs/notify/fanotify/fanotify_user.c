@@ -414,8 +414,12 @@ static int fanotify_release(struct inode *ignored, struct file *file)
 
 	wake_up(&group->fanotify_data.access_waitq);
 #endif
+
+	if (file->f_flags & FASYNC)
+		fsnotify_fasync(-1, file, 0);
+
 	/* matches the fanotify_init->fsnotify_alloc_group */
-	fsnotify_put_group(group);
+	fsnotify_destroy_group(group);
 
 	return 0;
 }
@@ -511,7 +515,8 @@ out:
 
 static __u32 fanotify_mark_remove_from_mask(struct fsnotify_mark *fsn_mark,
 					    __u32 mask,
-					    unsigned int flags)
+					    unsigned int flags,
+					    int *destroy)
 {
 	__u32 oldmask;
 
@@ -525,8 +530,7 @@ static __u32 fanotify_mark_remove_from_mask(struct fsnotify_mark *fsn_mark,
 	}
 	spin_unlock(&fsn_mark->lock);
 
-	if (!(oldmask & ~mask))
-		fsnotify_destroy_mark(fsn_mark);
+	*destroy = !(oldmask & ~mask);
 
 	return mask & oldmask;
 }
@@ -537,12 +541,17 @@ static int fanotify_remove_vfsmount_mark(struct fsnotify_group *group,
 {
 	struct fsnotify_mark *fsn_mark = NULL;
 	__u32 removed;
+	int destroy_mark;
 
 	fsn_mark = fsnotify_find_vfsmount_mark(group, mnt);
 	if (!fsn_mark)
 		return -ENOENT;
 
-	removed = fanotify_mark_remove_from_mask(fsn_mark, mask, flags);
+	removed = fanotify_mark_remove_from_mask(fsn_mark, mask, flags,
+						 &destroy_mark);
+	if (destroy_mark)
+		fsnotify_destroy_mark(fsn_mark, group);
+
 	fsnotify_put_mark(fsn_mark);
 	if (removed & real_mount(mnt)->mnt_fsnotify_mask)
 		fsnotify_recalc_vfsmount_mask(mnt);
@@ -556,12 +565,16 @@ static int fanotify_remove_inode_mark(struct fsnotify_group *group,
 {
 	struct fsnotify_mark *fsn_mark = NULL;
 	__u32 removed;
+	int destroy_mark;
 
 	fsn_mark = fsnotify_find_inode_mark(group, inode);
 	if (!fsn_mark)
 		return -ENOENT;
 
-	removed = fanotify_mark_remove_from_mask(fsn_mark, mask, flags);
+	removed = fanotify_mark_remove_from_mask(fsn_mark, mask, flags,
+						 &destroy_mark);
+	if (destroy_mark)
+		fsnotify_destroy_mark(fsn_mark, group);
 	/* matches the fsnotify_find_inode_mark() */
 	fsnotify_put_mark(fsn_mark);
 	if (removed & inode->i_fsnotify_mask)
@@ -728,13 +741,13 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 		break;
 	default:
 		fd = -EINVAL;
-		goto out_put_group;
+		goto out_destroy_group;
 	}
 
 	if (flags & FAN_UNLIMITED_QUEUE) {
 		fd = -EPERM;
 		if (!capable(CAP_SYS_ADMIN))
-			goto out_put_group;
+			goto out_destroy_group;
 		group->max_events = UINT_MAX;
 	} else {
 		group->max_events = FANOTIFY_DEFAULT_MAX_EVENTS;
@@ -743,7 +756,7 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 	if (flags & FAN_UNLIMITED_MARKS) {
 		fd = -EPERM;
 		if (!capable(CAP_SYS_ADMIN))
-			goto out_put_group;
+			goto out_destroy_group;
 		group->fanotify_data.max_marks = UINT_MAX;
 	} else {
 		group->fanotify_data.max_marks = FANOTIFY_DEFAULT_MAX_MARKS;
@@ -751,12 +764,12 @@ SYSCALL_DEFINE2(fanotify_init, unsigned int, flags, unsigned int, event_f_flags)
 
 	fd = anon_inode_getfd("[fanotify]", &fanotify_fops, group, f_flags);
 	if (fd < 0)
-		goto out_put_group;
+		goto out_destroy_group;
 
 	return fd;
 
-out_put_group:
-	fsnotify_put_group(group);
+out_destroy_group:
+	fsnotify_destroy_group(group);
 	return fd;
 }
 
