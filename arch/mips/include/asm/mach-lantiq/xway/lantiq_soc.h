@@ -87,5 +87,8 @@ extern __iomem void *ltq_cgu_membase;
 extern void ltq_pmu_enable(unsigned int module);
 extern void ltq_pmu_disable(unsigned int module);
 
+/* allow pci driver to set the pci clk delay */
+void ltq_pci_set_delay(u8 delay);
+
 #endif /* CONFIG_SOC_TYPE_XWAY */
 #endif /* _LTQ_XWAY_H__ */

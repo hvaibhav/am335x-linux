@@ -98,7 +98,7 @@ static inline u32 ltq_calc_bar11mask(void)
 static int __devinit ltq_pci_startup(struct platform_device *pdev)
 {
 	struct device_node *node = pdev->dev.of_node;
-	const __be32 *req_mask, *bus_clk;
+	const __be32 *req_mask, *bus_clk, *delay;
 	u32 temp_buffer;
 
 	/* get our clocks */
@@ -126,6 +126,11 @@ static int __devinit ltq_pci_startup(struct platform_device *pdev)
 		clk_enable(clk_external);
 	else
 		clk_disable(clk_external);
+
+	/* pci ckl delay is a 6 bit value */
+	delay = of_get_property(node, "lantiq,delay", NULL);
+	if (delay)
+		ltq_pci_set_delay(*delay);
 
 	/* setup reset gpio used by pci */
 	reset_gpio = of_get_named_gpio(node, "gpio-reset", 0);

@@ -41,6 +41,10 @@
 /* power status register */
 #define PWDSR(x) ((x) ? (PMU_PWDSR1) : (PMU_PWDSR))
 
+/* pci delay is 6 bit wide and 18 bit into the register*/
+#define PCI_DLY_MASK    0x3f
+#define PCI_DLY_SHIFT   18
+
 /* clock gates that we can en/disable */
 #define PMU_USB0_P	BIT(0)
 #define PMU_PCI		BIT(4)
@@ -256,6 +260,16 @@ static void clkdev_add_pci(void)
 	clk_ext->enable = pci_ext_enable;
 	clk_ext->disable = pci_ext_disable;
 	clkdev_add(&clk_ext->cl);
+}
+
+/* allow PCI driver to specify the clock delay. This is a 6 bit value */
+void ltq_pci_set_delay(u8 delay)
+{
+	u32 val = ltq_cgu_r32(pcicr);
+
+	val &= ~(PCI_DLY_MASK << PCI_DLY_SHIFT);
+	val |= ((u32)(delay & PCI_DLY_MASK)) << PCI_DLY_SHIFT;
+	ltq_cgu_w32(val, pcicr);
 }
 
 /* xway socs can generate clocks on gpio pins */
