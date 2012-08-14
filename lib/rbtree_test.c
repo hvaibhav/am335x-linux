@@ -104,7 +104,7 @@ static int rbtree_test_init(void)
 	time = time2 - time1;
 
 	time = div_u64(time, PERF_LOOPS);
-	printk(" -> %llu cycles\n", time);
+	printk(" -> %llu cycles\n", (unsigned long long)time);
 
 	for (i = 0; i < CHECK_LOOPS; i++) {
 		init();
