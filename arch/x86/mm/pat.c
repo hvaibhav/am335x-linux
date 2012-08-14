@@ -712,14 +712,12 @@ int track_pfn_remap(struct vm_area_struct *vma, pgprot_t *prot,
 		return 0;
 
 	/*
-	 * for anything smaller than the vma size,
-	 * we set prot based on the lookup.
+	 * For anything smaller than the vma size we set prot based on the
+	 * lookup.
 	 */
 	flags = lookup_memtype(paddr);
 
-	/*
-	 * Check memtype for the rest pages
-	 */
+	/* Check memtype for the remaining pages */
 	while (size > PAGE_SIZE) {
 		size -= PAGE_SIZE;
 		paddr += PAGE_SIZE;
@@ -741,7 +739,7 @@ int track_pfn_insert(struct vm_area_struct *vma, pgprot_t *prot,
 	if (!pat_enabled)
 		return 0;
 
-	/* we set prot based on lookup */
+	/* Set prot based on lookup */
 	flags = lookup_memtype((resource_size_t)pfn << PAGE_SHIFT);
 	*prot = __pgprot((pgprot_val(vma->vm_page_prot) & (~_PAGE_CACHE_MASK)) |
 			 flags);
