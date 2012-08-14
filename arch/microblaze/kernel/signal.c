@@ -254,10 +254,6 @@ static int setup_rt_frame(int sig, struct k_sigaction *ka, siginfo_t *info,
 
 	set_fs(USER_DS);
 
-	/* the tracer may want to single-step inside the handler */
-	if (test_thread_flag(TIF_SINGLESTEP))
-		ptrace_notify(SIGTRAP);
-
 #ifdef DEBUG_SIG
 	printk(KERN_INFO "SIG deliver (%s:%d): sp=%p pc=%08lx\n",
 		current->comm, current->pid, frame, regs->pc);
@@ -323,7 +319,8 @@ handle_signal(unsigned long sig, struct k_sigaction *ka,
 	if (ret)
 		return;
 
-	signal_delivered(sig, info, ka, regs, 0);
+	signal_delivered(sig, info, ka, regs,
+			test_thread_flag(TIF_SINGLESTEP));
 }
 
 /*
@@ -367,15 +364,6 @@ static void do_signal(struct pt_regs *regs, int in_syscall)
 
 void do_notify_resume(struct pt_regs *regs, int in_syscall)
 {
-	/*
-	 * We want the common case to go fast, which
-	 * is why we may in certain cases get here from
-	 * kernel mode. Just return without doing anything
-	 * if so.
-	 */
-	if (kernel_mode(regs))
-		return;
-
 	if (test_thread_flag(TIF_SIGPENDING))
 		do_signal(regs, in_syscall);
 
