@@ -32,6 +32,8 @@
 #include "smb2pdu.h"
 #endif
 
+#define CIFS_MAGIC_NUMBER 0xFF534D42      /* the first four bytes of SMB PDUs */
+
 /*
  * The sizes of various internal tables and strings
  */
@@ -128,8 +130,10 @@ struct sdesc {
 struct cifs_secmech {
 	struct crypto_shash *hmacmd5; /* hmac-md5 hash function */
 	struct crypto_shash *md5; /* md5 hash function */
+	struct crypto_shash *hmacsha256; /* hmac-sha256 hash function */
 	struct sdesc *sdeschmacmd5;  /* ctxt to generate ntlmv2 hash, CR1 */
 	struct sdesc *sdescmd5; /* ctxt to generate cifs/smb signature */
+	struct sdesc *sdeschmacsha256;  /* ctxt to generate smb2 signature */
 };
 
 /* per smb session structure/fields */
@@ -171,6 +175,12 @@ struct cifs_tcon;
 struct dfs_info3_param;
 struct cifs_fattr;
 struct smb_vol;
+struct cifs_fid;
+struct cifs_readdata;
+struct cifs_writedata;
+struct cifs_io_parms;
+struct cifs_search_info;
+struct cifsInodeInfo;
 
 struct smb_version_operations {
 	int (*send_cancel)(struct TCP_Server_Info *, void *,
@@ -212,6 +222,10 @@ struct smb_version_operations {
 	bool (*need_neg)(struct TCP_Server_Info *);
 	/* negotiate to the server */
 	int (*negotiate)(const unsigned int, struct cifs_ses *);
+	/* set negotiated write size */
+	unsigned int (*negotiate_wsize)(struct cifs_tcon *, struct smb_vol *);
+	/* set negotiated read size */
+	unsigned int (*negotiate_rsize)(struct cifs_tcon *, struct smb_vol *);
 	/* setup smb sessionn */
 	int (*sess_setup)(const unsigned int, struct cifs_ses *,
 			  const struct nls_table *);
@@ -235,10 +249,22 @@ struct smb_version_operations {
 	int (*query_path_info)(const unsigned int, struct cifs_tcon *,
 			       struct cifs_sb_info *, const char *,
 			       FILE_ALL_INFO *, bool *);
+	/* query file data from the server */
+	int (*query_file_info)(const unsigned int, struct cifs_tcon *,
+			       struct cifs_fid *, FILE_ALL_INFO *);
 	/* get server index number */
 	int (*get_srv_inum)(const unsigned int, struct cifs_tcon *,
 			    struct cifs_sb_info *, const char *,
 			    u64 *uniqueid, FILE_ALL_INFO *);
+	/* set size by path */
+	int (*set_path_size)(const unsigned int, struct cifs_tcon *,
+			     const char *, __u64, struct cifs_sb_info *, bool);
+	/* set size by file handle */
+	int (*set_file_size)(const unsigned int, struct cifs_tcon *,
+			     struct cifsFileInfo *, __u64, bool);
+	/* set attributes */
+	int (*set_file_info)(struct inode *, const char *, FILE_BASIC_INFO *,
+			     const unsigned int);
 	/* build a full path to the root of the mount */
 	char * (*build_path_to_root)(struct smb_vol *, struct cifs_sb_info *,
 				     struct cifs_tcon *);
@@ -256,6 +282,62 @@ struct smb_version_operations {
 	/* remove directory */
 	int (*rmdir)(const unsigned int, struct cifs_tcon *, const char *,
 		     struct cifs_sb_info *);
+	/* unlink file */
+	int (*unlink)(const unsigned int, struct cifs_tcon *, const char *,
+		      struct cifs_sb_info *);
+	/* open, rename and delete file */
+	int (*rename_pending_delete)(const char *, struct dentry *,
+				     const unsigned int);
+	/* send rename request */
+	int (*rename)(const unsigned int, struct cifs_tcon *, const char *,
+		      const char *, struct cifs_sb_info *);
+	/* send create hardlink request */
+	int (*create_hardlink)(const unsigned int, struct cifs_tcon *,
+			       const char *, const char *,
+			       struct cifs_sb_info *);
+	/* open a file for non-posix mounts */
+	int (*open)(const unsigned int, struct cifs_tcon *, const char *, int,
+		    int, int, struct cifs_fid *, __u32 *, FILE_ALL_INFO *,
+		    struct cifs_sb_info *);
+	/* set fid protocol-specific info */
+	void (*set_fid)(struct cifsFileInfo *, struct cifs_fid *, __u32);
+	/* close a file */
+	int (*close)(const unsigned int, struct cifs_tcon *, struct cifs_fid *);
+	/* send a flush request to the server */
+	int (*flush)(const unsigned int, struct cifs_tcon *, struct cifs_fid *);
+	/* async read from the server */
+	int (*async_readv)(struct cifs_readdata *);
+	/* async write to the server */
+	int (*async_writev)(struct cifs_writedata *);
+	/* sync read from the server */
+	int (*sync_read)(const unsigned int, struct cifsFileInfo *,
+			 struct cifs_io_parms *, unsigned int *, char **,
+			 int *);
+	/* sync write to the server */
+	int (*sync_write)(const unsigned int, struct cifsFileInfo *,
+			  struct cifs_io_parms *, unsigned int *, struct kvec *,
+			  unsigned long);
+	/* open dir, start readdir */
+	int (*query_dir_first)(const unsigned int, struct cifs_tcon *,
+			       const char *, struct cifs_sb_info *,
+			       struct cifs_fid *, __u16,
+			       struct cifs_search_info *);
+	/* continue readdir */
+	int (*query_dir_next)(const unsigned int, struct cifs_tcon *,
+			      struct cifs_fid *,
+			      __u16, struct cifs_search_info *srch_inf);
+	/* close dir */
+	int (*close_dir)(const unsigned int, struct cifs_tcon *,
+			 struct cifs_fid *);
+	/* calculate a size of SMB message */
+	unsigned int (*calc_smb_size)(void *);
+	bool (*is_status_pending)(char *, struct TCP_Server_Info *, int);
+	/* send oplock break response */
+	int (*oplock_response)(struct cifs_tcon *, struct cifs_fid *,
+			       struct cifsInodeInfo *);
+	/* query remote filesystem */
+	int (*queryfs)(const unsigned int, struct cifs_tcon *,
+		       struct kstatfs *);
 };
 
 struct smb_version_values {
@@ -494,6 +576,90 @@ get_next_mid(struct TCP_Server_Info *server)
 {
 	return server->ops->get_next_mid(server);
 }
+
+/*
+ * When the server supports very large reads and writes via POSIX extensions,
+ * we can allow up to 2^24-1, minus the size of a READ/WRITE_AND_X header, not
+ * including the RFC1001 length.
+ *
+ * Note that this might make for "interesting" allocation problems during
+ * writeback however as we have to allocate an array of pointers for the
+ * pages. A 16M write means ~32kb page array with PAGE_CACHE_SIZE == 4096.
+ *
+ * For reads, there is a similar problem as we need to allocate an array
+ * of kvecs to handle the receive, though that should only need to be done
+ * once.
+ */
+#define CIFS_MAX_WSIZE ((1<<24) - 1 - sizeof(WRITE_REQ) + 4)
+#define CIFS_MAX_RSIZE ((1<<24) - sizeof(READ_RSP) + 4)
+
+/*
+ * When the server doesn't allow large posix writes, only allow a rsize/wsize
+ * of 2^17-1 minus the size of the call header. That allows for a read or
+ * write up to the maximum size described by RFC1002.
+ */
+#define CIFS_MAX_RFC1002_WSIZE ((1<<17) - 1 - sizeof(WRITE_REQ) + 4)
+#define CIFS_MAX_RFC1002_RSIZE ((1<<17) - 1 - sizeof(READ_RSP) + 4)
+
+/*
+ * The default wsize is 1M. find_get_pages seems to return a maximum of 256
+ * pages in a single call. With PAGE_CACHE_SIZE == 4k, this means we can fill
+ * a single wsize request with a single call.
+ */
+#define CIFS_DEFAULT_IOSIZE (1024 * 1024)
+
+/*
+ * Windows only supports a max of 60kb reads and 65535 byte writes. Default to
+ * those values when posix extensions aren't in force. In actuality here, we
+ * use 65536 to allow for a write that is a multiple of 4k. Most servers seem
+ * to be ok with the extra byte even though Windows doesn't send writes that
+ * are that large.
+ *
+ * Citation:
+ *
+ * http://blogs.msdn.com/b/openspecification/archive/2009/04/10/smb-maximum-transmit-buffer-size-and-performance-tuning.aspx
+ */
+#define CIFS_DEFAULT_NON_POSIX_RSIZE (60 * 1024)
+#define CIFS_DEFAULT_NON_POSIX_WSIZE (65536)
+
+/*
+ * On hosts with high memory, we can't currently support wsize/rsize that are
+ * larger than we can kmap at once. Cap the rsize/wsize at
+ * LAST_PKMAP * PAGE_SIZE. We'll never be able to fill a read or write request
+ * larger than that anyway.
+ */
+#ifdef CONFIG_HIGHMEM
+#define CIFS_KMAP_SIZE_LIMIT   (LAST_PKMAP * PAGE_CACHE_SIZE)
+#else /* CONFIG_HIGHMEM */
+#define CIFS_KMAP_SIZE_LIMIT   (1<<24)
+#endif /* CONFIG_HIGHMEM */
+
+#ifdef CONFIG_HIGHMEM
+/*
+ * On arches that have high memory, kmap address space is limited. By
+ * serializing the kmap operations on those arches, we ensure that we don't
+ * end up with a bunch of threads in writeback with partially mapped page
+ * arrays, stuck waiting for kmap to come back. That situation prevents
+ * progress and can deadlock.
+ */
+
+extern struct mutex cifs_kmap_mutex;
+
+static inline void
+cifs_kmap_lock(void)
+{
+	mutex_lock(&cifs_kmap_mutex);
+}
+
+static inline void
+cifs_kmap_unlock(void)
+{
+	mutex_unlock(&cifs_kmap_mutex);
+}
+#else /* !CONFIG_HIGHMEM */
+#define cifs_kmap_lock() do { ; } while (0)
+#define cifs_kmap_unlock() do { ; } while (0)
+#endif /* CONFIG_HIGHMEM */
 
 /*
  * Macros to allow the TCP_Server_Info->net field and related code to drop out
@@ -740,6 +906,14 @@ struct cifs_search_info {
 	bool smallBuf:1; /* so we know which buf_release function to call */
 };
 
+struct cifs_fid {
+	__u16 netfid;
+#ifdef CONFIG_CIFS_SMB2
+	__u64 persistent_fid;	/* persist file id for smb2 */
+	__u64 volatile_fid;	/* volatile file id for smb2 */
+#endif
+};
+
 struct cifsFileInfo {
 	struct list_head tlist;	/* pointer to next fid owned by tcon */
 	struct list_head flist;	/* next fid (file instance) for this inode */
@@ -749,7 +923,7 @@ struct cifsFileInfo {
 				 */
 	unsigned int uid;	/* allows finding which FileInfo structure */
 	__u32 pid;		/* process id who opened file */
-	__u16 netfid;		/* file id from remote */
+	struct cifs_fid fid;	/* file id from remote */
 	/* BB add lock scope info here if needed */ ;
 	/* lock scope id (0 if none) */
 	struct dentry *dentry;
@@ -765,10 +939,55 @@ struct cifsFileInfo {
 
 struct cifs_io_parms {
 	__u16 netfid;
+#ifdef CONFIG_CIFS_SMB2
+	__u64 persistent_fid;	/* persist file id for smb2 */
+	__u64 volatile_fid;	/* volatile file id for smb2 */
+#endif
 	__u32 pid;
 	__u64 offset;
 	unsigned int length;
 	struct cifs_tcon *tcon;
+};
+
+struct cifs_readdata;
+
+/* asynchronous read support */
+struct cifs_readdata {
+	struct kref			refcount;
+	struct list_head		list;
+	struct completion		done;
+	struct cifsFileInfo		*cfile;
+	struct address_space		*mapping;
+	__u64				offset;
+	unsigned int			bytes;
+	pid_t				pid;
+	int				result;
+	struct list_head		pages;
+	struct work_struct		work;
+	int (*marshal_iov) (struct cifs_readdata *rdata,
+			    unsigned int remaining);
+	unsigned int			nr_iov;
+	struct kvec			iov[1];
+};
+
+struct cifs_writedata;
+
+/* asynchronous write support */
+struct cifs_writedata {
+	struct kref			refcount;
+	struct list_head		list;
+	struct completion		done;
+	enum writeback_sync_modes	sync_mode;
+	struct work_struct		work;
+	struct cifsFileInfo		*cfile;
+	__u64				offset;
+	pid_t				pid;
+	unsigned int			bytes;
+	int				result;
+	void (*marshal_iov) (struct kvec *iov,
+			     struct cifs_writedata *wdata);
+	unsigned int			nr_pages;
+	struct page			*pages[1];
 };
 
 /*

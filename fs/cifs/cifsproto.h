@@ -65,6 +65,7 @@ extern char *cifs_compose_mount_options(const char *sb_mountdata,
 extern struct mid_q_entry *AllocMidQEntry(const struct smb_hdr *smb_buffer,
 					struct TCP_Server_Info *server);
 extern void DeleteMidQEntry(struct mid_q_entry *midEntry);
+extern void cifs_delete_mid(struct mid_q_entry *mid);
 extern void cifs_wake_up_task(struct mid_q_entry *mid);
 extern int cifs_call_async(struct TCP_Server_Info *server, struct kvec *iov,
 			   unsigned int nvec, mid_receive_t *receive,
@@ -99,7 +100,7 @@ extern void cifs_update_eof(struct cifsInodeInfo *cifsi, loff_t offset,
 			    unsigned int bytes_written);
 extern struct cifsFileInfo *find_writable_file(struct cifsInodeInfo *, bool);
 extern struct cifsFileInfo *find_readable_file(struct cifsInodeInfo *, bool);
-extern unsigned int smbCalcSize(struct smb_hdr *ptr);
+extern unsigned int smbCalcSize(void *buf);
 extern int decode_negTokenInit(unsigned char *security_blob, int length,
 			struct TCP_Server_Info *server);
 extern int cifs_convert_address(struct sockaddr *dst, const char *src, int len);
@@ -121,9 +122,10 @@ extern struct timespec cnvrtDosUnixTm(__le16 le_date, __le16 le_time,
 				      int offset);
 extern void cifs_set_oplock_level(struct cifsInodeInfo *cinode, __u32 oplock);
 
-extern struct cifsFileInfo *cifs_new_fileinfo(__u16 fileHandle,
-				struct file *file, struct tcon_link *tlink,
-				__u32 oplock);
+extern struct cifsFileInfo *cifs_new_fileinfo(struct cifs_fid *fid,
+					      struct file *file,
+					      struct tcon_link *tlink,
+					      __u32 oplock);
 extern int cifs_posix_open(char *full_path, struct inode **inode,
 			   struct super_block *sb, int mode,
 			   unsigned int f_flags, __u32 *oplock, __u16 *netfid,
@@ -136,14 +138,17 @@ extern void cifs_fattr_to_inode(struct inode *inode, struct cifs_fattr *fattr);
 extern struct inode *cifs_iget(struct super_block *sb,
 			       struct cifs_fattr *fattr);
 
-extern int cifs_get_file_info(struct file *filp);
 extern int cifs_get_inode_info(struct inode **inode, const char *full_path,
 			       FILE_ALL_INFO *data, struct super_block *sb,
 			       int xid, const __u16 *fid);
-extern int cifs_get_file_info_unix(struct file *filp);
 extern int cifs_get_inode_info_unix(struct inode **pinode,
 			const unsigned char *search_path,
 			struct super_block *sb, unsigned int xid);
+extern int cifs_set_file_info(struct inode *inode, struct iattr *attrs,
+			      unsigned int xid, char *full_path, __u32 dosattr);
+extern int cifs_rename_pending_delete(const char *full_path,
+				      struct dentry *dentry,
+				      const unsigned int xid);
 extern int cifs_acl_to_fattr(struct cifs_sb_info *cifs_sb,
 			      struct cifs_fattr *fattr, struct inode *inode,
 			      const char *path, const __u16 *pfid);
@@ -265,13 +270,11 @@ extern int CIFSSMBSetAttrLegacy(unsigned int xid, struct cifs_tcon *tcon,
 			const struct nls_table *nls_codepage);
 #endif /* possibly unneeded function */
 extern int CIFSSMBSetEOF(const unsigned int xid, struct cifs_tcon *tcon,
-			const char *fileName, __u64 size,
-			bool setAllocationSizeFlag,
-			const struct nls_table *nls_codepage,
-			int remap_special_chars);
+			 const char *file_name, __u64 size,
+			 struct cifs_sb_info *cifs_sb, bool set_allocation);
 extern int CIFSSMBSetFileSize(const unsigned int xid, struct cifs_tcon *tcon,
-			 __u64 size, __u16 fileHandle, __u32 opener_pid,
-			bool AllocSizeFlag);
+			      struct cifsFileInfo *cfile, __u64 size,
+			      bool set_allocation);
 
 struct cifs_unix_set_info_args {
 	__u64	ctime;
@@ -303,22 +306,17 @@ extern int CIFSPOSIXDelFile(const unsigned int xid, struct cifs_tcon *tcon,
 			const struct nls_table *nls_codepage,
 			int remap_special_chars);
 extern int CIFSSMBDelFile(const unsigned int xid, struct cifs_tcon *tcon,
-			const char *name,
-			const struct nls_table *nls_codepage,
-			int remap_special_chars);
+			  const char *name, struct cifs_sb_info *cifs_sb);
 extern int CIFSSMBRename(const unsigned int xid, struct cifs_tcon *tcon,
-			const char *fromName, const char *toName,
-			const struct nls_table *nls_codepage,
-			int remap_special_chars);
+			 const char *from_name, const char *to_name,
+			 struct cifs_sb_info *cifs_sb);
 extern int CIFSSMBRenameOpenFile(const unsigned int xid, struct cifs_tcon *tcon,
 				 int netfid, const char *target_name,
 				 const struct nls_table *nls_codepage,
 				 int remap_special_chars);
-extern int CIFSCreateHardLink(const unsigned int xid,
-			struct cifs_tcon *tcon,
-			const char *fromName, const char *toName,
-			const struct nls_table *nls_codepage,
-			int remap_special_chars);
+extern int CIFSCreateHardLink(const unsigned int xid, struct cifs_tcon *tcon,
+			      const char *from_name, const char *to_name,
+			      struct cifs_sb_info *cifs_sb);
 extern int CIFSUnixCreateHardLink(const unsigned int xid,
 			struct cifs_tcon *tcon,
 			const char *fromName, const char *toName,
@@ -367,8 +365,7 @@ extern int CIFSSMBWrite(const unsigned int xid, struct cifs_io_parms *io_parms,
 			unsigned int *nbytes, const char *buf,
 			const char __user *ubuf, const int long_op);
 extern int CIFSSMBWrite2(const unsigned int xid, struct cifs_io_parms *io_parms,
-			unsigned int *nbytes, struct kvec *iov, const int nvec,
-			const int long_op);
+			unsigned int *nbytes, struct kvec *iov, const int nvec);
 extern int CIFSGetSrvInodeNumber(const unsigned int xid, struct cifs_tcon *tcon,
 				 const char *search_name, __u64 *inode_number,
 				 const struct nls_table *nls_codepage,
@@ -462,45 +459,9 @@ extern int E_md4hash(const unsigned char *passwd, unsigned char *p16,
 extern int SMBencrypt(unsigned char *passwd, const unsigned char *c8,
 			unsigned char *p24);
 
-/* asynchronous read support */
-struct cifs_readdata {
-	struct kref			refcount;
-	struct list_head		list;
-	struct completion		done;
-	struct cifsFileInfo		*cfile;
-	struct address_space		*mapping;
-	__u64				offset;
-	unsigned int			bytes;
-	pid_t				pid;
-	int				result;
-	struct list_head		pages;
-	struct work_struct		work;
-	int (*marshal_iov) (struct cifs_readdata *rdata,
-			    unsigned int remaining);
-	unsigned int			nr_iov;
-	struct kvec			iov[1];
-};
-
 void cifs_readdata_release(struct kref *refcount);
 int cifs_async_readv(struct cifs_readdata *rdata);
-
-/* asynchronous write support */
-struct cifs_writedata {
-	struct kref			refcount;
-	struct list_head		list;
-	struct completion		done;
-	enum writeback_sync_modes	sync_mode;
-	struct work_struct		work;
-	struct cifsFileInfo		*cfile;
-	__u64				offset;
-	pid_t				pid;
-	unsigned int			bytes;
-	int				result;
-	void (*marshal_iov) (struct kvec *iov,
-			     struct cifs_writedata *wdata);
-	unsigned int			nr_pages;
-	struct page			*pages[1];
-};
+int cifs_readv_receive(struct TCP_Server_Info *server, struct mid_q_entry *mid);
 
 int cifs_async_writev(struct cifs_writedata *wdata);
 void cifs_writev_complete(struct work_struct *work);

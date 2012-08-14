@@ -109,8 +109,8 @@ DeleteMidQEntry(struct mid_q_entry *midEntry)
 	mempool_free(midEntry, cifs_mid_poolp);
 }
 
-static void
-delete_mid(struct mid_q_entry *mid)
+void
+cifs_delete_mid(struct mid_q_entry *mid)
 {
 	spin_lock(&GlobalMid_Lock);
 	list_del(&mid->qhead);
@@ -419,7 +419,7 @@ cifs_call_async(struct TCP_Server_Info *server, struct kvec *iov,
 	if (rc == 0)
 		return 0;
 
-	delete_mid(mid);
+	cifs_delete_mid(mid);
 	add_credits(server, 1, optype);
 	wake_up(&server->request_q);
 	return rc;
@@ -503,13 +503,16 @@ cifs_check_receive(struct mid_q_entry *mid, struct TCP_Server_Info *server,
 	/* convert the length into a more usable form */
 	if (server->sec_mode & (SECMODE_SIGN_REQUIRED | SECMODE_SIGN_ENABLED)) {
 		struct kvec iov;
+		int rc = 0;
 
 		iov.iov_base = mid->resp_buf;
 		iov.iov_len = len;
 		/* FIXME: add code to kill session */
-		if (cifs_verify_signature(&iov, 1, server,
-					  mid->sequence_number + 1) != 0)
-			cERROR(1, "Unexpected SMB signature");
+		rc = cifs_verify_signature(&iov, 1, server,
+					   mid->sequence_number + 1);
+		if (rc)
+			cERROR(1, "SMB signature verification returned error = "
+			       "%d", rc);
 	}
 
 	/* BB special case reconnect tid and uid here? */
@@ -529,7 +532,7 @@ cifs_setup_request(struct cifs_ses *ses, struct kvec *iov,
 		return rc;
 	rc = cifs_sign_smbv(iov, nvec, ses->server, &mid->sequence_number);
 	if (rc)
-		delete_mid(mid);
+		cifs_delete_mid(mid);
 	*ret_mid = mid;
 	return rc;
 }
@@ -649,11 +652,11 @@ SendReceive2(const unsigned int xid, struct cifs_ses *ses,
 	rc = ses->server->ops->check_receive(midQ, ses->server,
 					     flags & CIFS_LOG_ERROR);
 
-	/* mark it so buf will not be freed by delete_mid */
+	/* mark it so buf will not be freed by cifs_delete_mid */
 	if ((flags & CIFS_NO_RESP) == 0)
 		midQ->resp_buf = NULL;
 out:
-	delete_mid(midQ);
+	cifs_delete_mid(midQ);
 	add_credits(ses->server, credits, optype);
 
 	return rc;
@@ -759,7 +762,7 @@ SendReceive(const unsigned int xid, struct cifs_ses *ses,
 	memcpy(out_buf, midQ->resp_buf, *pbytes_returned + 4);
 	rc = cifs_check_receive(midQ, ses->server, 0);
 out:
-	delete_mid(midQ);
+	cifs_delete_mid(midQ);
 	add_credits(ses->server, 1, 0);
 
 	return rc;
@@ -843,7 +846,7 @@ SendReceiveBlockingLock(const unsigned int xid, struct cifs_tcon *tcon,
 
 	rc = cifs_sign_smb(in_buf, ses->server, &midQ->sequence_number);
 	if (rc) {
-		delete_mid(midQ);
+		cifs_delete_mid(midQ);
 		mutex_unlock(&ses->server->srv_mutex);
 		return rc;
 	}
@@ -856,7 +859,7 @@ SendReceiveBlockingLock(const unsigned int xid, struct cifs_tcon *tcon,
 	mutex_unlock(&ses->server->srv_mutex);
 
 	if (rc < 0) {
-		delete_mid(midQ);
+		cifs_delete_mid(midQ);
 		return rc;
 	}
 
@@ -877,7 +880,7 @@ SendReceiveBlockingLock(const unsigned int xid, struct cifs_tcon *tcon,
 			   blocking lock to return. */
 			rc = send_cancel(ses->server, in_buf, midQ);
 			if (rc) {
-				delete_mid(midQ);
+				cifs_delete_mid(midQ);
 				return rc;
 			}
 		} else {
@@ -889,7 +892,7 @@ SendReceiveBlockingLock(const unsigned int xid, struct cifs_tcon *tcon,
 			/* If we get -ENOLCK back the lock may have
 			   already been removed. Don't exit in this case. */
 			if (rc && rc != -ENOLCK) {
-				delete_mid(midQ);
+				cifs_delete_mid(midQ);
 				return rc;
 			}
 		}
@@ -926,7 +929,7 @@ SendReceiveBlockingLock(const unsigned int xid, struct cifs_tcon *tcon,
 	memcpy(out_buf, midQ->resp_buf, *pbytes_returned + 4);
 	rc = cifs_check_receive(midQ, ses->server, 0);
 out:
-	delete_mid(midQ);
+	cifs_delete_mid(midQ);
 	if (rstart && rc == -EACCES)
 		return -ERESTARTSYS;
 	return rc;
