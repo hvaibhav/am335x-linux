@@ -55,6 +55,7 @@
 #include <asm/i387.h>
 #include <asm/fpu-internal.h>
 #include <asm/mce.h>
+#include <asm/rcu.h>
 
 #include <asm/mach_traps.h>
 
@@ -180,11 +181,15 @@ vm86_trap:
 #define DO_ERROR(trapnr, signr, str, name)				\
 dotraplinkage void do_##name(struct pt_regs *regs, long error_code)	\
 {									\
-	if (notify_die(DIE_TRAP, str, regs, error_code, trapnr, signr)	\
-							== NOTIFY_STOP)	\
+	exception_enter(regs);						\
+	if (notify_die(DIE_TRAP, str, regs, error_code,			\
+			trapnr, signr) == NOTIFY_STOP) {		\
+		exception_exit(regs);					\
 		return;							\
+	}								\
 	conditional_sti(regs);						\
 	do_trap(trapnr, signr, str, regs, error_code, NULL);		\
+	exception_exit(regs);						\
 }
 
 #define DO_ERROR_INFO(trapnr, signr, str, name, sicode, siaddr)		\
@@ -195,11 +200,15 @@ dotraplinkage void do_##name(struct pt_regs *regs, long error_code)	\
 	info.si_errno = 0;						\
 	info.si_code = sicode;						\
 	info.si_addr = (void __user *)siaddr;				\
-	if (notify_die(DIE_TRAP, str, regs, error_code, trapnr, signr)	\
-							== NOTIFY_STOP)	\
+	exception_enter(regs);						\
+	if (notify_die(DIE_TRAP, str, regs, error_code,			\
+			trapnr, signr) == NOTIFY_STOP) {		\
+		exception_exit(regs);					\
 		return;							\
+	}								\
 	conditional_sti(regs);						\
 	do_trap(trapnr, signr, str, regs, error_code, &info);		\
+	exception_exit(regs);						\
 }
 
 DO_ERROR_INFO(X86_TRAP_DE, SIGFPE, "divide error", divide_error, FPE_INTDIV,
@@ -312,6 +321,7 @@ dotraplinkage void __kprobes notrace do_int3(struct pt_regs *regs, long error_co
 	    ftrace_int3_handler(regs))
 		return;
 #endif
+	exception_enter(regs);
 #ifdef CONFIG_KGDB_LOW_LEVEL_TRAP
 	if (kgdb_ll_trap(DIE_INT3, "int3", regs, error_code, X86_TRAP_BP,
 				SIGTRAP) == NOTIFY_STOP)
@@ -331,6 +341,7 @@ dotraplinkage void __kprobes notrace do_int3(struct pt_regs *regs, long error_co
 	do_trap(X86_TRAP_BP, SIGTRAP, "int3", regs, error_code, NULL);
 	preempt_conditional_cli(regs);
 	debug_stack_usage_dec();
+	exception_exit(regs);
 }
 
 #ifdef CONFIG_X86_64
@@ -391,6 +402,8 @@ dotraplinkage void __kprobes do_debug(struct pt_regs *regs, long error_code)
 	unsigned long dr6;
 	int si_code;
 
+	exception_enter(regs);
+
 	get_debugreg(dr6, 6);
 
 	/* Filter out all the reserved bits which are preset to 1 */
@@ -406,7 +419,7 @@ dotraplinkage void __kprobes do_debug(struct pt_regs *regs, long error_code)
 
 	/* Catch kmemcheck conditions first of all! */
 	if ((dr6 & DR_STEP) && kmemcheck_trap(regs))
-		return;
+		goto exit;
 
 	/* DR6 may or may not be cleared by the CPU */
 	set_debugreg(0, 6);
@@ -421,7 +434,7 @@ dotraplinkage void __kprobes do_debug(struct pt_regs *regs, long error_code)
 
 	if (notify_die(DIE_DEBUG, "debug", regs, PTR_ERR(&dr6), error_code,
 							SIGTRAP) == NOTIFY_STOP)
-		return;
+		goto exit;
 
 	/*
 	 * Let others (NMI) know that the debug stack is in use
@@ -437,7 +450,7 @@ dotraplinkage void __kprobes do_debug(struct pt_regs *regs, long error_code)
 					X86_TRAP_DB);
 		preempt_conditional_cli(regs);
 		debug_stack_usage_dec();
-		return;
+		goto exit;
 	}
 
 	/*
@@ -458,7 +471,8 @@ dotraplinkage void __kprobes do_debug(struct pt_regs *regs, long error_code)
 	preempt_conditional_cli(regs);
 	debug_stack_usage_dec();
 
-	return;
+exit:
+	exception_exit(regs);
 }
 
 /*

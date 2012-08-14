@@ -53,10 +53,10 @@ MODULE_AUTHOR("Paul E. McKenney <paulmck@us.ibm.com> and Josh Triplett <josh@fre
 
 static int nreaders = -1;	/* # reader threads, defaults to 2*ncpus */
 static int nfakewriters = 4;	/* # fake writer threads */
-static int stat_interval;	/* Interval between stats, in seconds. */
+static int stat_interval = 60;	/* Interval between stats, in seconds. */
 				/*  Defaults to "only at end of test". */
 static bool verbose;		/* Print more debug info. */
-static bool test_no_idle_hz;	/* Test RCU's support for tickless idle CPUs. */
+static bool test_no_idle_hz = 1; /* Test RCU support for tickless idle CPUs. */
 static int shuffle_interval = 3; /* Interval between shuffles (in sec)*/
 static int stutter = 5;		/* Start/stop testing interval (in sec) */
 static int irqreader = 1;	/* RCU readers from irq (timers). */
@@ -176,8 +176,14 @@ static long n_rcu_torture_boosts;
 static long n_rcu_torture_timers;
 static long n_offline_attempts;
 static long n_offline_successes;
+static unsigned long sum_offline;
+static int min_offline = -1;
+static int max_offline;
 static long n_online_attempts;
 static long n_online_successes;
+static unsigned long sum_online;
+static int min_online = -1;
+static int max_online;
 static long n_barrier_attempts;
 static long n_barrier_successes;
 static struct list_head rcu_torture_removed;
@@ -1214,11 +1220,13 @@ rcu_torture_printk(char *page)
 		       n_rcu_torture_boost_failure,
 		       n_rcu_torture_boosts,
 		       n_rcu_torture_timers);
-	cnt += sprintf(&page[cnt], "onoff: %ld/%ld:%ld/%ld ",
-		       n_online_successes,
-		       n_online_attempts,
-		       n_offline_successes,
-		       n_offline_attempts);
+	cnt += sprintf(&page[cnt],
+		       "onoff: %ld/%ld:%ld/%ld %d,%d:%d,%d %lu:%lu (HZ=%d) ",
+		       n_online_successes, n_online_attempts,
+		       n_offline_successes, n_offline_attempts,
+		       min_online, max_online,
+		       min_offline, max_offline,
+		       sum_online, sum_offline, HZ);
 	cnt += sprintf(&page[cnt], "barrier: %ld/%ld:%ld",
 		       n_barrier_successes,
 		       n_barrier_attempts,
@@ -1490,8 +1498,10 @@ static int __cpuinit
 rcu_torture_onoff(void *arg)
 {
 	int cpu;
+	unsigned long delta;
 	int maxcpu = -1;
 	DEFINE_RCU_RANDOM(rand);
+	unsigned long starttime;
 
 	VERBOSE_PRINTK_STRING("rcu_torture_onoff task started");
 	for_each_online_cpu(cpu)
@@ -1509,6 +1519,7 @@ rcu_torture_onoff(void *arg)
 				printk(KERN_ALERT "%s" TORTURE_FLAG
 				       "rcu_torture_onoff task: offlining %d\n",
 				       torture_type, cpu);
+			starttime = jiffies;
 			n_offline_attempts++;
 			if (cpu_down(cpu) == 0) {
 				if (verbose)
@@ -1516,12 +1527,23 @@ rcu_torture_onoff(void *arg)
 					       "rcu_torture_onoff task: offlined %d\n",
 					       torture_type, cpu);
 				n_offline_successes++;
+				delta = jiffies - starttime;
+				sum_offline += delta;
+				if (min_offline < 0) {
+					min_offline = delta;
+					max_offline = delta;
+				}
+				if (min_offline > delta)
+					min_offline = delta;
+				if (max_offline < delta)
+					max_offline = delta;
 			}
 		} else if (cpu_is_hotpluggable(cpu)) {
 			if (verbose)
 				printk(KERN_ALERT "%s" TORTURE_FLAG
 				       "rcu_torture_onoff task: onlining %d\n",
 				       torture_type, cpu);
+			starttime = jiffies;
 			n_online_attempts++;
 			if (cpu_up(cpu) == 0) {
 				if (verbose)
@@ -1529,6 +1551,16 @@ rcu_torture_onoff(void *arg)
 					       "rcu_torture_onoff task: onlined %d\n",
 					       torture_type, cpu);
 				n_online_successes++;
+				delta = jiffies - starttime;
+				sum_online += delta;
+				if (min_online < 0) {
+					min_online = delta;
+					max_online = delta;
+				}
+				if (min_online > delta)
+					min_online = delta;
+				if (max_online < delta)
+					max_online = delta;
 			}
 		}
 		schedule_timeout_interruptible(onoff_interval * HZ);

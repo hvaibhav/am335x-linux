@@ -25,6 +25,7 @@
  */
 
 #include <linux/delay.h>
+#include <linux/oom.h>
 
 #define RCU_KTHREAD_PRIO 1
 
@@ -118,7 +119,7 @@ EXPORT_SYMBOL_GPL(rcu_batches_completed);
  */
 void rcu_force_quiescent_state(void)
 {
-	force_quiescent_state(&rcu_preempt_state, 0);
+	force_quiescent_state(&rcu_preempt_state);
 }
 EXPORT_SYMBOL_GPL(rcu_force_quiescent_state);
 
@@ -365,8 +366,11 @@ void rcu_read_unlock_special(struct task_struct *t)
 		if (&t->rcu_node_entry == rnp->exp_tasks)
 			rnp->exp_tasks = np;
 #ifdef CONFIG_RCU_BOOST
-		if (&t->rcu_node_entry == rnp->boost_tasks)
+		if (&t->rcu_node_entry == rnp->boost_tasks) {
 			rnp->boost_tasks = np;
+			if (rnp->boost_tasks == NULL)
+				rnp->boost_tasks = rnp->exp_tasks;
+		}
 		/* Snapshot/clear ->rcu_boost_mutex with rcu_node lock held. */
 		if (t->rcu_boost_mutex) {
 			rbmp = t->rcu_boost_mutex;
@@ -551,6 +555,8 @@ static int rcu_preempt_offline_tasks(struct rcu_state *rsp,
 
 	/* If we are on an internal node, complain bitterly. */
 	WARN_ON_ONCE(rnp != rdp->mynode);
+	/* If any offline CPUs are blocking current GP, complain bitterly. */
+	WARN_ON_ONCE(rnp->qsmask != 0);
 
 	/*
 	 * Move tasks up to root rcu_node.  Don't try to get fancy for
@@ -561,7 +567,7 @@ static int rcu_preempt_offline_tasks(struct rcu_state *rsp,
 	 * absolutely necessary, but this is a good performance/complexity
 	 * tradeoff.
 	 */
-	if (rcu_preempt_blocked_readers_cgp(rnp) && rnp->qsmask == 0)
+	if (rcu_preempt_blocked_readers_cgp(rnp))
 		retval |= RCU_OFL_TASKS_NORM_GP;
 	if (rcu_preempted_readers_exp(rnp))
 		retval |= RCU_OFL_TASKS_EXP_GP;
@@ -584,17 +590,19 @@ static int rcu_preempt_offline_tasks(struct rcu_state *rsp,
 		raw_spin_unlock(&rnp_root->lock); /* irqs still disabled */
 	}
 
+	rnp->gp_tasks = NULL;
+	rnp->exp_tasks = NULL;
 #ifdef CONFIG_RCU_BOOST
-	/* In case root is being boosted and leaf is not. */
+	rnp->boost_tasks = NULL;
+	/* In case root is being boosted and leaf was not. */
 	raw_spin_lock(&rnp_root->lock); /* irqs already disabled */
 	if (rnp_root->boost_tasks != NULL &&
-	    rnp_root->boost_tasks != rnp_root->gp_tasks)
+	    rnp_root->boost_tasks != rnp_root->gp_tasks &&
+	    rnp_root->boost_tasks != rnp_root->exp_tasks)
 		rnp_root->boost_tasks = rnp_root->gp_tasks;
 	raw_spin_unlock(&rnp_root->lock); /* irqs still disabled */
 #endif /* #ifdef CONFIG_RCU_BOOST */
 
-	rnp->gp_tasks = NULL;
-	rnp->exp_tasks = NULL;
 	return retval;
 }
 
@@ -676,7 +684,7 @@ void synchronize_rcu(void)
 EXPORT_SYMBOL_GPL(synchronize_rcu);
 
 static DECLARE_WAIT_QUEUE_HEAD(sync_rcu_preempt_exp_wq);
-static long sync_rcu_preempt_exp_count;
+static unsigned long sync_rcu_preempt_exp_count;
 static DEFINE_MUTEX(sync_rcu_preempt_exp_mutex);
 
 /*
@@ -791,7 +799,7 @@ void synchronize_rcu_expedited(void)
 	unsigned long flags;
 	struct rcu_node *rnp;
 	struct rcu_state *rsp = &rcu_preempt_state;
-	long snap;
+	unsigned long snap;
 	int trycount = 0;
 
 	smp_mb(); /* Caller's modifications seen first by other CPUs. */
@@ -799,33 +807,47 @@ void synchronize_rcu_expedited(void)
 	smp_mb(); /* Above access cannot bleed into critical section. */
 
 	/*
+	 * Block CPU-hotplug operations.  This means that any CPU-hotplug
+	 * operation that finds an rcu_node structure with tasks in the
+	 * process of being boosted will know that all tasks blocking
+	 * this expedited grace period will already be in the process of
+	 * being boosted.  This simplifies the process of moving tasks
+	 * from leaf to root rcu_node structures.
+	 */
+	get_online_cpus();
+
+	/*
 	 * Acquire lock, falling back to synchronize_rcu() if too many
 	 * lock-acquisition failures.  Of course, if someone does the
 	 * expedited grace period for us, just leave.
 	 */
 	while (!mutex_trylock(&sync_rcu_preempt_exp_mutex)) {
+		if (ULONG_CMP_LT(snap,
+		    ACCESS_ONCE(sync_rcu_preempt_exp_count))) {
+			put_online_cpus();
+			goto mb_ret; /* Others did our work for us. */
+		}
 		if (trycount++ < 10) {
 			udelay(trycount * num_online_cpus());
 		} else {
+			put_online_cpus();
 			synchronize_rcu();
 			return;
 		}
-		if ((ACCESS_ONCE(sync_rcu_preempt_exp_count) - snap) > 0)
-			goto mb_ret; /* Others did our work for us. */
 	}
-	if ((ACCESS_ONCE(sync_rcu_preempt_exp_count) - snap) > 0)
+	if (ULONG_CMP_LT(snap, ACCESS_ONCE(sync_rcu_preempt_exp_count))) {
+		put_online_cpus();
 		goto unlock_mb_ret; /* Others did our work for us. */
+	}
 
 	/* force all RCU readers onto ->blkd_tasks lists. */
 	synchronize_sched_expedited();
 
-	raw_spin_lock_irqsave(&rsp->onofflock, flags);
-
 	/* Initialize ->expmask for all non-leaf rcu_node structures. */
 	rcu_for_each_nonleaf_node_breadth_first(rsp, rnp) {
-		raw_spin_lock(&rnp->lock); /* irqs already disabled. */
+		raw_spin_lock_irqsave(&rnp->lock, flags);
 		rnp->expmask = rnp->qsmaskinit;
-		raw_spin_unlock(&rnp->lock); /* irqs remain disabled. */
+		raw_spin_unlock_irqrestore(&rnp->lock, flags);
 	}
 
 	/* Snapshot current state of ->blkd_tasks lists. */
@@ -834,7 +856,7 @@ void synchronize_rcu_expedited(void)
 	if (NUM_RCU_NODES > 1)
 		sync_rcu_preempt_exp_init(rsp, rcu_get_root(rsp));
 
-	raw_spin_unlock_irqrestore(&rsp->onofflock, flags);
+	put_online_cpus();
 
 	/* Wait for snapshotted ->blkd_tasks lists to drain. */
 	rnp = rcu_get_root(rsp);
@@ -1191,9 +1213,9 @@ static int rcu_boost_kthread(void *arg)
  * kthread to start boosting them.  If there is an expedited grace
  * period in progress, it is always time to boost.
  *
- * The caller must hold rnp->lock, which this function releases,
- * but irqs remain disabled.  The ->boost_kthread_task is immortal,
- * so we don't need to worry about it going away.
+ * The caller must hold rnp->lock, which this function releases.
+ * The ->boost_kthread_task is immortal, so we don't need to worry
+ * about it going away.
  */
 static void rcu_initiate_boost(struct rcu_node *rnp, unsigned long flags)
 {
@@ -1997,6 +2019,26 @@ static void rcu_prepare_for_idle(int cpu)
 	if (!tne)
 		return;
 
+	/* Adaptive-tick mode, where usermode execution is idle to RCU. */
+	if (!is_idle_task(current)) {
+		rdtp->dyntick_holdoff = jiffies - 1;
+		if (rcu_cpu_has_nonlazy_callbacks(cpu)) {
+			trace_rcu_prep_idle("User dyntick with callbacks");
+			rdtp->idle_gp_timer_expires =
+				round_up(jiffies + RCU_IDLE_GP_DELAY,
+					 RCU_IDLE_GP_DELAY);
+		} else if (rcu_cpu_has_callbacks(cpu)) {
+			rdtp->idle_gp_timer_expires =
+				round_jiffies(jiffies + RCU_IDLE_LAZY_GP_DELAY);
+			trace_rcu_prep_idle("User dyntick with lazy callbacks");
+		} else {
+			return;
+		}
+		tp = &rdtp->idle_gp_timer;
+		mod_timer_pinned(tp, rdtp->idle_gp_timer_expires);
+		return;
+	}
+
 	/*
 	 * If this is an idle re-entry, for example, due to use of
 	 * RCU_NONIDLE() or the new idle-loop tracing API within the idle
@@ -2075,16 +2117,16 @@ static void rcu_prepare_for_idle(int cpu)
 #ifdef CONFIG_TREE_PREEMPT_RCU
 	if (per_cpu(rcu_preempt_data, cpu).nxtlist) {
 		rcu_preempt_qs(cpu);
-		force_quiescent_state(&rcu_preempt_state, 0);
+		force_quiescent_state(&rcu_preempt_state);
 	}
 #endif /* #ifdef CONFIG_TREE_PREEMPT_RCU */
 	if (per_cpu(rcu_sched_data, cpu).nxtlist) {
 		rcu_sched_qs(cpu);
-		force_quiescent_state(&rcu_sched_state, 0);
+		force_quiescent_state(&rcu_sched_state);
 	}
 	if (per_cpu(rcu_bh_data, cpu).nxtlist) {
 		rcu_bh_qs(cpu);
-		force_quiescent_state(&rcu_bh_state, 0);
+		force_quiescent_state(&rcu_bh_state);
 	}
 
 	/*
@@ -2111,6 +2153,90 @@ static void rcu_idle_count_callbacks_posted(void)
 {
 	__this_cpu_add(rcu_dynticks.nonlazy_posted, 1);
 }
+
+/*
+ * Data for flushing lazy RCU callbacks at OOM time.
+ */
+static atomic_t oom_callback_count;
+static DECLARE_WAIT_QUEUE_HEAD(oom_callback_wq);
+
+/*
+ * RCU OOM callback -- decrement the outstanding count and deliver the
+ * wake-up if we are the last one.
+ */
+static void rcu_oom_callback(struct rcu_head *rhp)
+{
+	if (atomic_dec_and_test(&oom_callback_count))
+		wake_up(&oom_callback_wq);
+}
+
+/*
+ * Post an rcu_oom_notify callback on the current CPU if it has at
+ * least one lazy callback.  This will unnecessarily post callbacks
+ * to CPUs that already have a non-lazy callback at the end of their
+ * callback list, but this is an infrequent operation, so accept some
+ * extra overhead to keep things simple.
+ */
+static void rcu_oom_notify_cpu(void *flavor)
+{
+	struct rcu_state *rsp = flavor;
+	struct rcu_data *rdp = __this_cpu_ptr(rsp->rda);
+
+	if (rdp->qlen_lazy != 0) {
+		atomic_inc(&oom_callback_count);
+		rsp->call(&rdp->oom_head, rcu_oom_callback);
+	}
+}
+
+/*
+ * If low on memory, ensure that each CPU has a non-lazy callback.
+ * This will wake up CPUs that have only lazy callbacks, in turn
+ * ensuring that they free up the corresponding memory in a timely manner.
+ */
+static int rcu_oom_notify(struct notifier_block *self,
+                          unsigned long notused, void *nfreed)
+{
+	int cpu;
+
+	/* Wait for callbacks from earlier instance to complete. */
+	wait_event(oom_callback_wq, atomic_read(&oom_callback_count) == 0);
+
+	/*
+	 * Prevent premature wakeup: ensure that all increments happen
+	 * before there is a chance of the counter reaching zero.
+	 */
+	atomic_set(&oom_callback_count, 1);
+
+	get_online_cpus();
+	for_each_online_cpu(cpu) {
+#ifdef CONFIG_PREEMPT_RCU
+		smp_call_function_single(cpu, rcu_oom_notify_cpu,
+					 &rcu_preempt_state, 1);
+#endif /* #ifdef CONFIG_PREEMPT_RCU */
+		smp_call_function_single(cpu, rcu_oom_notify_cpu,
+					 &rcu_bh_state, 1);
+		smp_call_function_single(cpu, rcu_oom_notify_cpu,
+					 &rcu_sched_state, 1);
+	}
+	put_online_cpus();
+
+	/* Unconditionally decrement: no need to wake ourselves up. */
+	atomic_dec(&oom_callback_count);
+
+	*(unsigned long *)nfreed = 1;
+	return NOTIFY_OK;
+}
+
+static struct notifier_block rcu_oom_nb = {
+	.notifier_call = rcu_oom_notify
+};
+
+static int __init rcu_register_oom_notifier(void)
+{
+	register_oom_notifier(&rcu_oom_nb);
+	return 0;
+}
+early_initcall(rcu_register_oom_notifier);
 
 #endif /* #else #if !defined(CONFIG_RCU_FAST_NO_HZ) */
 
