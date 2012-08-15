@@ -12,6 +12,7 @@ next/fixes-non-critical:
 next/cleanup:
 cleanup/io-pci:   git://sources.calxeda.com/kernel/linux.git io-cleanup-pci-v2
 bcmring/cleanup:  patches from Arnd
+u300/cleanup	  git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git u300-cleanup
 
 next/maintainers:
 
