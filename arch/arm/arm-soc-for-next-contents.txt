@@ -16,6 +16,7 @@ bcmring/cleanup:  patches from Arnd
 next/maintainers:
 
 next/soc:
+ux500/asic-id:	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
 
 next/dt:
 
