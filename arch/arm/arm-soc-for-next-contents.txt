@@ -20,6 +20,7 @@ next/soc:
 ux500/asic-id:	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
 
 next/dt:
+pxa/dt:		git://github.com/hzhuang1/linux.git dt
 
 next/defconfig:
 
