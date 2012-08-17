@@ -1238,7 +1238,6 @@ dma_chnl_free:
 	kfree(mcspi->dma_channels);
 free_master:
 	spi_master_put(master);
-	platform_set_drvdata(pdev, NULL);
 	return status;
 }
 
@@ -1257,7 +1256,6 @@ static int __devexit omap2_mcspi_remove(struct platform_device *pdev)
 
 	spi_unregister_master(master);
 	kfree(dma_channels);
-	platform_set_drvdata(pdev, NULL);
 
 	return 0;
 }
