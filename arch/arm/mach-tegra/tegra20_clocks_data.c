@@ -34,6 +34,7 @@
 #include "fuse.h"
 #include "tegra2_emc.h"
 #include "tegra20_clocks.h"
+#include "tegra_cpu_car.h"
 
 /* Clock definitions */
 
@@ -1106,4 +1107,5 @@ void __init tegra2_init_clocks(void)
 	}
 
 	init_audio_sync_clock_mux();
+	tegra20_cpu_car_ops_init();
 }
