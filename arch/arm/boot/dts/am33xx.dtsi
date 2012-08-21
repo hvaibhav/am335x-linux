@@ -61,7 +61,7 @@
 			ti,intc-size = <128>;
 			reg = <0x48200000 0x1000>;
 		};
-/*
+
 		gpio1: gpio@44e07000 {
 			compatible = "ti,omap4-gpio";
 			ti,hwmods = "gpio1";
@@ -97,61 +97,43 @@
 			interrupt-controller;
 			#interrupt-cells = <1>;
 		};
-*/
+
 		uart1: serial@44E09000 {
 			compatible = "ti,omap3-uart";
 			ti,hwmods = "uart1";
 			clock-frequency = <48000000>;
-			reg = <0x44e09000 0x2000>;
-			interrupt-parent = <&intc>;
-			interrupts = <72>;
 		};
 
 		uart2: serial@48022000 {
 			compatible = "ti,omap3-uart";
 			ti,hwmods = "uart2";
 			clock-frequency = <48000000>;
-			reg = <0x48022000 0x2000>;
-			interrupt-parent = <&intc>;
-			interrupts = <73>;
 		};
 
 		uart3: serial@48024000 {
 			compatible = "ti,omap3-uart";
 			ti,hwmods = "uart3";
 			clock-frequency = <48000000>;
-			reg = <0x48024000 0x2000>;
-			interrupt-parent = <&intc>;
-			interrupts = <74>;
 		};
 
 		uart4: serial@481A6000 {
 			compatible = "ti,omap3-uart";
 			ti,hwmods = "uart4";
 			clock-frequency = <48000000>;
-			reg = <0x481A6000 0x2000>;
-			interrupt-parent = <&intc>;
-			interrupts = <44>;
 		};
 
 		uart5: serial@481A8000 {
 			compatible = "ti,omap3-uart";
 			ti,hwmods = "uart5";
 			clock-frequency = <48000000>;
-			reg = <0x481A8000 0x2000>;
-			interrupt-parent = <&intc>;
-			interrupts = <45>;
 		};
 
 		uart6: serial@481AA000 {
 			compatible = "ti,omap3-uart";
 			ti,hwmods = "uart6";
 			clock-frequency = <48000000>;
-			reg = <0x481AA000 0x2000>;
-			interrupt-parent = <&intc>;
-			interrupts = <46>;
 		};
-/*
+
 		i2c1: i2c@44E0B000 {
 			compatible = "ti,omap4-i2c";
 			#address-cells = <1>;
@@ -177,6 +159,5 @@
 			compatible = "ti,omap3-wdt";
 			ti,hwmods = "wd_timer2";
 		};
-*/
 	};
 };

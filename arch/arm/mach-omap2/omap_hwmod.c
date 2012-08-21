@@ -3316,6 +3316,7 @@ int omap_hwmod_fill_resources(struct omap_hwmod *oh, struct resource *res)
 	int r = 0;
 
 	/* For each IRQ, DMA, memory area, fill in array.*/
+
 	mpu_irqs_cnt = _count_mpu_irqs(oh);
 	for (i = 0; i < mpu_irqs_cnt; i++) {
 		(res + r)->name = (oh->mpu_irqs + i)->name;
@@ -3348,33 +3349,6 @@ int omap_hwmod_fill_resources(struct omap_hwmod *oh, struct resource *res)
 			(res + r)->flags = IORESOURCE_MEM;
 			r++;
 		}
-	}
-
-	return r;
-}
-
-/**
- * omap_hwmod_fill_dma_resources - fill struct resource array with hwmod data
- * @oh: struct omap_hwmod *
- * @res: pointer to the first element of an array of struct resource to fill
- *
- * Fill the struct resource array @res with resource data from the
- * omap_hwmod @oh.  Intended to be called by code that registers
- * omap_devices.  See also omap_hwmod_count_resources().  Returns the
- * number of array elements filled.
- */
-int omap_hwmod_fill_dma_resources(struct omap_hwmod *oh, struct resource *res)
-{
-	int i, sdma_reqs_cnt;
-	int r = 0;
-
-	sdma_reqs_cnt = _count_sdma_reqs(oh);
-	for (i = 0; i < sdma_reqs_cnt; i++) {
-		(res + r)->name = (oh->sdma_reqs + i)->name;
-		(res + r)->start = (oh->sdma_reqs + i)->dma_req;
-		(res + r)->end = (oh->sdma_reqs + i)->dma_req;
-		(res + r)->flags = IORESOURCE_DMA;
-		r++;
 	}
 
 	return r;
