@@ -486,6 +486,33 @@ static int omap_device_fill_resources(struct omap_device *od,
 }
 
 /**
+ * omap_device_fill_dma_resources - fill in array of struct resource with dma
+ * resources
+ * @od: struct omap_device *
+ * @res: pointer to an array of struct resource to be filled in
+ *
+ * Populate one or more empty struct resource pointed to by @res with
+ * the dma resource data for this omap_device @od.  Used by
+ * omap_device_alloc() after calling omap_device_count_resources().
+ * Ideally this function would not be needed at all.  If we have
+ * mechanism get dma resources from DT.
+ *
+ * Returns 0.
+ */
+static int omap_device_fill_dma_resources(struct omap_device *od,
+				      struct resource *res)
+{
+	int i, r;
+
+	for (i = 0; i < od->hwmods_cnt; i++) {
+		r = omap_hwmod_fill_dma_resources(od->hwmods[i], res);
+		res += r;
+	}
+
+	return 0;
+}
+
+/**
  * omap_device_alloc - allocate an omap_device
  * @pdev: platform_device that will be included in this omap_device
  * @oh: ptr to the single omap_hwmod that backs this omap_device
@@ -534,14 +561,20 @@ struct omap_device *omap_device_alloc(struct platform_device *pdev,
 			__func__, pdev->num_resources);
 
 	res_count = omap_device_count_resources(od);
-	if (res_count > 0) {
+	if (res_count > pdev->num_resources) {
 		dev_dbg(&pdev->dev, "%s(): resources allocated from hwmod %d\n",
 			__func__, res_count);
 		res = kzalloc(sizeof(struct resource) * res_count, GFP_KERNEL);
 		if (!res)
 			goto oda_exit3;
 
-		omap_device_fill_resources(od, res);
+		if (pdev->num_resources && pdev->resource) {
+			omap_device_fill_dma_resources(od, res);
+			memcpy(&res[pdev->num_resources], pdev->resource,
+				sizeof(struct resource) * pdev->num_resources);
+		} else {
+			omap_device_fill_resources(od, res);
+		}
 
 		ret = platform_device_add_resources(pdev, res, res_count);
 		kfree(res);
