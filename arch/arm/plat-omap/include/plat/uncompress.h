@@ -110,7 +110,7 @@ static inline void flush(void)
 	_DEBUG_LL_ENTRY(mach, AM33XX_UART##p##_BASE, OMAP_PORT_SHIFT,	\
 		AM33XXUART##p)
 
-static inline void __arch_decomp_setup(unsigned long arch_id)
+static inline void arch_decomp_setup(void)
 {
 	int port = 0;
 
@@ -164,6 +164,7 @@ static inline void __arch_decomp_setup(unsigned long arch_id)
 		DEBUG_LL_OMAP3(3, cm_t3730);
 		DEBUG_LL_OMAP3(3, craneboard);
 		DEBUG_LL_OMAP3(3, devkit8000);
+		DEBUG_LL_OMAP3(3, encore);
 		DEBUG_LL_OMAP3(3, igep0020);
 		DEBUG_LL_OMAP3(3, igep0030);
 		DEBUG_LL_OMAP3(3, nokia_rm680);
@@ -179,6 +180,7 @@ static inline void __arch_decomp_setup(unsigned long arch_id)
 		/* omap4 based boards using UART3 */
 		DEBUG_LL_OMAP4(3, omap_4430sdp);
 		DEBUG_LL_OMAP4(3, omap4_panda);
+		DEBUG_LL_OMAP4(3, pcm049);
 
 		/* omap5 based boards using UART3 */
 		DEBUG_LL_OMAP5(3, omap5_sevm);
@@ -197,8 +199,6 @@ static inline void __arch_decomp_setup(unsigned long arch_id)
 		DEBUG_LL_AM33XX(1, am335xevm);
 	} while (0);
 }
-
-#define arch_decomp_setup()	__arch_decomp_setup(arch_id)
 
 /*
  * nothing to do
