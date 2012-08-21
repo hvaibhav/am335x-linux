@@ -53,9 +53,10 @@ struct perf_evsel {
 	u64			*id;
 	struct perf_counts	*counts;
 	int			idx;
-	int			ids;
+	u32			ids;
 	struct hists		hists;
 	char			*name;
+	struct event_format	*tp_format;
 	union {
 		void		*priv;
 		off_t		id_offset;
@@ -67,6 +68,10 @@ struct perf_evsel {
 	} handler;
 	unsigned int		sample_size;
 	bool 			supported;
+	/* parse modifier helper */
+	int			exclude_GH;
+	struct perf_evsel	*leader;
+	char			*group_name;
 };
 
 struct cpu_map;
@@ -106,14 +111,11 @@ void perf_evsel__free_id(struct perf_evsel *evsel);
 void perf_evsel__close_fd(struct perf_evsel *evsel, int ncpus, int nthreads);
 
 int perf_evsel__open_per_cpu(struct perf_evsel *evsel,
-			     struct cpu_map *cpus, bool group,
-			     struct xyarray *group_fds);
+			     struct cpu_map *cpus);
 int perf_evsel__open_per_thread(struct perf_evsel *evsel,
-				struct thread_map *threads, bool group,
-				struct xyarray *group_fds);
+				struct thread_map *threads);
 int perf_evsel__open(struct perf_evsel *evsel, struct cpu_map *cpus,
-		     struct thread_map *threads, bool group,
-		     struct xyarray *group_fds);
+		     struct thread_map *threads);
 void perf_evsel__close(struct perf_evsel *evsel, int ncpus, int nthreads);
 
 #define perf_evsel__match(evsel, t, c)		\
@@ -182,4 +184,9 @@ void hists__init(struct hists *hists);
 
 int perf_evsel__parse_sample(struct perf_evsel *evsel, union perf_event *event,
 			     struct perf_sample *sample, bool swapped);
+
+static inline struct perf_evsel *perf_evsel__next(struct perf_evsel *evsel)
+{
+	return list_entry(evsel->node.next, struct perf_evsel, node);
+}
 #endif /* __PERF_EVSEL_H */
