@@ -17,6 +17,7 @@
 #include <linux/timer.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
+#include <linux/platform_data/edma.h>
 #include <linux/gpio.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
@@ -28,11 +29,13 @@
 #include <asm/plat-sffsdr/sffsdr-fpga.h>
 #endif
 
-#include <mach/edma.h>
 
 #include "../codecs/pcm3008.h"
 #include "davinci-pcm.h"
 #include "davinci-i2s.h"
+
+#define DAVINCI_DMA_MCBSP_TX	2
+#define DAVINCI_DMA_MCBSP_RX	3
 
 /*
  * CLKX and CLKR are the inputs for the Sample Rate Generator.
@@ -124,7 +127,7 @@ static struct resource sffsdr_snd_resources[] = {
 
 static struct evm_snd_platform_data sffsdr_snd_data = {
 	.tx_dma_ch	= DAVINCI_DMA_MCBSP_TX,
-	.rx_dma_ch	= DAVINCI_DMA_MCBSP_RX,
+	.rx_dma_ch	= DAVINCI_DMA_MCBAP_RX,
 };
 
 static struct platform_device *sffsdr_snd_device;
