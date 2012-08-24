@@ -682,6 +682,26 @@ static int mxc_nand_calculate_ecc(struct mtd_info *mtd, const u_char *dat,
 	return 0;
 }
 
+/*
+ * Swap the BI-byte on position 0x7D0 with a data byte at 0x835.
+ * To fix a bug in NFC v1 SoC's for 2K page NAND flashes: imx27 and imx31.
+ * Warning: The same solution needs to be applied to the boot loader and the
+ * flash programmer.
+ */
+static void nfcv1_bi_swap_quirk(struct mtd_info *mtd)
+{
+	struct nand_chip *nand_chip = mtd->priv;
+	struct mxc_nand_host *host = nand_chip->priv;
+	unsigned short temp1, temp2, new_temp1;
+
+	temp1 = ioread16(host->main_area0 + 0x7D0);
+	temp2 = ioread16(host->main_area0 + 0x834);
+	new_temp1 = (temp1 & 0xFF00) | (temp2 >> 8);
+	temp2 = (temp2 & 0x00FF) | (temp1 << 8);
+	iowrite16(new_temp1, host->main_area0 + 0x7D0);
+	iowrite16(temp2, host->main_area0 + 0x834);
+}
+
 static u_char mxc_nand_read_byte(struct mtd_info *mtd)
 {
 	struct nand_chip *nand_chip = mtd->priv;
@@ -1085,6 +1105,9 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
 
 		host->devtype_data->send_page(mtd, NFC_OUTPUT);
 
+		if ((mtd->writesize > 512) && nfc_is_v1() && host->pdata.biswap)
+			nfcv1_bi_swap_quirk(mtd);
+
 		memcpy32_fromio(host->data_buf, host->main_area0,
 				mtd->writesize);
 		copy_spare(mtd, true);
@@ -1104,6 +1127,9 @@ static void mxc_nand_command(struct mtd_info *mtd, unsigned command,
 	case NAND_CMD_PAGEPROG:
 		memcpy32_toio(host->main_area0, host->data_buf, mtd->writesize);
 		copy_spare(mtd, false);
+		if ((mtd->writesize > 512) && nfc_is_v1() && host->pdata.biswap)
+			nfcv1_bi_swap_quirk(mtd);
+
 		host->devtype_data->send_page(mtd, NFC_INPUT);
 		host->devtype_data->send_cmd(host, command, true);
 		mxc_do_addr_cycle(mtd, column, page_addr);
