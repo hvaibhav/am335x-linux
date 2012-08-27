@@ -18,6 +18,30 @@
 		reg = <0x80000000 0x10000000>; /* 256 MB */
 	};
 
+	sound {
+		compatible = "ti,davinci-evm-audio";
+		ti,model = "AM335X EVM";
+		ti,audio-codec = <&tlv320aic3x>;
+		ti,mcasp-controller = <&mcasp1>;
+		ti,codec-clock-rate = <12000000>;
+		dai-data =
+			"TLV320AIC3X", 		"AIC3X",
+			"tlv320aic3x-hifi",	"true",
+			"evm-ops";
+		ti,audio-routing =
+				"Headphone Jack",	"HPLOUT",
+				"Headphone Jack",	"HPROUT",
+				"Line Out",		"LLOUT",
+				"Line Out",		"RLOUT",
+				"MIC3L",		"Mic Bias 2V",
+				"MIC3R",		"Mic Bias 2V",
+				"Mic Bias 2V",		"Mic Jack",
+				"LINE1L",		"Line In",
+				"LINE2L",		"Line In",
+				"LINE1R",		"Line In",
+				"LINE2R",		"Line In";
+	};
+
 };
 
 &mcasp1 {
