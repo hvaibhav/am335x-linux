@@ -37,7 +37,6 @@
 #include <plat/board-ams-delta.h>
 #include <linux/platform_data/keypad-omap.h>
 #include <plat/mux.h>
-#include <plat/board.h>
 
 #include <mach/hardware.h>
 #include <mach/ams-delta-fiq.h>

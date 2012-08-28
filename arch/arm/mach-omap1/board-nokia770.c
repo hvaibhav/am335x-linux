@@ -26,7 +26,6 @@
 #include <asm/mach/map.h>
 
 #include <plat/mux.h>
-#include <plat/board.h>
 #include <linux/platform_data/keypad-omap.h>
 #include <linux/platform_data/lcd-mipid.h>
 #include <plat/mmc.h>

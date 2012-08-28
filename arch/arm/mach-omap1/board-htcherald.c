@@ -42,7 +42,6 @@
 #include <asm/mach/arch.h>
 
 #include <plat/omap7xx.h>
-#include <plat/board.h>
 #include <linux/platform_data/keypad-omap.h>
 #include <plat/mmc.h>
 

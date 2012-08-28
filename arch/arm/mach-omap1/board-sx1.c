@@ -38,7 +38,6 @@
 #include <plat/dma.h>
 #include <plat/irda.h>
 #include <plat/tc.h>
-#include <plat/board.h>
 #include <linux/platform_data/keypad-omap.h>
 #include <plat/board-sx1.h>
 
