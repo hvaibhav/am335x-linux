@@ -28,7 +28,6 @@
 #include <asm/system_info.h>
 
 #include <linux/platform_data/spi-omap2-mcspi.h>
-#include <plat/board.h>
 #include "common.h"
 #include <plat/dma.h>
 #include <plat/gpmc.h>

@@ -17,7 +17,6 @@
 #include <linux/dma-mapping.h>
 
 #include <plat/common.h>
-#include <plat/board.h>
 #include <plat/vram.h>
 #include <linux/platform_data/dsp-omap.h>
 #include <plat/dma.h>

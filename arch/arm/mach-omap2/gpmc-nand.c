@@ -18,7 +18,6 @@
 
 #include <plat/cpu.h>
 #include <linux/platform_data/mtd-nand-omap2.h>
-#include <plat/board.h>
 #include <plat/gpmc.h>
 
 static struct resource gpmc_nand_resource = {

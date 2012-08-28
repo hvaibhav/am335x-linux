@@ -35,7 +35,6 @@
 #include <asm/mach/map.h>
 
 #include <linux/platform_data/spi-omap2-mcspi.h>
-#include <plat/board.h>
 #include "common.h"
 #include <plat/gpmc.h>
 #include <mach/board-zoom.h>

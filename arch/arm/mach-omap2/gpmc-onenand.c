@@ -20,7 +20,6 @@
 
 #include <plat/cpu.h>
 #include <linux/platform_data/mtd-onenand-omap2.h>
-#include <plat/board.h>
 #include <plat/gpmc.h>
 
 static struct omap_onenand_platform_data *gpmc_onenand_data;

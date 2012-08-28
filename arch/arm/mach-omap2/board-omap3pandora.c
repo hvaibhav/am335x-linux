@@ -40,7 +40,6 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include <plat/board.h>
 #include "common.h"
 #include <mach/hardware.h>
 #include <linux/platform_data/spi-omap2-mcspi.h>
