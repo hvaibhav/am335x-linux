@@ -1,0 +1,25 @@
+/*?
+ * Text: "%lu: The capabilities of the SCM increment changed\n"
+ * Severity: Informational
+ * Parameter:
+ *   @1: start address of the SCM increment
+ * Description:
+ * A configuration change is in progress for the storage class memory (SCM)
+ * increment.
+ * User action:
+ * Verify that the capability of the SCM increment is as intended; for
+ * example, with lsscm.
+ */
+
+/*?
+ * Text: "An I/O operation to SCM failed with rc=%d\n"
+ * Severity: Error
+ * Parameter:
+ *   @1: return code
+ * Description:
+ * An error occurred during I/O to storage class memory (SCM). The operation
+ * was repeated, but the maximum number of retries was exceeded before the
+ * request could be fulfilled.
+ * User action:
+ * Contact your support organization.
+ */
