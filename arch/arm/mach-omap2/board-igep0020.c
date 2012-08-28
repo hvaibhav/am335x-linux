@@ -23,19 +23,20 @@
 #include <linux/regulator/fixed.h>
 #include <linux/i2c/twl.h>
 #include <linux/mmc/host.h>
-
 #include <linux/mtd/nand.h>
+#include <linux/platform_data/mtd-onenand-omap2.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 
-#include "common.h"
 #include <plat/gpmc.h>
 #include <plat/usb.h>
+#include <plat/serial.h>
+
 #include <video/omapdss.h>
 #include <video/omap-panel-tfp410.h>
-#include <linux/platform_data/mtd-onenand-omap2.h>
 
+#include "common.h"
 #include "mux.h"
 #include "hsmmc.h"
 #include "sdram-numonyx-m65kxxxxam.h"

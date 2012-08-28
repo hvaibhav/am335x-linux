@@ -24,8 +24,9 @@
 #include <linux/delay.h>
 #include <linux/io.h>
 #include <linux/slab.h>
-
 #include <linux/platform_data/ti-mcbsp.h>
+
+#include <plat/cpu.h>
 
 #include "mcbsp.h"
 

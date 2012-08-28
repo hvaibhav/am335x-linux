@@ -32,6 +32,7 @@
 #include <sound/initval.h>
 #include <sound/soc.h>
 
+#include <plat/cpu.h>
 #include <plat/dma.h>
 #include <linux/platform_data/ti-mcbsp.h>
 #include "mcbsp.h"

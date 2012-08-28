@@ -38,13 +38,14 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include "common.h"
 #include <plat/usb.h>
 #include <linux/platform_data/mtd-nand-omap2.h>
 #include <plat/gpmc.h>
+#include <plat/serial.h>
 
 #include <mach/am35xx.h>
 
+#include "common.h"
 #include "mux.h"
 #include "control.h"
 #include "common-board-devices.h"
@@ -89,8 +90,7 @@ static struct resource cm_t3517_hecc_resources[] = {
 		.flags	= IORESOURCE_MEM,
 	},
 	{
-		.start	= INT_35XX_HECC0_IRQ,
-		.end	= INT_35XX_HECC0_IRQ,
+		.start	= 24 + OMAP_INTC_START,
 		.flags	= IORESOURCE_IRQ,
 	},
 };

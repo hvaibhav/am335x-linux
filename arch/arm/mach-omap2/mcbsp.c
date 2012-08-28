@@ -18,7 +18,6 @@
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 
-#include <mach/irqs.h>
 #include <plat/dma.h>
 #include <plat/cpu.h>
 #include <linux/platform_data/ti-mcbsp.h>
