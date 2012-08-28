@@ -132,8 +132,9 @@ SOC_SINGLE("Aux Playback Phone Volume", AC97_CD, 4, 7, 1),
 SOC_SINGLE("Phone Volume", AC97_PHONE, 0, 15, 1),
 SOC_DOUBLE("Line Capture Volume", AC97_LINE, 8, 0, 31, 1),
 
-SOC_SINGLE("Capture 20dB Boost Switch", AC97_REC_SEL, 14, 1, 0),
-SOC_SINGLE("Capture to Phone 20dB Boost Switch", AC97_REC_SEL, 11, 1, 1),
+SOC_SINGLE_TLV("Capture Boost Switch", AC97_REC_SEL, 14, 1, 0, boost_tlv),
+SOC_SINGLE_TLV("Capture to Phone Boost Switch", AC97_REC_SEL, 11, 1, 1,
+	       boost_tlv),
 
 SOC_SINGLE("3D Upper Cut-off Switch", AC97_3D_CONTROL, 5, 1, 1),
 SOC_SINGLE("3D Lower Cut-off Switch", AC97_3D_CONTROL, 4, 1, 1),
@@ -146,7 +147,7 @@ SOC_SINGLE("Playback Attenuate (-6dB) Switch", AC97_MASTER_TONE, 6, 1, 0),
 SOC_SINGLE("Bass Volume", AC97_MASTER_TONE, 8, 15, 1),
 SOC_SINGLE("Treble Volume", AC97_MASTER_TONE, 0, 15, 1),
 
-SOC_SINGLE("Capture ADC Switch", AC97_REC_GAIN, 15, 1, 1),
+SOC_SINGLE("Capture Switch", AC97_REC_GAIN, 15, 1, 1),
 SOC_ENUM("Capture Volume Steps", wm9712_enum[6]),
 SOC_DOUBLE("Capture Volume", AC97_REC_GAIN, 8, 0, 63, 1),
 SOC_SINGLE("Capture ZC Switch", AC97_REC_GAIN, 7, 1, 0),
@@ -684,8 +685,8 @@ static int __devexit wm9712_remove(struct platform_device *pdev)
 
 static struct platform_driver wm9712_codec_driver = {
 	.driver = {
-			.name = "wm9712-codec",
-			.owner = THIS_MODULE,
+		.name = "wm9712-codec",
+		.owner = THIS_MODULE,
 	},
 
 	.probe = wm9712_probe,
