@@ -33,6 +33,7 @@
 #include <asm/mach-types.h>
 #include <mach/hardware.h>
 #include <mach/gpio.h>
+#include <linux/platform_data/gpio-omap.h>
 #include <linux/platform_data/ti-mcbsp.h>
 
 /* Register descriptions for twl4030 codec part */

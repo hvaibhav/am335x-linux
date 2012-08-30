@@ -15,8 +15,12 @@
 #include <linux/i2c/twl.h>
 #include <linux/spi/spi.h>
 #include <linux/platform_data/spi-omap2-mcspi.h>
-#include <video/omapdss.h>
+
+#include <plat/cpu.h>
+
 #include <mach/board-zoom.h>
+
+#include <video/omapdss.h>
 
 #define LCD_PANEL_RESET_GPIO_PROD	96
 #define LCD_PANEL_RESET_GPIO_PILOT	55

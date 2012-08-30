@@ -25,19 +25,22 @@
 #include <linux/can/platform/ti_hecc.h>
 #include <linux/davinci_emac.h>
 #include <linux/mmc/host.h>
+#include <linux/platform_data/gpio-omap.h>
 
-#include <mach/hardware.h>
-#include <mach/am35xx.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include "common.h"
 #include <plat/usb.h>
+
+#include <mach/hardware.h>
+#include <mach/am35xx.h>
+
 #include <video/omapdss.h>
 #include <video/omap-panel-generic-dpi.h>
 #include <video/omap-panel-tfp410.h>
 
+#include "common.h"
 #include "am35xx-emac.h"
 #include "mux.h"
 #include "control.h"

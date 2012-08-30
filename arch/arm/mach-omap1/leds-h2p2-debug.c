@@ -14,12 +14,14 @@
 #include <linux/kernel_stat.h>
 #include <linux/sched.h>
 #include <linux/io.h>
+#include <linux/platform_data/gpio-omap.h>
 
-#include <mach/hardware.h>
 #include <asm/leds.h>
 #include <asm/mach-types.h>
 
 #include <plat/fpga.h>
+
+#include <mach/hardware.h>
 
 #include "leds.h"
 

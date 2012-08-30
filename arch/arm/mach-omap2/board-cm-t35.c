@@ -23,6 +23,9 @@
 #include <linux/input/matrix_keypad.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
+#include <linux/platform_data/gpio-omap.h>
+#include <linux/platform_data/mtd-nand-omap2.h>
+#include <linux/platform_data/spi-omap2-mcspi.h>
 
 #include <linux/i2c/at24.h>
 #include <linux/i2c/twl.h>
@@ -37,17 +40,16 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include "common.h"
-#include <linux/platform_data/mtd-nand-omap2.h>
 #include <plat/gpmc.h>
 #include <plat/usb.h>
-#include <video/omapdss.h>
-#include <video/omap-panel-generic-dpi.h>
-#include <video/omap-panel-tfp410.h>
-#include <linux/platform_data/spi-omap2-mcspi.h>
 
 #include <mach/hardware.h>
 
+#include <video/omapdss.h>
+#include <video/omap-panel-generic-dpi.h>
+#include <video/omap-panel-tfp410.h>
+
+#include "common.h"
 #include "mux.h"
 #include "sdram-micron-mt46h32m32lf-6.h"
 #include "hsmmc.h"
