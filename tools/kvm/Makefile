@@ -20,16 +20,24 @@ include config/utilities.mak
 include config/feature-tests.mak
 
 CC	:= $(CROSS_COMPILE)$(CC)
+LD	:= $(CROSS_COMPILE)$(LD)
 
 FIND	:= find
 CSCOPE	:= cscope
 TAGS	:= ctags
+INSTALL := install
+
+prefix = $(HOME)
+bindir_relative = bin
+bindir = $(prefix)/$(bindir_relative)
+
+DESTDIR_SQ = $(subst ','\'',$(DESTDIR))
+bindir_SQ = $(subst ','\'',$(bindir))
 
 PROGRAM	:= lkvm
 PROGRAM_ALIAS := vm
 
 GUEST_INIT := guest/init
-GUEST_INIT_S2 := guest/init_stage2
 
 OBJS	+= builtin-balloon.o
 OBJS	+= builtin-debug.o
@@ -55,6 +63,7 @@ OBJS	+= mmio.o
 OBJS	+= pci.o
 OBJS	+= term.o
 OBJS	+= virtio/blk.o
+OBJS	+= virtio/scsi.o
 OBJS	+= virtio/console.o
 OBJS	+= virtio/core.o
 OBJS	+= virtio/net.o
@@ -261,7 +270,7 @@ ifneq ($(WERROR),0)
 	CFLAGS += -Werror
 endif
 
-all: arch_support_check $(PROGRAM) $(PROGRAM_ALIAS) $(GUEST_INIT) $(GUEST_INIT_S2)
+all: arch_support_check $(PROGRAM) $(PROGRAM_ALIAS) $(GUEST_INIT)
 
 arch_support_check:
 	$(UNSUPP_ERR)
@@ -277,14 +286,15 @@ KVMTOOLS-VERSION-FILE:
 # $(OTHEROBJS) are things that do not get substituted like this.
 #
 STATIC_OBJS = $(patsubst %.o,%.static.o,$(OBJS) $(OBJS_STATOPT))
+GUEST_OBJS = guest/guest_init.o
 
-$(PROGRAM)-static:  $(DEPS) $(STATIC_OBJS) $(OTHEROBJS)
+$(PROGRAM)-static:  $(DEPS) $(STATIC_OBJS) $(OTHEROBJS) $(GUEST_INIT)
 	$(E) "  LINK    " $@
-	$(Q) $(CC) -static $(CFLAGS) $(STATIC_OBJS) $(OTHEROBJS) $(LIBS) $(LIBS_STATOPT) -o $@
+	$(Q) $(CC) -static $(CFLAGS) $(STATIC_OBJS) $(OTHEROBJS) $(GUEST_OBJS) $(LIBS) $(LIBS_STATOPT) -o $@
 
-$(PROGRAM): $(DEPS) $(OBJS) $(OBJS_DYNOPT) $(OTHEROBJS)
+$(PROGRAM): $(DEPS) $(OBJS) $(OBJS_DYNOPT) $(OTHEROBJS) $(GUEST_INIT)
 	$(E) "  LINK    " $@
-	$(Q) $(CC) $(CFLAGS) $(OBJS) $(OBJS_DYNOPT) $(OTHEROBJS) $(LIBS) $(LIBS_DYNOPT) -o $@
+	$(Q) $(CC) $(CFLAGS) $(OBJS) $(OBJS_DYNOPT) $(OTHEROBJS) $(GUEST_OBJS) $(LIBS) $(LIBS_DYNOPT) -o $@
 
 $(PROGRAM_ALIAS): $(PROGRAM)
 	$(E) "  LN      " $@
@@ -293,10 +303,7 @@ $(PROGRAM_ALIAS): $(PROGRAM)
 $(GUEST_INIT): guest/init.c
 	$(E) "  LINK    " $@
 	$(Q) $(CC) -static guest/init.c -o $@
-
-$(GUEST_INIT_S2): guest/init_stage2.c
-	$(E) "  LINK    " $@
-	$(Q) $(CC) -static guest/init_stage2.c -o $@
+	$(Q) $(LD) -r -b binary -o guest/guest_init.o $(GUEST_INIT)
 
 $(DEPS):
 
@@ -360,7 +367,7 @@ x86/bios/bios.bin.elf: x86/bios/entry.S x86/bios/e820.c x86/bios/int10.c x86/bio
 	$(E) "  CC       x86/bios/entry.o"
 	$(Q) $(CC) $(CFLAGS) $(BIOS_CFLAGS) -c -s x86/bios/entry.S -o x86/bios/entry.o
 	$(E) "  LD      " $@
-	$(Q) ld -T x86/bios/rom.ld.S -o x86/bios/bios.bin.elf x86/bios/memcpy.o x86/bios/entry.o x86/bios/e820.o x86/bios/int10.o x86/bios/int15.o
+	$(Q) $(LD) -T x86/bios/rom.ld.S -o x86/bios/bios.bin.elf x86/bios/memcpy.o x86/bios/entry.o x86/bios/e820.o x86/bios/int10.o x86/bios/int15.o
 
 x86/bios/bios.bin: x86/bios/bios.bin.elf
 	$(E) "  OBJCOPY " $@
@@ -380,6 +387,12 @@ check: all
 	./$(PROGRAM) run -d tests/boot/boot_test.iso -p "init=init"
 .PHONY: check
 
+install: all
+	$(E) "  INSTALL"
+	$(Q) $(INSTALL) -d -m 755 '$(DESTDIR_SQ)$(bindir_SQ)' 
+	$(Q) $(INSTALL) $(PROGRAM) '$(DESTDIR_SQ)$(bindir_SQ)' 
+.PHONY: install
+
 clean:
 	$(E) "  CLEAN"
 	$(Q) rm -f x86/bios/*.bin
@@ -388,7 +401,7 @@ clean:
 	$(Q) rm -f x86/bios/bios-rom.h
 	$(Q) rm -f tests/boot/boot_test.iso
 	$(Q) rm -rf tests/boot/rootfs/
-	$(Q) rm -f $(DEPS) $(OBJS) $(OTHEROBJS) $(OBJS_DYNOPT) $(STATIC_OBJS) $(PROGRAM) $(PROGRAM_ALIAS) $(PROGRAM)-static $(GUEST_INIT) $(GUEST_INIT_S2)
+	$(Q) rm -f $(DEPS) $(OBJS) $(OTHEROBJS) $(OBJS_DYNOPT) $(STATIC_OBJS) $(PROGRAM) $(PROGRAM_ALIAS) $(PROGRAM)-static $(GUEST_INIT) $(GUEST_OBJS)
 	$(Q) rm -f cscope.*
 	$(Q) rm -f tags
 	$(Q) rm -f TAGS

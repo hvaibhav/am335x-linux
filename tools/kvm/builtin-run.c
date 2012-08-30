@@ -8,6 +8,7 @@
 #include "kvm/framebuffer.h"
 #include "kvm/disk-image.h"
 #include "kvm/threadpool.h"
+#include "kvm/virtio-scsi.h"
 #include "kvm/virtio-blk.h"
 #include "kvm/virtio-net.h"
 #include "kvm/virtio-rng.h"
@@ -110,6 +111,9 @@ bool do_debug_print = false;
 static int nrcpus;
 static int vidmode = -1;
 
+extern char _binary_guest_init_start;
+extern char _binary_guest_init_size;
+
 static const char * const run_usage[] = {
 	"lkvm run [<options>] [<kernel image>]",
 	NULL
@@ -171,6 +175,19 @@ static int img_name_parser(const struct option *opt, const char *arg, int unset)
 
 	disk_image[image_count].filename = arg;
 	cur = arg;
+
+	if (strncmp(arg, "scsi:", 5) == 0) {
+		sep = strstr(arg, ":");
+		if (sep)
+			disk_image[image_count].wwpn = sep + 1;
+		sep = strstr(sep + 1, ":");
+		if (sep) {
+			*sep = 0;
+			disk_image[image_count].tpgt = sep + 1;
+		}
+		cur = sep + 1;
+	}
+
 	do {
 		sep = strstr(cur, ",");
 		if (sep) {
@@ -257,7 +274,8 @@ static int set_net_param(struct virtio_net_params *p, const char *param,
 		p->vhost = atoi(val);
 	} else if (strcmp(param, "fd") == 0) {
 		p->fd = atoi(val);
-	}
+	} else
+		die("Unknown network parameter %s", param);
 
 	return 0;
 }
@@ -788,24 +806,28 @@ void kvm_run_help(void)
 	usage_with_options(run_usage, options);
 }
 
-static int kvm_custom_stage2(void)
+static int kvm_setup_guest_init(void)
 {
-	char tmp[PATH_MAX], dst[PATH_MAX], *src;
 	const char *rootfs = custom_rootfs_name;
-	int r;
+	char tmp[PATH_MAX];
+	size_t size;
+	int fd, ret;
+	char *data;
 
-	src = realpath("guest/init_stage2", NULL);
-	if (src == NULL)
-		return -ENOMEM;
-
-	snprintf(tmp, PATH_MAX, "%s%s/virt/init_stage2", kvm__get_dir(), rootfs);
+	/* Setup /virt/init */
+	size = (size_t)&_binary_guest_init_size;
+	data = (char *)&_binary_guest_init_start;
+	snprintf(tmp, PATH_MAX, "%s%s/virt/init", kvm__get_dir(), rootfs);
 	remove(tmp);
+	fd = open(tmp, O_CREAT | O_WRONLY, 0755);
+	if (fd < 0)
+		die("Fail to setup %s", tmp);
+	ret = xwrite(fd, data, size);
+	if (ret < 0)
+		die("Fail to setup %s", tmp);
+	close(fd);
 
-	snprintf(dst, PATH_MAX, "/host/%s", src);
-	r = symlink(dst, tmp);
-	free(src);
-
-	return r;
+	return 0;
 }
 
 static int kvm_run_set_sandbox(void)
@@ -952,7 +974,7 @@ static int kvm_cmd_run_init(int argc, const char **argv)
 				fprintf(stderr, "Cannot handle parameter: "
 						"%s\n", argv[0]);
 				usage_with_options(run_usage, options);
-				return EINVAL;
+				return -EINVAL;
 			}
 			if (kvm_run_wrapper == KVM_RUN_SANDBOX) {
 				/*
@@ -979,7 +1001,7 @@ static int kvm_cmd_run_init(int argc, const char **argv)
 
 	if (!kernel_filename) {
 		kernel_usage_with_options();
-		return EINVAL;
+		return -EINVAL;
 	}
 
 	vmlinux_filename = find_vmlinux();
@@ -1132,8 +1154,8 @@ static int kvm_cmd_run_init(int argc, const char **argv)
 
 			if (!no_dhcp)
 				strcat(real_cmdline, "  ip=dhcp");
-			if (kvm_custom_stage2())
-				die("Failed linking stage 2 of init.");
+			if (kvm_setup_guest_init())
+				die("Failed to setup init for guest.");
 		}
 	} else if (!strstr(real_cmdline, "root=")) {
 		strlcat(real_cmdline, " root=/dev/vda rw ", sizeof(real_cmdline));
@@ -1183,6 +1205,13 @@ static int kvm_cmd_run_init(int argc, const char **argv)
 		pr_err("virtio_blk__init() failed with error %d\n", r);
 		goto fail;
 	}
+
+	r = virtio_scsi_init(kvm);
+	if (r < 0) {
+		pr_err("virtio_scsi_init() failed with error %d\n", r);
+		goto fail;
+	}
+
 
 	if (active_console == CONSOLE_VIRTIO)
 		virtio_console__init(kvm);
@@ -1331,6 +1360,10 @@ static void kvm_cmd_run_exit(int guest_ret)
 		pr_warning("irq__exit() failed with error %d\n", r);
 
 	fb__stop();
+
+	r = virtio_scsi_exit(kvm);
+	if (r < 0)
+		pr_warning("virtio_scsi_exit() failed with error %d\n", r);
 
 	r = virtio_blk__exit(kvm);
 	if (r < 0)
