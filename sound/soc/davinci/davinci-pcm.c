@@ -676,7 +676,9 @@ static int davinci_pcm_open(struct snd_pcm_substream *substream)
 
 	ppcm = (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) ?
 			&pcm_hardware_playback : &pcm_hardware_capture;
+#if defined(CONFIG_SND_DAVINCI_HAVE_SRAM)
 	allocate_sram(substream, params->sram_size, ppcm);
+#endif
 	snd_soc_set_runtime_hwparams(substream, ppcm);
 	/* ensure that buffer size is a multiple of period size */
 	ret = snd_pcm_hw_constraint_integer(runtime,
@@ -817,11 +819,13 @@ static void davinci_pcm_free(struct snd_pcm *pcm)
 		dma_free_writecombine(pcm->card->dev, buf->bytes,
 				      buf->area, buf->addr);
 		buf->area = NULL;
+#if defined(CONFIG_SND_DAVINCI_HAVE_SRAM)
 		iram_dma = buf->private_data;
 		if (iram_dma) {
 			sram_free(iram_dma->area, iram_dma->bytes);
 			kfree(iram_dma);
 		}
+#endif
 	}
 }
 

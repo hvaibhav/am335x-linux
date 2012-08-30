@@ -15,6 +15,11 @@ config SND_DAVINCI_SOC_MCASP
 config SND_DAVINCI_SOC_VCIF
 	tristate
 
+config SND_DAVINCI_HAVE_SRAM
+	bool
+	default y if ARCH_DAVINCI=y
+	default n if ARCH_OMAP=y
+
 config SND_DAVINCI_SOC_EVM
 	tristate "SoC Audio support for DaVinci DM6446, DM355 or DM365 EVM"
 	depends on SND_DAVINCI_SOC
