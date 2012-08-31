@@ -24,29 +24,27 @@
 #include <linux/input.h>
 #include <linux/gpio_keys.h>
 #include <linux/opp.h>
-
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/nand.h>
 #include <linux/mmc/host.h>
-
 #include <linux/regulator/machine.h>
 #include <linux/i2c/twl.h>
+#include <linux/platform_data/mtd-nand-omap2.h>
 
-#include <mach/hardware.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 #include <asm/mach/flash.h>
 
-#include "common.h"
-#include <video/omapdss.h>
-#include <video/omap-panel-tfp410.h>
 #include <plat/gpmc.h>
-#include <linux/platform_data/mtd-nand-omap2.h>
 #include <plat/usb.h>
 #include <plat/omap_device.h>
 
+#include <video/omapdss.h>
+#include <video/omap-panel-tfp410.h>
+
+#include "common.h"
 #include "mux.h"
 #include "hsmmc.h"
 #include "pm.h"

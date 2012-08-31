@@ -20,18 +20,18 @@
 #include <linux/i2c.h>
 #include <linux/spi/spi.h>
 #include <linux/usb/musb.h>
-#include <sound/tlv320aic3x.h>
+#include <linux/platform_data/spi-omap2-mcspi.h>
+#include <linux/platform_data/mtd-onenand-omap2.h>
 
 #include <asm/mach/arch.h>
 #include <asm/mach-types.h>
 
-#include "common.h"
 #include <plat/menelaus.h>
-#include <linux/platform_data/spi-omap2-mcspi.h>
-#include <linux/platform_data/mtd-onenand-omap2.h>
 #include <plat/mmc.h>
-#include <plat/serial.h>
 
+#include <sound/tlv320aic3x.h>
+
+#include "common.h"
 #include "mux.h"
 
 #define TUSB6010_ASYNC_CS	1

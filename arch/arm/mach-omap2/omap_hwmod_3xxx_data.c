@@ -20,7 +20,6 @@
 #include <linux/platform_data/spi-omap2-mcspi.h>
 
 #include <plat/omap_hwmod.h>
-#include <plat/cpu.h>
 #include <plat/dma.h>
 #include <plat/serial.h>
 #include <plat/l3_3xxx.h>
@@ -29,9 +28,9 @@
 #include <plat/mmc.h>
 #include <plat/dmtimer.h>
 
-#include <mach/hardware.h>
 #include <mach/am35xx.h>
 
+#include "soc.h"
 #include "omap_hwmod_common_data.h"
 #include "prm-regbits-34xx.h"
 #include "cm-regbits-34xx.h"

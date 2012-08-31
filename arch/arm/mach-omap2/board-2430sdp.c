@@ -36,8 +36,6 @@
 #include <plat/usb.h>
 #include <plat/gpmc-smc91x.h>
 
-#include <mach/hardware.h>
-
 #include <video/omapdss.h>
 #include <video/omap-panel-generic-dpi.h>
 

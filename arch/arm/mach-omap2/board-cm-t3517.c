@@ -33,15 +33,14 @@
 #include <linux/mtd/nand.h>
 #include <linux/mtd/partitions.h>
 #include <linux/can/platform/ti_hecc.h>
+#include <linux/platform_data/mtd-nand-omap2.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
 #include <plat/usb.h>
-#include <linux/platform_data/mtd-nand-omap2.h>
 #include <plat/gpmc.h>
-#include <plat/serial.h>
 
 #include <mach/am35xx.h>
 

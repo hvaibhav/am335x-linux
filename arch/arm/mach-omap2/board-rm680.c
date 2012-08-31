@@ -25,7 +25,6 @@
 #include <plat/mmc.h>
 #include <plat/usb.h>
 #include <plat/gpmc.h>
-#include <plat/serial.h>
 
 #include <linux/platform_data/mtd-onenand-omap2.h>
 

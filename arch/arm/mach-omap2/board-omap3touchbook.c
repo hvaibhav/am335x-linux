@@ -23,32 +23,27 @@
 #include <linux/gpio.h>
 #include <linux/input.h>
 #include <linux/gpio_keys.h>
-
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/nand.h>
 #include <linux/mmc/host.h>
-
 #include <linux/platform_data/spi-omap2-mcspi.h>
+#include <linux/platform_data/mtd-nand-omap2.h>
 #include <linux/spi/spi.h>
-
 #include <linux/spi/ads7846.h>
-
 #include <linux/regulator/machine.h>
 #include <linux/i2c/twl.h>
 
-#include <mach/hardware.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 #include <asm/mach/flash.h>
 #include <asm/system_info.h>
 
-#include "common.h"
 #include <plat/gpmc.h>
-#include <linux/platform_data/mtd-nand-omap2.h>
 #include <plat/usb.h>
 
+#include "common.h"
 #include "mux.h"
 #include "hsmmc.h"
 #include "common-board-devices.h"

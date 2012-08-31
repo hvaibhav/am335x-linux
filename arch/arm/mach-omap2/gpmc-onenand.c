@@ -15,12 +15,13 @@
 #include <linux/platform_device.h>
 #include <linux/mtd/onenand_regs.h>
 #include <linux/io.h>
+#include <linux/platform_data/mtd-onenand-omap2.h>
 
 #include <asm/mach/flash.h>
 
-#include <plat/cpu.h>
-#include <linux/platform_data/mtd-onenand-omap2.h>
 #include <plat/gpmc.h>
+
+#include "soc.h"
 
 #define	ONENAND_IO_SIZE	SZ_128K
 

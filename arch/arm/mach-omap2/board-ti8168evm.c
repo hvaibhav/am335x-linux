@@ -15,12 +15,12 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 
-#include <mach/hardware.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
 #include <plat/usb.h>
+
 #include "common.h"
 
 static struct omap_musb_board_data musb_board_data = {

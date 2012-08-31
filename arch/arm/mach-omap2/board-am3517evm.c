@@ -33,7 +33,6 @@
 
 #include <plat/usb.h>
 
-#include <mach/hardware.h>
 #include <mach/am35xx.h>
 
 #include <video/omapdss.h>

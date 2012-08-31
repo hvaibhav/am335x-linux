@@ -16,13 +16,13 @@
 #include <linux/platform_device.h>
 #include <linux/mtd/physmap.h>
 #include <linux/io.h>
-
-#include <plat/cpu.h>
-#include <plat/gpmc.h>
 #include <linux/platform_data/mtd-nand-omap2.h>
 #include <linux/platform_data/mtd-onenand-omap2.h>
+
+#include <plat/gpmc.h>
 #include <plat/tc.h>
 
+#include "common.h"
 #include "board-flash.h"
 
 #define REG_FPGA_REV			0x10

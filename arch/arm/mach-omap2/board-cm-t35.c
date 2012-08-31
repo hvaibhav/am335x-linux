@@ -43,8 +43,6 @@
 #include <plat/gpmc.h>
 #include <plat/usb.h>
 
-#include <mach/hardware.h>
-
 #include <video/omapdss.h>
 #include <video/omap-panel-generic-dpi.h>
 #include <video/omap-panel-tfp410.h>

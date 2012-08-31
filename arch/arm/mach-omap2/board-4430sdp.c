@@ -27,23 +27,24 @@
 #include <linux/leds.h>
 #include <linux/leds_pwm.h>
 #include <linux/platform_data/omap4-keypad.h>
+#include <linux/platform_data/omap-abe-twl6040.h>
+#include <linux/wl12xx.h>
 
-#include <mach/hardware.h>
 #include <asm/hardware/gic.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include "common.h"
 #include <plat/usb.h>
 #include <plat/mmc.h>
 #include <plat/omap4-keypad.h>
+
 #include <video/omapdss.h>
 #include <video/omap-panel-nokia-dsi.h>
 #include <video/omap-panel-picodlp.h>
-#include <linux/wl12xx.h>
-#include <linux/platform_data/omap-abe-twl6040.h>
 
+#include "soc.h"
+#include "common.h"
 #include "mux.h"
 #include "hsmmc.h"
 #include "control.h"

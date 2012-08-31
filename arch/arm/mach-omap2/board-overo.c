@@ -31,28 +31,26 @@
 #include <linux/regulator/machine.h>
 #include <linux/regulator/fixed.h>
 #include <linux/spi/spi.h>
-
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/nand.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mmc/host.h>
+#include <linux/platform_data/mtd-nand-omap2.h>
+#include <linux/platform_data/spi-omap2-mcspi.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/flash.h>
 #include <asm/mach/map.h>
 
-#include "common.h"
+#include <plat/gpmc.h>
+#include <plat/usb.h>
+
 #include <video/omapdss.h>
 #include <video/omap-panel-generic-dpi.h>
 #include <video/omap-panel-tfp410.h>
-#include <plat/gpmc.h>
-#include <mach/hardware.h>
-#include <linux/platform_data/mtd-nand-omap2.h>
-#include <linux/platform_data/spi-omap2-mcspi.h>
-#include <plat/mux.h>
-#include <plat/usb.h>
 
+#include "common.h"
 #include "mux.h"
 #include "sdram-micron-mt46h32m32lf-6.h"
 #include "hsmmc.h"

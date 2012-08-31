@@ -13,12 +13,13 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/mtd/nand.h>
+#include <linux/platform_data/mtd-nand-omap2.h>
 
 #include <asm/mach/flash.h>
 
-#include <plat/cpu.h>
-#include <linux/platform_data/mtd-nand-omap2.h>
 #include <plat/gpmc.h>
+
+#include "soc.h"
 
 static struct resource gpmc_nand_resource[] = {
 	{

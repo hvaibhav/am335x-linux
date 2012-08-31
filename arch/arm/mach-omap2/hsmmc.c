@@ -21,8 +21,6 @@
 #include <plat/mux.h>
 #include <plat/omap_device.h>
 
-#include <mach/hardware.h>
-
 #include "mux.h"
 #include "hsmmc.h"
 #include "control.h"

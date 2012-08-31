@@ -27,11 +27,10 @@
 
 #include <asm/mach-types.h>
 
-#include <plat/cpu.h>
 #include <plat/gpmc.h>
 #include <plat/sdrc.h>
 
-#include <mach/hardware.h>
+#include "soc.h"
 
 #include "common.h"
 
