@@ -340,7 +340,7 @@ static int read_index_list(struct sock *sk, struct hci_dev *hdev, void *data,
 	}
 
 	rp_len = sizeof(*rp) + (2 * count);
-	rp = kmalloc(rp_len, GFP_ATOMIC);
+	rp = kmalloc(rp_len, GFP_KERNEL);
 	if (!rp) {
 		read_unlock(&hci_dev_list_lock);
 		return -ENOMEM;
