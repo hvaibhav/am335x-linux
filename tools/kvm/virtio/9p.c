@@ -117,26 +117,6 @@ static void close_fid(struct p9_dev *p9dev, u32 fid)
 	free(pfid);
 }
 
-static void clear_all_fids(struct p9_dev *p9dev)
-{
-	struct rb_node *node = rb_first(&p9dev->fids);
-
-	while (node) {
-		struct p9_fid *fid = rb_entry(node, struct p9_fid, node);
-
-		if (fid->fd > 0)
-			close(fid->fd);
-
-		if (fid->dir)
-			closedir(fid->dir);
-
-		rb_erase(&fid->node, &p9dev->fids);
-		free(fid);
-
-		node = rb_first(&p9dev->fids);
-	}
-}
-
 static void virtio_p9_set_reply_header(struct p9_pdu *pdu, u32 size)
 {
 	u8 cmd;
@@ -442,8 +422,6 @@ static void virtio_p9_attach(struct p9_dev *p9dev,
 
 	free(uname);
 	free(aname);
-
-	clear_all_fids(p9dev);
 
 	if (lstat(p9dev->root_dir, &st) < 0)
 		goto err_out;
@@ -1272,18 +1250,11 @@ static void virtio_p9_do_io(struct kvm *kvm, void *param)
 	}
 }
 
-static void set_config(struct kvm *kvm, void *dev, u8 data, u32 offset)
+static u8 *get_config(struct kvm *kvm, void *dev)
 {
 	struct p9_dev *p9dev = dev;
 
-	((u8 *)(p9dev->config))[offset] = data;
-}
-
-static u8 get_config(struct kvm *kvm, void *dev, u32 offset)
-{
-	struct p9_dev *p9dev = dev;
-
-	return ((u8 *)(p9dev->config))[offset];
+	return ((u8 *)(p9dev->config));
 }
 
 static u32 get_host_features(struct kvm *kvm, void *dev)
@@ -1345,7 +1316,6 @@ static int get_size_vq(struct kvm *kvm, void *dev, u32 vq)
 }
 
 struct virtio_ops p9_dev_virtio_ops = (struct virtio_ops) {
-	.set_config		= set_config,
 	.get_config		= get_config,
 	.get_host_features	= get_host_features,
 	.set_guest_features	= set_guest_features,

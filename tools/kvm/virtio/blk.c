@@ -134,18 +134,11 @@ static void virtio_blk_do_io(struct kvm *kvm, struct virt_queue *vq, struct blk_
 	}
 }
 
-static void set_config(struct kvm *kvm, void *dev, u8 data, u32 offset)
+static u8 *get_config(struct kvm *kvm, void *dev)
 {
 	struct blk_dev *bdev = dev;
 
-	((u8 *)(&bdev->blk_config))[offset] = data;
-}
-
-static u8 get_config(struct kvm *kvm, void *dev, u32 offset)
-{
-	struct blk_dev *bdev = dev;
-
-	return ((u8 *)(&bdev->blk_config))[offset];
+	return ((u8 *)(&bdev->blk_config));
 }
 
 static u32 get_host_features(struct kvm *kvm, void *dev)
@@ -184,9 +177,12 @@ static void *virtio_blk_thread(void *dev)
 {
 	struct blk_dev *bdev = dev;
 	u64 data;
+	int r;
 
 	while (1) {
-		read(bdev->io_efd, &data, sizeof(u64));
+		r = read(bdev->io_efd, &data, sizeof(u64));
+		if (r < 0)
+			continue;
 		virtio_blk_do_io(bdev->kvm, &bdev->vqs[0], bdev);
 	}
 
@@ -198,8 +194,11 @@ static int notify_vq(struct kvm *kvm, void *dev, u32 vq)
 {
 	struct blk_dev *bdev = dev;
 	u64 data = 1;
+	int r;
 
-	write(bdev->io_efd, &data, sizeof(data));
+	r = write(bdev->io_efd, &data, sizeof(data));
+	if (r < 0)
+		return r;
 
 	return 0;
 }
@@ -224,7 +223,6 @@ static int set_size_vq(struct kvm *kvm, void *dev, u32 vq, int size)
 }
 
 static struct virtio_ops blk_dev_virtio_ops = (struct virtio_ops) {
-	.set_config		= set_config,
 	.get_config		= get_config,
 	.get_host_features	= get_host_features,
 	.set_guest_features	= set_guest_features,
