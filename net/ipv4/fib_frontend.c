@@ -218,7 +218,7 @@ __be32 fib_compute_spec_dst(struct sk_buff *skb)
 	scope = RT_SCOPE_UNIVERSE;
 	if (!ipv4_is_zeronet(ip_hdr(skb)->saddr)) {
 		fl4.flowi4_oif = 0;
-		fl4.flowi4_iif = net->loopback_dev->ifindex;
+		fl4.flowi4_iif = LOOPBACK_IFINDEX;
 		fl4.daddr = ip_hdr(skb)->saddr;
 		fl4.saddr = 0;
 		fl4.flowi4_tos = RT_TOS(ip_hdr(skb)->tos);
@@ -1041,7 +1041,7 @@ static int fib_inetaddr_event(struct notifier_block *this, unsigned long event, 
 static int fib_netdev_event(struct notifier_block *this, unsigned long event, void *ptr)
 {
 	struct net_device *dev = ptr;
-	struct in_device *in_dev = __in_dev_get_rtnl(dev);
+	struct in_device *in_dev;
 	struct net *net = dev_net(dev);
 
 	if (event == NETDEV_UNREGISTER) {
@@ -1050,8 +1050,7 @@ static int fib_netdev_event(struct notifier_block *this, unsigned long event, vo
 		return NOTIFY_DONE;
 	}
 
-	if (!in_dev)
-		return NOTIFY_DONE;
+	in_dev = __in_dev_get_rtnl(dev);
 
 	switch (event) {
 	case NETDEV_UP:
@@ -1062,16 +1061,14 @@ static int fib_netdev_event(struct notifier_block *this, unsigned long event, vo
 		fib_sync_up(dev);
 #endif
 		atomic_inc(&net->ipv4.dev_addr_genid);
-		rt_cache_flush(dev_net(dev), -1);
+		rt_cache_flush(net, -1);
 		break;
 	case NETDEV_DOWN:
 		fib_disable_ip(dev, 0, 0);
 		break;
 	case NETDEV_CHANGEMTU:
 	case NETDEV_CHANGE:
-		rt_cache_flush(dev_net(dev), 0);
-		break;
-	case NETDEV_UNREGISTER_BATCH:
+		rt_cache_flush(net, 0);
 		break;
 	}
 	return NOTIFY_DONE;
