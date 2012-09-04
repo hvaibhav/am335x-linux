@@ -424,8 +424,9 @@ int mmc_interrupt_hpi(struct mmc_card *card)
 	case R1_STATE_IDLE:
 	case R1_STATE_READY:
 	case R1_STATE_STBY:
+	case R1_STATE_TRAN:
 		/*
-		 * In idle states, HPI is not needed and the caller
+		 * In idle and transfer states, HPI is not needed and the caller
 		 * can issue the next intended command immediately
 		 */
 		goto out;
@@ -2051,6 +2052,11 @@ void mmc_rescan(struct work_struct *work)
 
 	if (host->rescan_disable)
 		return;
+
+	/* If there is a non-removable card registered, only scan once */
+	if ((host->caps & MMC_CAP_NONREMOVABLE) && host->rescan_entered)
+		return;
+	host->rescan_entered = 1;
 
 	mmc_bus_get(host);
 
