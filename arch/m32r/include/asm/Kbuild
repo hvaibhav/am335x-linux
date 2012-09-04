@@ -1,3 +1,4 @@
 include include/asm-generic/Kbuild.asm
 
 generic-y	+= module.h
+generic-y += exec.h

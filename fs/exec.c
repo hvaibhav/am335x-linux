@@ -59,7 +59,6 @@
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
 #include <asm/tlb.h>
-#include <asm/exec.h>
 
 #include <trace/events/task.h>
 #include "internal.h"
@@ -2319,3 +2318,42 @@ int dump_seek(struct file *file, loff_t off)
 	return ret;
 }
 EXPORT_SYMBOL(dump_seek);
+
+#ifdef __ARCH_WANT_SYS_EXECVE
+SYSCALL_DEFINE3(execve,
+		const char __user *, filename,
+		const char __user *const __user *, argv,
+		const char __user *const __user *, envp)
+{
+	const char *path = getname(filename);
+	int error = PTR_ERR(path);
+	if (!IS_ERR(path)) {
+		error = do_execve(path, argv, envp, current_pt_regs());
+		putname(path);
+	}
+	return error;
+}
+#endif
+
+#ifdef __ARCH_WANT_KERNEL_EXECVE
+int kernel_execve(const char *filename,
+		  const char *const argv[],
+		  const char *const envp[])
+{
+	struct pt_regs regs;
+	int ret;
+
+	memset(&regs, 0, sizeof(struct pt_regs));
+	ret = do_execve(filename,
+			(const char __user *const __user *)argv,
+			(const char __user *const __user *)envp, &regs);
+	if (ret < 0)
+		return ret;
+
+	/*
+	 * We were successful.  We won't be returning to our caller, but
+	 * instead to user space by manipulating the kernel stack.
+	 */
+	ret_from_kernel_execve(current_pt_regs(), &regs);
+}
+#endif

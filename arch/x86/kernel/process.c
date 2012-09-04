@@ -337,33 +337,6 @@ int kernel_thread(int (*fn)(void *), void *arg, unsigned long flags)
 EXPORT_SYMBOL(kernel_thread);
 
 /*
- * sys_execve() executes a new program.
- */
-long sys_execve(const char __user *name,
-		const char __user *const __user *argv,
-		const char __user *const __user *envp, struct pt_regs *regs)
-{
-	long error;
-	char *filename;
-
-	filename = getname(name);
-	error = PTR_ERR(filename);
-	if (IS_ERR(filename))
-		return error;
-	error = do_execve(filename, argv, envp, regs);
-
-#ifdef CONFIG_X86_32
-	if (error == 0) {
-		/* Make sure we don't return using sysenter.. */
-                set_thread_flag(TIF_IRET);
-        }
-#endif
-
-	putname(filename);
-	return error;
-}
-
-/*
  * Idle related variables and functions
  */
 unsigned long boot_option_idle_override = IDLE_NO_OVERRIDE;

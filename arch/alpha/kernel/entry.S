@@ -418,11 +418,10 @@ $work_notifysig:
 strace:
 	/* set up signal stack, call syscall_trace */
 	bsr	$1, do_switch_stack
-	jsr	$26, syscall_trace
+	jsr	$26, syscall_trace_enter /* returns the syscall number */
 	bsr	$1, undo_switch_stack
 
-	/* get the system call number and the arguments back.. */
-	ldq	$0, 0($sp)
+	/* get the arguments back.. */
 	ldq	$16, SP_OFF+24($sp)
 	ldq	$17, SP_OFF+32($sp)
 	ldq	$18, SP_OFF+40($sp)
@@ -449,7 +448,7 @@ $strace_success:
 	stq	$0, 0($sp)		/* save return value */
 
 	bsr	$1, do_switch_stack
-	jsr	$26, syscall_trace
+	jsr	$26, syscall_trace_leave
 	bsr	$1, undo_switch_stack
 	br	$31, ret_from_sys_call
 
@@ -467,7 +466,7 @@ $strace_error:
 	bsr	$1, do_switch_stack
 	mov	$19, $9		/* save old syscall number */
 	mov	$20, $10	/* save old a3 */
-	jsr	$26, syscall_trace
+	jsr	$26, syscall_trace_leave
 	mov	$9, $19
 	mov	$10, $20
 	bsr	$1, undo_switch_stack
@@ -663,6 +662,31 @@ kernel_thread:
 	br	ret_to_kernel
 .end kernel_thread
 
+	.globl	ret_from_kernel_execve
+	.align	4
+	.ent	ret_from_kernel_execve
+ret_from_kernel_execve:
+	/*
+	 * copy regs to normal position and off to userland we go...
+	 * note that we are not guaranteed that we are deep enough
+	 * in stack for current_pt_regs() not to overlap our stack
+	 * frame; memcpy() would not be safe and we _must_ do
+	 * everything starting from that memmove() in assembler.
+	 * And we can't mangle $sp until after the call of memmove()
+	 * either...
+	 */
+	lda	$18, SIZEOF_PT_REGS
+	bsr	$26, memmove            !samegp
+
+	/* Take that over as our new stack frame and visit userland!  */
+	mov	$0, $sp
+	/* Avoid the HAE being gratuitously wrong, to avoid restoring it.  */
+	ldq	$2, alpha_mv+HAE_CACHE
+	stq	$2, 152($sp)		/* HAE */
+	br	$31, ret_to_user
+
+.end	ret_from_kernel_execve
+
 
 /*
  * Special system calls.  Most of these are special in that they either
@@ -722,7 +746,7 @@ sys_sigreturn:
 	lda	$sp, -SWITCH_STACK_SIZE($sp)
 	jsr	$26, do_sigreturn
 	bne	$9, 1f
-	jsr	$26, syscall_trace
+	jsr	$26, syscall_trace_leave
 1:	br	$1, undo_switch_stack
 	br	ret_from_sys_call
 .end sys_sigreturn
@@ -739,19 +763,10 @@ sys_rt_sigreturn:
 	lda	$sp, -SWITCH_STACK_SIZE($sp)
 	jsr	$26, do_rt_sigreturn
 	bne	$9, 1f
-	jsr	$26, syscall_trace
+	jsr	$26, syscall_trace_leave
 1:	br	$1, undo_switch_stack
 	br	ret_from_sys_call
 .end sys_rt_sigreturn
-
-	.align	4
-	.globl	sys_execve
-	.ent	sys_execve
-sys_execve:
-	.prologue 0
-	mov	$sp, $19
-	jmp	$31, do_sys_execve
-.end sys_execve
 
 	.align	4
 	.globl	alpha_ni_syscall
