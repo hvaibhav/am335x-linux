@@ -174,7 +174,7 @@ struct alc_spec {
 
 	/* hooks */
 	void (*init_hook)(struct hda_codec *codec);
-#ifdef CONFIG_SND_HDA_POWER_SAVE
+#ifdef CONFIG_PM
 	void (*power_hook)(struct hda_codec *codec);
 #endif
 	void (*shutup)(struct hda_codec *codec);
@@ -215,7 +215,7 @@ struct alc_spec {
 	/* for virtual master */
 	hda_nid_t vmaster_nid;
 	struct hda_vmaster_mute_hook vmaster_mute;
-#ifdef CONFIG_SND_HDA_POWER_SAVE
+#ifdef CONFIG_PM
 	struct hda_loopback_check loopback;
 	int num_loopbacks;
 	struct hda_amp_list loopback_list[8];
@@ -2053,13 +2053,11 @@ static int alc_init(struct hda_codec *codec)
 
 	alc_apply_fixup(codec, ALC_FIXUP_ACT_INIT);
 
-	snd_hda_jack_report_sync(codec);
-
 	hda_call_check_power_status(codec, 0x01);
 	return 0;
 }
 
-#ifdef CONFIG_SND_HDA_POWER_SAVE
+#ifdef CONFIG_PM
 static int alc_check_power_status(struct hda_codec *codec, hda_nid_t nid)
 {
 	struct alc_spec *spec = codec->spec;
@@ -2437,7 +2435,7 @@ static void alc_free(struct hda_codec *codec)
 	snd_hda_detach_beep_device(codec);
 }
 
-#ifdef CONFIG_SND_HDA_POWER_SAVE
+#ifdef CONFIG_PM
 static void alc_power_eapd(struct hda_codec *codec)
 {
 	alc_auto_setup_eapd(codec, false);
@@ -2477,7 +2475,7 @@ static const struct hda_codec_ops alc_patch_ops = {
 #ifdef CONFIG_PM
 	.resume = alc_resume,
 #endif
-#ifdef CONFIG_SND_HDA_POWER_SAVE
+#ifdef CONFIG_PM
 	.suspend = alc_suspend,
 	.check_power_status = alc_check_power_status,
 #endif
@@ -2633,7 +2631,7 @@ static const char *alc_get_line_out_pfx(struct alc_spec *spec, int ch,
 	return channel_name[ch];
 }
 
-#ifdef CONFIG_SND_HDA_POWER_SAVE
+#ifdef CONFIG_PM
 /* add the powersave loopback-list entry */
 static void add_loopback_list(struct alc_spec *spec, hda_nid_t mix, int idx)
 {
@@ -6503,7 +6501,7 @@ static int patch_alc861(struct hda_codec *codec)
 	}
 
 	codec->patch_ops = alc_patch_ops;
-#ifdef CONFIG_SND_HDA_POWER_SAVE
+#ifdef CONFIG_PM
 	spec->power_hook = alc_power_eapd;
 #endif
 

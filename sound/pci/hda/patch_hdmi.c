@@ -1115,7 +1115,7 @@ static int hdmi_parse_codec(struct hda_codec *codec)
 	 * can be lost and presence sense verb will become inaccurate if the
 	 * HDA link is powered off at hot plug or hw initialization time.
 	 */
-#ifdef CONFIG_SND_HDA_POWER_SAVE
+#ifdef CONFIG_PM
 	if (!(snd_hda_param_read(codec, codec->afg, AC_PAR_POWER_STATE) &
 	      AC_PWRST_EPSS))
 		codec->bus->power_keep_link_on = 1;
@@ -1311,7 +1311,6 @@ static int generic_hdmi_init(struct hda_codec *codec)
 		hdmi_init_pin(codec, pin_nid);
 		snd_hda_jack_detect_enable(codec, pin_nid, pin_nid);
 	}
-	snd_hda_jack_report_sync(codec);
 	return 0;
 }
 
@@ -1428,7 +1427,6 @@ static int simple_playback_init(struct hda_codec *codec)
 		snd_hda_codec_write(codec, pin, 0, AC_VERB_SET_AMP_GAIN_MUTE,
 				    AMP_OUT_UNMUTE);
 	snd_hda_jack_detect_enable(codec, pin, pin);
-	snd_hda_jack_report_sync(codec);
 	return 0;
 }
 
