@@ -242,6 +242,8 @@ config LANTIQ
 	select HAVE_MACH_CLKDEV
 	select CLKDEV_LOOKUP
 	select USE_OF
+	select PINCTRL
+	select PINCTRL_LANTIQ
 
 config LASAT
 	bool "LASAT Networks platforms"
@@ -831,6 +833,7 @@ config NLM_XLP_BOARD
 	select ZONE_DMA if 64BIT
 	select SYNC_R4K
 	select SYS_HAS_EARLY_PRINTK
+	select USE_OF
 	help
 	  This board is based on Netlogic XLP Processor.
 	  Say Y here if you have a XLP based board.
@@ -1880,6 +1883,18 @@ config SIBYTE_DMA_PAGEOPS
 config CPU_HAS_PREFETCH
 	bool
 
+config CPU_GENERIC_DUMP_TLB
+	bool
+	default y if !(CPU_R3000 || CPU_R6000 || CPU_R8000 || CPU_TX39XX)
+
+config CPU_R4K_FPU
+	bool
+	default y if !(CPU_R3000 || CPU_R6000 || CPU_TX39XX || CPU_CAVIUM_OCTEON)
+
+config CPU_R4K_CACHE_TLB
+	bool
+	default y if !(CPU_R3000 || CPU_R8000 || CPU_SB1 || CPU_TX39XX || CPU_CAVIUM_OCTEON)
+
 choice
 	prompt "MIPS MT options"
 
@@ -1902,6 +1917,7 @@ config MIPS_MT_SMP
 	select SYS_SUPPORTS_SCHED_SMT if SMP
 	select SYS_SUPPORTS_SMP
 	select SMP_UP
+	select MIPS_PERF_SHARED_TC_COUNTERS
 	help
 	  This is a kernel model which is known a VSMP but lately has been
 	  marketesed into SMVP.
@@ -2251,6 +2267,9 @@ config NR_CPUS
 	  approximately eight kilobytes to the kernel image.  For best
 	  performance should round up your number of processors to the next
 	  power of two.
+
+config MIPS_PERF_SHARED_TC_COUNTERS
+	bool
 
 #
 # Timer Interrupt Frequency Configuration
