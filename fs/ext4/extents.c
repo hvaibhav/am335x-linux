@@ -1656,16 +1656,60 @@ static int ext4_ext_try_to_merge_right(struct inode *inode,
 }
 
 /*
+ * This function does a very simple check to see if we can collapse
+ * an extent tree with a single extent tree leaf block into the inode.
+ */
+static void ext4_ext_try_to_merge_up(handle_t *handle,
+				     struct inode *inode,
+				     struct ext4_ext_path *path)
+{
+	size_t s;
+	unsigned max_root = ext4_ext_space_root(inode, 0);
+	ext4_fsblk_t blk;
+
+	if ((path[0].p_depth != 1) ||
+	    (le16_to_cpu(path[0].p_hdr->eh_entries) != 1) ||
+	    (le16_to_cpu(path[1].p_hdr->eh_entries) > max_root))
+		return;
+
+	/*
+	 * We need to modify the block allocation bitmap and the block
+	 * group descriptor to release the extent tree block.  If we
+	 * can't get the journal credits, give up.
+	 */
+	if (ext4_journal_extend(handle, 2))
+		return;
+
+	/*
+	 * Copy the extent data up to the inode
+	 */
+	blk = ext4_idx_pblock(path[0].p_idx);
+	s = le16_to_cpu(path[1].p_hdr->eh_entries) *
+		sizeof(struct ext4_extent_idx);
+	s += sizeof(struct ext4_extent_header);
+
+	memcpy(path[0].p_hdr, path[1].p_hdr, s);
+	path[0].p_depth = 0;
+	path[0].p_ext = EXT_FIRST_EXTENT(path[0].p_hdr) +
+		(path[1].p_ext - EXT_FIRST_EXTENT(path[1].p_hdr));
+	path[0].p_hdr->eh_max = cpu_to_le16(max_root);
+
+	brelse(path[1].p_bh);
+	ext4_free_blocks(handle, inode, NULL, blk, 1,
+			 EXT4_FREE_BLOCKS_METADATA | EXT4_FREE_BLOCKS_FORGET);
+}
+
+/*
  * This function tries to merge the @ex extent to neighbours in the tree.
  * return 1 if merge left else 0.
  */
-static int ext4_ext_try_to_merge(struct inode *inode,
+static void ext4_ext_try_to_merge(handle_t *handle,
+				  struct inode *inode,
 				  struct ext4_ext_path *path,
 				  struct ext4_extent *ex) {
 	struct ext4_extent_header *eh;
 	unsigned int depth;
 	int merge_done = 0;
-	int ret = 0;
 
 	depth = ext_depth(inode);
 	BUG_ON(path[depth].p_hdr == NULL);
@@ -1675,9 +1719,9 @@ static int ext4_ext_try_to_merge(struct inode *inode,
 		merge_done = ext4_ext_try_to_merge_right(inode, path, ex - 1);
 
 	if (!merge_done)
-		ret = ext4_ext_try_to_merge_right(inode, path, ex);
+		(void) ext4_ext_try_to_merge_right(inode, path, ex);
 
-	return ret;
+	ext4_ext_try_to_merge_up(handle, inode, path);
 }
 
 /*
@@ -1893,7 +1937,7 @@ has_space:
 merge:
 	/* try to merge extents */
 	if (!(flag & EXT4_GET_BLOCKS_PRE_IO))
-		ext4_ext_try_to_merge(inode, path, nearex);
+		ext4_ext_try_to_merge(handle, inode, path, nearex);
 
 
 	/* time to correct all indexes above */
@@ -1901,7 +1945,7 @@ merge:
 	if (err)
 		goto cleanup;
 
-	err = ext4_ext_dirty(handle, inode, path + depth);
+	err = ext4_ext_dirty(handle, inode, path + path->p_depth);
 
 cleanup:
 	if (npath) {
@@ -2924,9 +2968,9 @@ static int ext4_split_extent_at(handle_t *handle,
 			ext4_ext_mark_initialized(ex);
 
 		if (!(flags & EXT4_GET_BLOCKS_PRE_IO))
-			ext4_ext_try_to_merge(inode, path, ex);
+			ext4_ext_try_to_merge(handle, inode, path, ex);
 
-		err = ext4_ext_dirty(handle, inode, path + depth);
+		err = ext4_ext_dirty(handle, inode, path + path->p_depth);
 		goto out;
 	}
 
@@ -2958,8 +3002,8 @@ static int ext4_split_extent_at(handle_t *handle,
 			goto fix_extent_len;
 		/* update the extent length and mark as initialized */
 		ex->ee_len = cpu_to_le16(ee_len);
-		ext4_ext_try_to_merge(inode, path, ex);
-		err = ext4_ext_dirty(handle, inode, path + depth);
+		ext4_ext_try_to_merge(handle, inode, path, ex);
+		err = ext4_ext_dirty(handle, inode, path + path->p_depth);
 		goto out;
 	} else if (err)
 		goto fix_extent_len;
@@ -3041,7 +3085,6 @@ out:
 	return err ? err : map->m_len;
 }
 
-#define EXT4_EXT_ZERO_LEN 7
 /*
  * This function is called by ext4_ext_map_blocks() if someone tries to write
  * to an uninitialized extent. It may result in splitting the uninitialized
@@ -3067,13 +3110,14 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
 					   struct ext4_map_blocks *map,
 					   struct ext4_ext_path *path)
 {
+	struct ext4_sb_info *sbi;
 	struct ext4_extent_header *eh;
 	struct ext4_map_blocks split_map;
 	struct ext4_extent zero_ex;
 	struct ext4_extent *ex;
 	ext4_lblk_t ee_block, eof_block;
 	unsigned int ee_len, depth;
-	int allocated;
+	int allocated, max_zeroout = 0;
 	int err = 0;
 	int split_flag = 0;
 
@@ -3081,6 +3125,7 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
 		"block %llu, max_blocks %u\n", inode->i_ino,
 		(unsigned long long)map->m_lblk, map->m_len);
 
+	sbi = EXT4_SB(inode->i_sb);
 	eof_block = (inode->i_size + inode->i_sb->s_blocksize - 1) >>
 		inode->i_sb->s_blocksize_bits;
 	if (eof_block < map->m_lblk + map->m_len)
@@ -3180,9 +3225,12 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
 	 */
 	split_flag |= ee_block + ee_len <= eof_block ? EXT4_EXT_MAY_ZEROOUT : 0;
 
-	/* If extent has less than 2*EXT4_EXT_ZERO_LEN zerout directly */
-	if (ee_len <= 2*EXT4_EXT_ZERO_LEN &&
-	    (EXT4_EXT_MAY_ZEROOUT & split_flag)) {
+	if (EXT4_EXT_MAY_ZEROOUT & split_flag)
+		max_zeroout = sbi->s_extent_max_zeroout_kb >>
+			inode->i_sb->s_blocksize_bits;
+
+	/* If extent is less than s_max_zeroout_kb, zeroout directly */
+	if (max_zeroout && (ee_len <= max_zeroout)) {
 		err = ext4_ext_zeroout(inode, ex);
 		if (err)
 			goto out;
@@ -3191,8 +3239,8 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
 		if (err)
 			goto out;
 		ext4_ext_mark_initialized(ex);
-		ext4_ext_try_to_merge(inode, path, ex);
-		err = ext4_ext_dirty(handle, inode, path + depth);
+		ext4_ext_try_to_merge(handle, inode, path, ex);
+		err = ext4_ext_dirty(handle, inode, path + path->p_depth);
 		goto out;
 	}
 
@@ -3206,9 +3254,8 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
 	split_map.m_lblk = map->m_lblk;
 	split_map.m_len = map->m_len;
 
-	if (allocated > map->m_len) {
-		if (allocated <= EXT4_EXT_ZERO_LEN &&
-		    (EXT4_EXT_MAY_ZEROOUT & split_flag)) {
+	if (max_zeroout && (allocated > map->m_len)) {
+		if (allocated <= max_zeroout) {
 			/* case 3 */
 			zero_ex.ee_block =
 					 cpu_to_le32(map->m_lblk);
@@ -3220,9 +3267,7 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
 				goto out;
 			split_map.m_lblk = map->m_lblk;
 			split_map.m_len = allocated;
-		} else if ((map->m_lblk - ee_block + map->m_len <
-			   EXT4_EXT_ZERO_LEN) &&
-			   (EXT4_EXT_MAY_ZEROOUT & split_flag)) {
+		} else if (map->m_lblk - ee_block + map->m_len < max_zeroout) {
 			/* case 2 */
 			if (map->m_lblk != ee_block) {
 				zero_ex.ee_block = ex->ee_block;
@@ -3242,7 +3287,7 @@ static int ext4_ext_convert_to_initialized(handle_t *handle,
 	}
 
 	allocated = ext4_split_extent(handle, inode, path,
-				       &split_map, split_flag, 0);
+				      &split_map, split_flag, 0);
 	if (allocated < 0)
 		err = allocated;
 
@@ -3256,7 +3301,7 @@ out:
  * to an uninitialized extent.
  *
  * Writing to an uninitialized extent may result in splitting the uninitialized
- * extent into multiple /initialized uninitialized extents (up to three)
+ * extent into multiple initialized/uninitialized extents (up to three)
  * There are three possibilities:
  *   a> There is no split required: Entire extent should be uninitialized
  *   b> Splits in two extents: Write is happening at either end of the extent
@@ -3333,10 +3378,10 @@ static int ext4_convert_unwritten_extents_endio(handle_t *handle,
 	/* note: ext4_ext_correct_indexes() isn't needed here because
 	 * borders are not changed
 	 */
-	ext4_ext_try_to_merge(inode, path, ex);
+	ext4_ext_try_to_merge(handle, inode, path, ex);
 
 	/* Mark modified extent as dirty */
-	err = ext4_ext_dirty(handle, inode, path + depth);
+	err = ext4_ext_dirty(handle, inode, path + path->p_depth);
 out:
 	ext4_ext_show_leaf(inode, path);
 	return err;
@@ -4815,9 +4860,6 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
 	if (IS_ERR(handle))
 		return PTR_ERR(handle);
 
-	err = ext4_orphan_add(handle, inode);
-	if (err)
-		goto out;
 
 	/*
 	 * Now we need to zero out the non-page-aligned data in the
@@ -4903,7 +4945,6 @@ int ext4_ext_punch_hole(struct file *file, loff_t offset, loff_t length)
 	up_write(&EXT4_I(inode)->i_data_sem);
 
 out:
-	ext4_orphan_del(handle, inode);
 	inode->i_mtime = inode->i_ctime = ext4_current_time(inode);
 	ext4_mark_inode_dirty(handle, inode);
 	ext4_journal_stop(handle);

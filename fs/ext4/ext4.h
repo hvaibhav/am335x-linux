@@ -1243,6 +1243,7 @@ struct ext4_sb_info {
 	unsigned int s_mb_order2_reqs;
 	unsigned int s_mb_group_prealloc;
 	unsigned int s_max_writeback_mb_bump;
+	unsigned int s_max_dir_size_kb;
 	/* where last allocation was done - for stream allocation */
 	unsigned long s_mb_last_group;
 	unsigned long s_mb_last_start;
@@ -1269,6 +1270,9 @@ struct ext4_sb_info {
 	/* for write statistics */
 	unsigned long s_sectors_written_start;
 	u64 s_kbytes_written;
+
+	/* the size of zero-out chunk */
+	unsigned int s_extent_max_zeroout_kb;
 
 	unsigned int s_log_groups_per_flex;
 	struct flex_groups *s_flex_groups;
