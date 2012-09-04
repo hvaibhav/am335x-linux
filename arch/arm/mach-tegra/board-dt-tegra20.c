@@ -71,6 +71,7 @@ struct of_dev_auxdata tegra20_auxdata_lookup[] __initdata = {
 
 static __initdata struct tegra_clk_init_table tegra_dt_clk_init_table[] = {
 	/* name		parent		rate		enabled */
+	{ "uarta",	"pll_p",	216000000,	true },
 	{ "uartd",	"pll_p",	216000000,	true },
 	{ "usbd",	"clk_m",	12000000,	false },
 	{ "usb2",	"clk_m",	12000000,	false },
@@ -95,18 +96,17 @@ static void __init tegra_dt_init(void)
 				tegra20_auxdata_lookup, NULL);
 }
 
-#ifdef CONFIG_MACH_TRIMSLICE
 static void __init trimslice_init(void)
 {
+#ifdef CONFIG_TEGRA_PCI
 	int ret;
 
 	ret = tegra_pcie_init(true, true);
 	if (ret)
 		pr_err("tegra_pci_init() failed: %d\n", ret);
-}
 #endif
+}
 
-#ifdef CONFIG_MACH_HARMONY
 static void __init harmony_init(void)
 {
 	int ret;
@@ -117,32 +117,25 @@ static void __init harmony_init(void)
 		return;
 	}
 
+#ifdef CONFIG_TEGRA_PCI
 	ret = harmony_pcie_init();
 	if (ret)
 		pr_err("harmony_pcie_init() failed: %d\n", ret);
-}
 #endif
+}
 
-#ifdef CONFIG_MACH_PAZ00
 static void __init paz00_init(void)
 {
 	tegra_paz00_wifikill_init();
 }
-#endif
 
 static struct {
 	char *machine;
 	void (*init)(void);
 } board_init_funcs[] = {
-#ifdef CONFIG_MACH_TRIMSLICE
 	{ "compulab,trimslice", trimslice_init },
-#endif
-#ifdef CONFIG_MACH_HARMONY
 	{ "nvidia,harmony", harmony_init },
-#endif
-#ifdef CONFIG_MACH_PAZ00
 	{ "compal,paz00", paz00_init },
-#endif
 };
 
 static void __init tegra_dt_init_late(void)
