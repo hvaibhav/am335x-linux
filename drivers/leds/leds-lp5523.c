@@ -150,7 +150,7 @@ static inline struct lp5523_chip *led_to_lp5523(struct lp5523_led *led)
 			    leds[led->id]);
 }
 
-static int lp5523_set_mode(struct lp5523_engine *engine, u8 mode);
+static void lp5523_set_mode(struct lp5523_engine *engine, u8 mode);
 static int lp5523_set_engine_mode(struct lp5523_engine *engine, u8 mode);
 static int lp5523_load_program(struct lp5523_engine *engine, const u8 *pattern);
 
@@ -177,7 +177,7 @@ static int lp5523_detect(struct i2c_client *client)
 	int ret;
 	u8 buf;
 
-	ret = lp5523_write(client, LP5523_REG_ENABLE, 0x40);
+	ret = lp5523_write(client, LP5523_REG_ENABLE, LP5523_ENABLE);
 	if (ret)
 		return ret;
 	ret = lp5523_read(client, LP5523_REG_ENABLE, &buf);
@@ -338,7 +338,8 @@ static int lp5523_mux_parse(const char *buf, u16 *mux, size_t len)
 {
 	int i;
 	u16 tmp_mux = 0;
-	len = len < LP5523_LEDS ? len : LP5523_LEDS;
+
+	len = min_t(int, len, LP5523_LEDS);
 	for (i = 0; i < len; i++) {
 		switch (buf[i]) {
 		case '1':
@@ -546,6 +547,9 @@ static int lp5523_do_store_load(struct lp5523_engine *engine,
 	unsigned cmd;
 	u8 pattern[LP5523_PROGRAM_LENGTH] = {0};
 
+	if (engine->mode != LP5523_CMD_LOAD)
+		return -EINVAL;
+
 	while ((offset < len - 1) && (i < LP5523_PROGRAM_LENGTH)) {
 		/* separate sscanfs because length is working only for %s */
 		ret = sscanf(buf + offset, "%2s%n ", c, &nrchars);
@@ -563,12 +567,7 @@ static int lp5523_do_store_load(struct lp5523_engine *engine,
 		goto fail;
 
 	mutex_lock(&chip->lock);
-
-	if (engine->mode == LP5523_CMD_LOAD)
-		ret = lp5523_load_program(engine, pattern);
-	else
-		ret = -EINVAL;
-
+	ret = lp5523_load_program(engine, pattern);
 	mutex_unlock(&chip->lock);
 
 	if (ret) {
@@ -789,26 +788,28 @@ static void lp5523_unregister_sysfs(struct i2c_client *client)
 /*--------------------------------------------------------------*/
 /*			Set chip operating mode			*/
 /*--------------------------------------------------------------*/
-static int lp5523_set_mode(struct lp5523_engine *engine, u8 mode)
+static void lp5523_set_mode(struct lp5523_engine *engine, u8 mode)
 {
-	int ret = 0;
-
 	/* if in that mode already do nothing, except for run */
 	if (mode == engine->mode && mode != LP5523_CMD_RUN)
-		return 0;
+		return;
 
-	if (mode == LP5523_CMD_RUN) {
-		ret = lp5523_run_program(engine);
-	} else if (mode == LP5523_CMD_LOAD) {
+	switch (mode) {
+	case LP5523_CMD_RUN:
+		lp5523_run_program(engine);
+		break;
+	case LP5523_CMD_LOAD:
 		lp5523_set_engine_mode(engine, LP5523_CMD_DISABLED);
 		lp5523_set_engine_mode(engine, LP5523_CMD_LOAD);
-	} else if (mode == LP5523_CMD_DISABLED) {
+		break;
+	case LP5523_CMD_DISABLED:
 		lp5523_set_engine_mode(engine, LP5523_CMD_DISABLED);
+		break;
+	default:
+		return;
 	}
 
 	engine->mode = mode;
-
-	return ret;
 }
 
 /*--------------------------------------------------------------*/
@@ -846,10 +847,14 @@ static int __devinit lp5523_init_led(struct lp5523_led *led, struct device *dev,
 			return -EINVAL;
 		}
 
-		snprintf(name, sizeof(name), "%s:channel%d",
-			pdata->label ?: "lp5523", chan);
+		if (pdata->led_config[chan].name) {
+			led->cdev.name = pdata->led_config[chan].name;
+		} else {
+			snprintf(name, sizeof(name), "%s:channel%d",
+				pdata->label ?: "lp5523", chan);
+			led->cdev.name = name;
+		}
 
-		led->cdev.name = name;
 		led->cdev.brightness_set = lp5523_set_brightness;
 		res = led_classdev_register(dev, &led->cdev);
 		if (res < 0) {
@@ -970,7 +975,7 @@ static int __devinit lp5523_probe(struct i2c_client *client,
 fail2:
 	for (i = 0; i < chip->num_leds; i++) {
 		led_classdev_unregister(&chip->leds[i].cdev);
-		cancel_work_sync(&chip->leds[i].brightness_work);
+		flush_work(&chip->leds[i].brightness_work);
 	}
 fail1:
 	if (pdata->enable)
@@ -989,7 +994,7 @@ static int lp5523_remove(struct i2c_client *client)
 
 	for (i = 0; i < chip->num_leds; i++) {
 		led_classdev_unregister(&chip->leds[i].cdev);
-		cancel_work_sync(&chip->leds[i].brightness_work);
+		flush_work(&chip->leds[i].brightness_work);
 	}
 
 	if (chip->pdata->enable)
