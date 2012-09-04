@@ -818,6 +818,7 @@ static const struct of_device_id pci_ids[] = {
 	{ .compatible = "fsl,p1010-pcie", },
 	{ .compatible = "fsl,p1023-pcie", },
 	{ .compatible = "fsl,p4080-pcie", },
+	{ .compatible = "fsl,qoriq-pcie-v2.4", },
 	{ .compatible = "fsl,qoriq-pcie-v2.3", },
 	{ .compatible = "fsl,qoriq-pcie-v2.2", },
 	{},
@@ -871,11 +872,8 @@ void __devinit fsl_pci_init(void)
 	 * we need SWIOTLB to handle buffers located outside of
 	 * dma capable memory region
 	 */
-	if (memblock_end_of_DRAM() - 1 > max) {
+	if (memblock_end_of_DRAM() - 1 > max)
 		ppc_swiotlb_enable = 1;
-		set_pci_dma_ops(&swiotlb_dma_ops);
-		ppc_md.pci_dma_dev_setup = pci_dma_dev_setup_swiotlb;
-	}
 #endif
 }
 #endif
