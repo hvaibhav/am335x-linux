@@ -605,28 +605,43 @@ static long __apm_bios_call(void *_call)
 	return call->eax & 0xff;
 }
 
+struct on_cpu0_arg {
+	struct work_struct	work;
+	long			(*fn)(void *);
+	struct apm_bios_call	*call;
+	int			ret;
+};
+
+static void on_cpu0_workfn(struct work_struct *work)
+{
+	struct on_cpu0_arg *arg = container_of(work, struct on_cpu0_arg, work);
+
+	arg->ret = arg->fn(arg->call);
+}
+
 /* Run __apm_bios_call or __apm_bios_call_simple on CPU 0 */
 static int on_cpu0(long (*fn)(void *), struct apm_bios_call *call)
 {
-	int ret;
+	struct on_cpu0_arg arg = { .fn = fn, .call = call };
 
-	/* Don't bother with work_on_cpu in the common case, so we don't
-	 * have to worry about OOM or overhead. */
+	/* directly invoke on_cpu0_workfn() in the common case */
 	if (get_cpu() == 0) {
-		ret = fn(call);
+		on_cpu0_workfn(&arg.work);
 		put_cpu();
 	} else {
 		put_cpu();
-		ret = work_on_cpu(0, fn, call);
+		INIT_WORK_ONSTACK(&arg.work, on_cpu0_workfn);
+		schedule_work_on(0, &arg.work);
+		flush_work(&arg.work);
 	}
 
 	/* work_on_cpu can fail with -ENOMEM */
-	if (ret < 0)
-		call->err = ret;
+	if (arg.ret < 0)
+		call->err = arg.ret;
 	else
 		call->err = (call->eax >> 8) & 0xff;
 
-	return ret;
+	return arg.ret;
 }
 
 /**
