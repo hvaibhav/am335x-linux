@@ -609,6 +609,8 @@ config CRYPTO_AES_NI_INTEL
 	select CRYPTO_CRYPTD
 	select CRYPTO_ABLK_HELPER_X86
 	select CRYPTO_ALGAPI
+	select CRYPTO_LRW
+	select CRYPTO_XTS
 	help
 	  Use Intel AES-NI instructions for AES algorithm.
 
@@ -781,12 +783,43 @@ config CRYPTO_CAST5
 	  The CAST5 encryption algorithm (synonymous with CAST-128) is
 	  described in RFC2144.
 
+config CRYPTO_CAST5_AVX_X86_64
+	tristate "CAST5 (CAST-128) cipher algorithm (x86_64/AVX)"
+	depends on X86 && 64BIT
+	select CRYPTO_ALGAPI
+	select CRYPTO_CRYPTD
+	select CRYPTO_ABLK_HELPER_X86
+	select CRYPTO_CAST5
+	help
+	  The CAST5 encryption algorithm (synonymous with CAST-128) is
+	  described in RFC2144.
+
+	  This module provides the Cast5 cipher algorithm that processes
+	  sixteen blocks parallel using the AVX instruction set.
+
 config CRYPTO_CAST6
 	tristate "CAST6 (CAST-256) cipher algorithm"
 	select CRYPTO_ALGAPI
 	help
 	  The CAST6 encryption algorithm (synonymous with CAST-256) is
 	  described in RFC2612.
+
+config CRYPTO_CAST6_AVX_X86_64
+	tristate "CAST6 (CAST-256) cipher algorithm (x86_64/AVX)"
+	depends on X86 && 64BIT
+	select CRYPTO_ALGAPI
+	select CRYPTO_CRYPTD
+	select CRYPTO_ABLK_HELPER_X86
+	select CRYPTO_GLUE_HELPER_X86
+	select CRYPTO_CAST6
+	select CRYPTO_LRW
+	select CRYPTO_XTS
+	help
+	  The CAST6 encryption algorithm (synonymous with CAST-256) is
+	  described in RFC2612.
+
+	  This module provides the Cast6 cipher algorithm that processes
+	  eight blocks parallel using the AVX instruction set.
 
 config CRYPTO_DES
 	tristate "DES and Triple DES EDE cipher algorithms"
@@ -1104,6 +1137,15 @@ config CRYPTO_LZO
 	select LZO_DECOMPRESS
 	help
 	  This is the LZO algorithm.
+
+config CRYPTO_842
+	tristate "842 compression algorithm"
+	depends on CRYPTO_DEV_NX_COMPRESS
+	# 842 uses lzo if the hardware becomes unavailable
+	select LZO_COMPRESS
+	select LZO_DECOMPRESS
+	help
+	  This is the 842 algorithm.
 
 comment "Random Number Generation"
 
