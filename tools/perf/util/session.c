@@ -15,6 +15,8 @@
 #include "util.h"
 #include "cpumap.h"
 #include "event-parse.h"
+#include "perf_regs.h"
+#include "unwind.h"
 
 static int perf_session__open(struct perf_session *self, bool force)
 {
@@ -288,10 +290,11 @@ struct branch_info *machine__resolve_bstack(struct machine *self,
 	return bi;
 }
 
-int machine__resolve_callchain(struct machine *self,
-			       struct thread *thread,
-			       struct ip_callchain *chain,
-			       struct symbol **parent)
+static int machine__resolve_callchain_sample(struct machine *machine,
+					     struct thread *thread,
+					     struct ip_callchain *chain,
+					     struct symbol **parent)
+
 {
 	u8 cpumode = PERF_RECORD_MISC_USER;
 	unsigned int i;
@@ -316,11 +319,14 @@ int machine__resolve_callchain(struct machine *self,
 		if (ip >= PERF_CONTEXT_MAX) {
 			switch (ip) {
 			case PERF_CONTEXT_HV:
-				cpumode = PERF_RECORD_MISC_HYPERVISOR;	break;
+				cpumode = PERF_RECORD_MISC_HYPERVISOR;
+				break;
 			case PERF_CONTEXT_KERNEL:
-				cpumode = PERF_RECORD_MISC_KERNEL;	break;
+				cpumode = PERF_RECORD_MISC_KERNEL;
+				break;
 			case PERF_CONTEXT_USER:
-				cpumode = PERF_RECORD_MISC_USER;	break;
+				cpumode = PERF_RECORD_MISC_USER;
+				break;
 			default:
 				pr_debug("invalid callchain context: "
 					 "%"PRId64"\n", (s64) ip);
@@ -335,7 +341,7 @@ int machine__resolve_callchain(struct machine *self,
 		}
 
 		al.filtered = false;
-		thread__find_addr_location(thread, self, cpumode,
+		thread__find_addr_location(thread, machine, cpumode,
 					   MAP__FUNCTION, ip, &al, NULL);
 		if (al.sym != NULL) {
 			if (sort__has_parent && !*parent &&
@@ -352,6 +358,40 @@ int machine__resolve_callchain(struct machine *self,
 	}
 
 	return 0;
+}
+
+static int unwind_entry(struct unwind_entry *entry, void *arg)
+{
+	struct callchain_cursor *cursor = arg;
+	return callchain_cursor_append(cursor, entry->ip,
+				       entry->map, entry->sym);
+}
+
+int machine__resolve_callchain(struct machine *machine,
+			       struct perf_evsel *evsel,
+			       struct thread *thread,
+			       struct perf_sample *sample,
+			       struct symbol **parent)
+
+{
+	int ret;
+
+	callchain_cursor_reset(&callchain_cursor);
+
+	ret = machine__resolve_callchain_sample(machine, thread,
+						sample->callchain, parent);
+	if (ret)
+		return ret;
+
+	/* Can we do dwarf post unwind? */
+	if (!((evsel->attr.sample_type & PERF_SAMPLE_REGS_USER) &&
+	      (evsel->attr.sample_type & PERF_SAMPLE_STACK_USER)))
+		return 0;
+
+	return unwind__get_entries(unwind_entry, &callchain_cursor, machine,
+				   thread, evsel->attr.sample_regs_user,
+				   sample);
+
 }
 
 static int process_event_synth_tracing_data_stub(union perf_event *event __used,
@@ -860,6 +900,34 @@ static void branch_stack__printf(struct perf_sample *sample)
 			sample->branch_stack->entries[i].to);
 }
 
+static void regs_dump__printf(u64 mask, u64 *regs)
+{
+	unsigned rid, i = 0;
+
+	for_each_set_bit(rid, (unsigned long *) &mask, sizeof(mask) * 8) {
+		u64 val = regs[i++];
+
+		printf(".... %-5s 0x%" PRIx64 "\n",
+		       perf_reg_name(rid), val);
+	}
+}
+
+static void regs_user__printf(struct perf_sample *sample, u64 mask)
+{
+	struct regs_dump *user_regs = &sample->user_regs;
+
+	if (user_regs->regs) {
+		printf("... user regs: mask 0x%" PRIx64 "\n", mask);
+		regs_dump__printf(mask, user_regs->regs);
+	}
+}
+
+static void stack_user__printf(struct stack_dump *dump)
+{
+	printf("... ustack: size %" PRIu64 ", offset 0x%x\n",
+	       dump->size, dump->offset);
+}
+
 static void perf_session__print_tstamp(struct perf_session *session,
 				       union perf_event *event,
 				       struct perf_sample *sample)
@@ -897,7 +965,7 @@ static void dump_event(struct perf_session *session, union perf_event *event,
 	       event->header.size, perf_event__name(event->header.type));
 }
 
-static void dump_sample(struct perf_session *session, union perf_event *event,
+static void dump_sample(struct perf_evsel *evsel, union perf_event *event,
 			struct perf_sample *sample)
 {
 	u64 sample_type;
@@ -909,13 +977,19 @@ static void dump_sample(struct perf_session *session, union perf_event *event,
 	       event->header.misc, sample->pid, sample->tid, sample->ip,
 	       sample->period, sample->addr);
 
-	sample_type = perf_evlist__sample_type(session->evlist);
+	sample_type = evsel->attr.sample_type;
 
 	if (sample_type & PERF_SAMPLE_CALLCHAIN)
 		callchain__printf(sample);
 
 	if (sample_type & PERF_SAMPLE_BRANCH_STACK)
 		branch_stack__printf(sample);
+
+	if (sample_type & PERF_SAMPLE_REGS_USER)
+		regs_user__printf(sample, evsel->attr.sample_regs_user);
+
+	if (sample_type & PERF_SAMPLE_STACK_USER)
+		stack_user__printf(&sample->user_stack);
 }
 
 static struct machine *
@@ -973,7 +1047,7 @@ static int perf_session_deliver_event(struct perf_session *session,
 
 	switch (event->header.type) {
 	case PERF_RECORD_SAMPLE:
-		dump_sample(session, event, sample);
+		dump_sample(evsel, event, sample);
 		if (evsel == NULL) {
 			++session->hists.stats.nr_unknown_id;
 			return 0;
@@ -1498,9 +1572,9 @@ struct perf_evsel *perf_session__find_first_evtype(struct perf_session *session,
 	return NULL;
 }
 
-void perf_event__print_ip(union perf_event *event, struct perf_sample *sample,
-			  struct machine *machine, int print_sym,
-			  int print_dso, int print_symoffset)
+void perf_evsel__print_ip(struct perf_evsel *evsel, union perf_event *event,
+			  struct perf_sample *sample, struct machine *machine,
+			  int print_sym, int print_dso, int print_symoffset)
 {
 	struct addr_location al;
 	struct callchain_cursor_node *node;
@@ -1514,8 +1588,9 @@ void perf_event__print_ip(union perf_event *event, struct perf_sample *sample,
 
 	if (symbol_conf.use_callchain && sample->callchain) {
 
-		if (machine__resolve_callchain(machine, al.thread,
-						sample->callchain, NULL) != 0) {
+
+		if (machine__resolve_callchain(machine, evsel, al.thread,
+					       sample, NULL) != 0) {
 			if (verbose)
 				error("Failed to resolve callchain. Skipping\n");
 			return;

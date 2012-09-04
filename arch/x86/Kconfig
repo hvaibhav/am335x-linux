@@ -36,6 +36,7 @@ config X86
 	select HAVE_KRETPROBES
 	select HAVE_OPTPROBES
 	select HAVE_FTRACE_MCOUNT_RECORD
+	select HAVE_FENTRY if X86_64
 	select HAVE_C_RECORDMCOUNT
 	select HAVE_DYNAMIC_FTRACE
 	select HAVE_FUNCTION_TRACER
@@ -60,6 +61,8 @@ config X86
 	select HAVE_MIXED_BREAKPOINTS_REGS
 	select PERF_EVENTS
 	select HAVE_PERF_EVENTS_NMI
+	select HAVE_PERF_REGS
+	select HAVE_PERF_USER_STACK_DUMP
 	select ANON_INODES
 	select HAVE_ALIGNED_STRUCT_PAGE if SLUB && !M386
 	select HAVE_CMPXCHG_LOCAL if !M386
@@ -551,6 +554,37 @@ config SCHED_OMIT_FRAME_POINTER
 
 	  If in doubt, say "Y".
 
+config KVMTOOL_TEST_ENABLE
+	bool "Enable options to create a bootable tools/kvm/ kernel"
+	select NET
+	select NETDEVICES
+	select PCI
+	select BLOCK
+	select BLK_DEV
+	select NETWORK_FILESYSTEMS
+	select INET
+	select EXPERIMENTAL
+	select SERIAL_8250
+	select SERIAL_8250_CONSOLE
+	select IP_PNP
+	select IP_PNP_DHCP
+	select BINFMT_ELF
+	select PCI_MSI
+	select HAVE_ARCH_KGDB
+	select DEBUG_KERNEL
+	select KGDB
+	select KGDB_SERIAL_CONSOLE
+	select VIRTUALIZATION
+	select VIRTIO
+	select VIRTIO_RING
+	select VIRTIO_PCI
+	select VIRTIO_BLK
+	select VIRTIO_CONSOLE
+	select VIRTIO_NET
+	select 9P_FS
+	select NET_9P
+	select NET_9P_VIRTIO
+
 menuconfig PARAVIRT_GUEST
 	bool "Paravirtualized guest support"
 	---help---
@@ -984,25 +1018,25 @@ config X86_REBOOTFIXUPS
 	  Say N otherwise.
 
 config MICROCODE
-	tristate "/dev/cpu/microcode - microcode support"
+	tristate "CPU microcode loading support"
 	select FW_LOADER
 	---help---
+
 	  If you say Y here, you will be able to update the microcode on
 	  certain Intel and AMD processors. The Intel support is for the
-	  IA32 family, e.g. Pentium Pro, Pentium II, Pentium III,
-	  Pentium 4, Xeon etc. The AMD support is for family 0x10 and
-	  0x11 processors, e.g. Opteron, Phenom and Turion 64 Ultra.
-	  You will obviously need the actual microcode binary data itself
-	  which is not shipped with the Linux kernel.
+	  IA32 family, e.g. Pentium Pro, Pentium II, Pentium III, Pentium 4,
+	  Xeon etc. The AMD support is for families 0x10 and later. You will
+	  obviously need the actual microcode binary data itself which is not
+	  shipped with the Linux kernel.
 
 	  This option selects the general module only, you need to select
 	  at least one vendor specific module as well.
 
-	  To compile this driver as a module, choose M here: the
-	  module will be called microcode.
+	  To compile this driver as a module, choose M here: the module
+	  will be called microcode.
 
 config MICROCODE_INTEL
-	bool "Intel microcode patch loading support"
+	bool "Intel microcode loading support"
 	depends on MICROCODE
 	default MICROCODE
 	select FW_LOADER
@@ -1015,7 +1049,7 @@ config MICROCODE_INTEL
 	  <http://www.urbanmyth.org/microcode/>.
 
 config MICROCODE_AMD
-	bool "AMD microcode patch loading support"
+	bool "AMD microcode loading support"
 	depends on MICROCODE
 	select FW_LOADER
 	---help---
