@@ -441,14 +441,11 @@ static ssize_t iblock_set_configfs_dev_params(struct se_hba *hba,
 				ret = -EEXIST;
 				goto out;
 			}
-			arg_p = match_strdup(&args[0]);
-			if (!arg_p) {
-				ret = -ENOMEM;
+			if (match_strlcpy(ib_dev->ibd_udev_path, &args[0],
+				SE_UDEV_PATH_LEN) == 0) {
+				ret = -EINVAL;
 				break;
 			}
-			snprintf(ib_dev->ibd_udev_path, SE_UDEV_PATH_LEN,
-					"%s", arg_p);
-			kfree(arg_p);
 			pr_debug("IBLOCK: Referencing UDEV path: %s\n",
 					ib_dev->ibd_udev_path);
 			ib_dev->ibd_flags |= IBDF_HAS_UDEV_PATH;
@@ -756,8 +753,6 @@ static struct se_subsystem_api iblock_template = {
 	.name			= "iblock",
 	.owner			= THIS_MODULE,
 	.transport_type		= TRANSPORT_PLUGIN_VHBA_PDEV,
-	.write_cache_emulated	= 1,
-	.fua_write_emulated	= 1,
 	.attach_hba		= iblock_attach_hba,
 	.detach_hba		= iblock_detach_hba,
 	.allocate_virtdevice	= iblock_allocate_virtdevice,
