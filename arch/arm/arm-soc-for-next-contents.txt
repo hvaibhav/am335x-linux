@@ -1,0 +1,41 @@
+This file lists all branches that are pulled into the for-next branch
+of git://git.kernel.org/pub/scm/linux/kernel/git/arm/arm-soc.git
+and their external dependencies.
+
+It also includes a couple of directly applied patches for build breaks with subject
+The next/* branches are kept in the order in which they get applied.
+
+fixes:
+
+next/fixes-non-critical:
+
+next/cleanup:
+cleanup/io-pci:   git://sources.calxeda.com/kernel/linux.git io-cleanup-pci-v2
+bcmring/cleanup:  patches from Arnd
+u300/cleanup	  git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git u300-cleanup
+
+next/maintainers:
+
+next/soc:
+ux500/asic-id:	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
+
+next/dt:
+pxa/dt:		git://github.com/hzhuang1/linux.git dt
+
+next/defconfig:
+
+next/drivers:
+devel/led-driver	git://git.kernel.org/pub/scm/linux/kernel/git/cooloney/linux-leds.git for-arm-soc
+at91/mci	git://github.com/at91linux/linux-at91 at91-for-next-soc
+drivers/ocp2scp	patches from Kishon Vijay Abraham I <kishon@ti.com>
+
+next/boards:
+pxa/board	git://github.com/hzhuang1/linux.git board
+
+next/docs:
+mvebu/docs:	git://github.com/MISL-EBU-System-SW/mainline-public.git marvell-doc
+
+
+
+
+

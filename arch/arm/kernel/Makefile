@@ -21,7 +21,6 @@ obj-y		:= atags_parse.o elf.o entry-armv.o entry-common.o irq.o opcodes.o \
 
 obj-$(CONFIG_DEPRECATED_PARAM_STRUCT) += atags_compat.o
 
-obj-$(CONFIG_LEDS)		+= leds.o
 obj-$(CONFIG_OC_ETM)		+= etm.o
 obj-$(CONFIG_CPU_IDLE)		+= cpuidle.o
 obj-$(CONFIG_ISA_DMA_API)	+= dma.o
