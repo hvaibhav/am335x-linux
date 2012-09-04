@@ -428,15 +428,6 @@ static inline bool hci_conn_ssp_enabled(struct hci_conn *conn)
 	       test_bit(HCI_CONN_SSP_ENABLED, &conn->flags);
 }
 
-static inline void hci_conn_hash_init(struct hci_dev *hdev)
-{
-	struct hci_conn_hash *h = &hdev->conn_hash;
-	INIT_LIST_HEAD(&h->list);
-	h->acl_num = 0;
-	h->sco_num = 0;
-	h->le_num = 0;
-}
-
 static inline void hci_conn_hash_add(struct hci_dev *hdev, struct hci_conn *c)
 {
 	struct hci_conn_hash *h = &hdev->conn_hash;
@@ -551,9 +542,7 @@ static inline struct hci_conn *hci_conn_hash_lookup_state(struct hci_dev *hdev,
 	return NULL;
 }
 
-void hci_acl_connect(struct hci_conn *conn);
 void hci_acl_disconn(struct hci_conn *conn, __u8 reason);
-void hci_add_sco(struct hci_conn *conn, __u16 handle);
 void hci_setup_sync(struct hci_conn *conn, __u16 handle);
 void hci_sco_setup(struct hci_conn *conn, __u8 status);
 
@@ -1004,7 +993,7 @@ int mgmt_device_connected(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,
 			  u8 addr_type, u32 flags, u8 *name, u8 name_len,
 			  u8 *dev_class);
 int mgmt_device_disconnected(struct hci_dev *hdev, bdaddr_t *bdaddr,
-			     u8 link_type, u8 addr_type);
+			     u8 link_type, u8 addr_type, u8 reason);
 int mgmt_disconnect_failed(struct hci_dev *hdev, bdaddr_t *bdaddr,
 			   u8 link_type, u8 addr_type, u8 status);
 int mgmt_connect_failed(struct hci_dev *hdev, bdaddr_t *bdaddr, u8 link_type,

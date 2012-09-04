@@ -340,7 +340,7 @@ static int read_index_list(struct sock *sk, struct hci_dev *hdev, void *data,
 	}
 
 	rp_len = sizeof(*rp) + (2 * count);
-	rp = kmalloc(rp_len, GFP_ATOMIC);
+	rp = kmalloc(rp_len, GFP_KERNEL);
 	if (!rp) {
 		read_unlock(&hci_dev_list_lock);
 		return -ENOMEM;
@@ -3077,16 +3077,17 @@ static void unpair_device_rsp(struct pending_cmd *cmd, void *data)
 }
 
 int mgmt_device_disconnected(struct hci_dev *hdev, bdaddr_t *bdaddr,
-			     u8 link_type, u8 addr_type)
+			     u8 link_type, u8 addr_type, u8 reason)
 {
-	struct mgmt_addr_info ev;
+	struct mgmt_ev_device_disconnected ev;
 	struct sock *sk = NULL;
 	int err;
 
 	mgmt_pending_foreach(MGMT_OP_DISCONNECT, hdev, disconnect_rsp, &sk);
 
-	bacpy(&ev.bdaddr, bdaddr);
-	ev.type = link_to_bdaddr(link_type, addr_type);
+	bacpy(&ev.addr.bdaddr, bdaddr);
+	ev.addr.type = link_to_bdaddr(link_type, addr_type);
+	ev.reason = reason;
 
 	err = mgmt_event(MGMT_EV_DEVICE_DISCONNECTED, hdev, &ev, sizeof(ev),
 			 sk);
