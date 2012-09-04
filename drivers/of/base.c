@@ -988,6 +988,8 @@ int of_parse_phandle_with_args(struct device_node *np, const char *list_name,
 				out_args->args_count = count;
 				for (i = 0; i < count; i++)
 					out_args->args[i] = be32_to_cpup(list++);
+			} else {
+				of_node_put(node);
 			}
 			return 0;
 		}
