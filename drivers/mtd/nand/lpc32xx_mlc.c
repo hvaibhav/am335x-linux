@@ -37,7 +37,7 @@
 #include <linux/of.h>
 #include <linux/of_mtd.h>
 #include <linux/of_gpio.h>
-#include <linux/amba/pl08x.h>
+#include <linux/mtd/lpc32xx_mlc.h>
 #include <linux/io.h>
 #include <linux/mm.h>
 #include <linux/dma-mapping.h>
@@ -171,6 +171,7 @@ static struct nand_bbt_descr lpc32xx_nand_bbt_mirror = {
 
 struct lpc32xx_nand_host {
 	struct nand_chip	nand_chip;
+	struct lpc32xx_mlc_platform_data *pdata;
 	struct clk		*clk;
 	struct mtd_info		mtd;
 	void __iomem		*io_base;
@@ -581,9 +582,15 @@ static int lpc32xx_dma_setup(struct lpc32xx_nand_host *host)
 	struct mtd_info *mtd = &host->mtd;
 	dma_cap_mask_t mask;
 
+	if (!host->pdata || !host->pdata->dma_filter) {
+		dev_err(mtd->dev.parent, "no DMA platform data\n");
+		return -ENOENT;
+	}
+
 	dma_cap_zero(mask);
 	dma_cap_set(DMA_SLAVE, mask);
-	host->dma_chan = dma_request_channel(mask, pl08x_filter_id, "nand-mlc");
+	host->dma_chan = dma_request_channel(mask, host->pdata->dma_filter,
+					     "nand-mlc");
 	if (!host->dma_chan) {
 		dev_err(mtd->dev.parent, "Failed to request DMA channel\n");
 		return -EBUSY;
@@ -614,43 +621,36 @@ out1:
 	return -ENXIO;
 }
 
-#ifdef CONFIG_OF
 static struct lpc32xx_nand_cfg_mlc *lpc32xx_parse_dt(struct device *dev)
 {
-	struct lpc32xx_nand_cfg_mlc *pdata;
+	struct lpc32xx_nand_cfg_mlc *ncfg;
 	struct device_node *np = dev->of_node;
 
-	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
-	if (!pdata) {
+	ncfg = devm_kzalloc(dev, sizeof(*ncfg), GFP_KERNEL);
+	if (!ncfg) {
 		dev_err(dev, "could not allocate memory for platform data\n");
 		return NULL;
 	}
 
-	of_property_read_u32(np, "nxp,tcea-delay", &pdata->tcea_delay);
-	of_property_read_u32(np, "nxp,busy-delay", &pdata->busy_delay);
-	of_property_read_u32(np, "nxp,nand-ta", &pdata->nand_ta);
-	of_property_read_u32(np, "nxp,rd-high", &pdata->rd_high);
-	of_property_read_u32(np, "nxp,rd-low", &pdata->rd_low);
-	of_property_read_u32(np, "nxp,wr-high", &pdata->wr_high);
-	of_property_read_u32(np, "nxp,wr-low", &pdata->wr_low);
+	of_property_read_u32(np, "nxp,tcea-delay", &ncfg->tcea_delay);
+	of_property_read_u32(np, "nxp,busy-delay", &ncfg->busy_delay);
+	of_property_read_u32(np, "nxp,nand-ta", &ncfg->nand_ta);
+	of_property_read_u32(np, "nxp,rd-high", &ncfg->rd_high);
+	of_property_read_u32(np, "nxp,rd-low", &ncfg->rd_low);
+	of_property_read_u32(np, "nxp,wr-high", &ncfg->wr_high);
+	of_property_read_u32(np, "nxp,wr-low", &ncfg->wr_low);
 
-	if (!pdata->tcea_delay || !pdata->busy_delay || !pdata->nand_ta ||
-	    !pdata->rd_high || !pdata->rd_low || !pdata->wr_high ||
-	    !pdata->wr_low) {
+	if (!ncfg->tcea_delay || !ncfg->busy_delay || !ncfg->nand_ta ||
+	    !ncfg->rd_high || !ncfg->rd_low || !ncfg->wr_high ||
+	    !ncfg->wr_low) {
 		dev_err(dev, "chip parameters not specified correctly\n");
 		return NULL;
 	}
 
-	pdata->wp_gpio = of_get_named_gpio(np, "gpios", 0);
+	ncfg->wp_gpio = of_get_named_gpio(np, "gpios", 0);
 
-	return pdata;
+	return ncfg;
 }
-#else
-static struct lpc32xx_nand_cfg_mlc *lpc32xx_parse_dt(struct device *dev)
-{
-	return NULL;
-}
-#endif
 
 /*
  * Probe for NAND controller
@@ -688,10 +688,9 @@ static int __devinit lpc32xx_nand_probe(struct platform_device *pdev)
 	nand_chip = &host->nand_chip;
 	if (pdev->dev.of_node)
 		host->ncfg = lpc32xx_parse_dt(&pdev->dev);
-	else
-		host->ncfg = pdev->dev.platform_data;
 	if (!host->ncfg) {
-		dev_err(&pdev->dev, "Missing platform data\n");
+		dev_err(&pdev->dev,
+			"Missing or bad NAND config from device tree\n");
 		return -ENOENT;
 	}
 	if (host->ncfg->wp_gpio == -EPROBE_DEFER)
@@ -702,6 +701,8 @@ static int __devinit lpc32xx_nand_probe(struct platform_device *pdev)
 		return -EBUSY;
 	}
 	lpc32xx_wp_disable(host);
+
+	host->pdata = pdev->dev.platform_data;
 
 	nand_chip->priv = host;		/* link the private data structures */
 	mtd->priv = nand_chip;
@@ -898,13 +899,11 @@ static int lpc32xx_nand_suspend(struct platform_device *pdev, pm_message_t pm)
 #define lpc32xx_nand_suspend NULL
 #endif
 
-#if defined(CONFIG_OF)
 static const struct of_device_id lpc32xx_nand_match[] = {
 	{ .compatible = "nxp,lpc3220-mlc" },
 	{ /* sentinel */ },
 };
 MODULE_DEVICE_TABLE(of, lpc32xx_nand_match);
-#endif
 
 static struct platform_driver lpc32xx_nand_driver = {
 	.probe		= lpc32xx_nand_probe,

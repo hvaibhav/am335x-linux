@@ -26,6 +26,8 @@ struct mxc_nand_platform_data {
 	unsigned int width;	/* data bus width in bytes */
 	unsigned int hw_ecc:1;	/* 0 if suppress hardware ECC */
 	unsigned int flash_bbt:1; /* set to 1 to use a flash based bbt */
+	unsigned int biswap:1;	/* set to 1 to swap the Bad Block Indicator
+				   NFC v1 workaround */
 	struct mtd_partition *parts;	/* partition table */
 	int nr_parts;			/* size of parts */
 };

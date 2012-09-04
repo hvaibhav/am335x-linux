@@ -66,12 +66,13 @@ static int nand_ecc_test(const size_t size)
 
 static int __init ecc_test_init(void)
 {
-	srandom32(jiffies);
+	int err;
 
-	nand_ecc_test(256);
-	nand_ecc_test(512);
+	err = nand_ecc_test(256);
+	if (err)
+		return err;
 
-	return 0;
+	return nand_ecc_test(512);
 }
 
 static void __exit ecc_test_exit(void)

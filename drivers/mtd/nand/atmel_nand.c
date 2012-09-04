@@ -1414,8 +1414,43 @@ static int __init atmel_nand_probe(struct platform_device *pdev)
 	nand_chip->IO_ADDR_W = host->io_base;
 	nand_chip->cmd_ctrl = atmel_nand_cmd_ctrl;
 
-	if (gpio_is_valid(host->board.rdy_pin))
+	if (gpio_is_valid(host->board.rdy_pin)) {
+		res = gpio_request(host->board.rdy_pin, "nand_rdy");
+		if (res < 0) {
+			dev_err(&pdev->dev,
+				"can't request rdy gpio %d\n",
+				host->board.rdy_pin);
+			goto err_ecc_ioremap;
+		}
+
+		res = gpio_direction_input(host->board.rdy_pin);
+		if (res < 0) {
+			dev_err(&pdev->dev,
+				"can't request input direction rdy gpio %d\n",
+				host->board.rdy_pin);
+			goto err_ecc_ioremap;
+		}
+
 		nand_chip->dev_ready = atmel_nand_device_ready;
+	}
+
+	if (gpio_is_valid(host->board.enable_pin)) {
+		res = gpio_request(host->board.enable_pin, "nand_enable");
+		if (res < 0) {
+			dev_err(&pdev->dev,
+				"can't request enable gpio %d\n",
+				host->board.enable_pin);
+			goto err_ecc_ioremap;
+		}
+
+		res = gpio_direction_output(host->board.enable_pin, 1);
+		if (res < 0) {
+			dev_err(&pdev->dev,
+				"can't request output direction enable gpio %d\n",
+				host->board.enable_pin);
+			goto err_ecc_ioremap;
+		}
+	}
 
 	nand_chip->ecc.mode = host->board.ecc_mode;
 	nand_chip->chip_delay = 20;		/* 20us command delay time */
@@ -1430,6 +1465,22 @@ static int __init atmel_nand_probe(struct platform_device *pdev)
 	atmel_nand_enable(host);
 
 	if (gpio_is_valid(host->board.det_pin)) {
+		res = gpio_request(host->board.det_pin, "nand_det");
+		if (res < 0) {
+			dev_err(&pdev->dev,
+				"can't request det gpio %d\n",
+				host->board.det_pin);
+			goto err_no_card;
+		}
+
+		res = gpio_direction_input(host->board.det_pin);
+		if (res < 0) {
+			dev_err(&pdev->dev,
+				"can't request input direction det gpio %d\n",
+				host->board.det_pin);
+			goto err_no_card;
+		}
+
 		if (gpio_get_value(host->board.det_pin)) {
 			printk(KERN_INFO "No SmartMedia card inserted.\n");
 			res = -ENXIO;
@@ -1533,6 +1584,15 @@ static int __exit atmel_nand_remove(struct platform_device *pdev)
 				PMERRLOC_DISABLE);
 		pmecc_data_free(host);
 	}
+
+	if (gpio_is_valid(host->board.det_pin))
+		gpio_free(host->board.det_pin);
+
+	if (gpio_is_valid(host->board.enable_pin))
+		gpio_free(host->board.enable_pin);
+
+	if (gpio_is_valid(host->board.rdy_pin))
+		gpio_free(host->board.rdy_pin);
 
 	if (host->ecc)
 		iounmap(host->ecc);

@@ -37,7 +37,7 @@
 #include <linux/of.h>
 #include <linux/of_mtd.h>
 #include <linux/of_gpio.h>
-#include <linux/amba/pl08x.h>
+#include <linux/mtd/lpc32xx_slc.h>
 
 #define LPC32XX_MODNAME		"lpc32xx-nand"
 
@@ -199,6 +199,7 @@ struct lpc32xx_nand_cfg_slc {
 
 struct lpc32xx_nand_host {
 	struct nand_chip	nand_chip;
+	struct lpc32xx_slc_platform_data *pdata;
 	struct clk		*clk;
 	struct mtd_info		mtd;
 	void __iomem		*io_base;
@@ -365,24 +366,6 @@ static void lpc32xx_nand_write_buf(struct mtd_info *mtd, const uint8_t *buf, int
 	/* Direct device write with no ECC */
 	while (len-- > 0)
 		writel((uint32_t)*buf++, SLC_DATA(host->io_base));
-}
-
-/*
- * Verify data in buffer to data on device
- */
-static int lpc32xx_verify_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
-{
-	struct nand_chip *chip = mtd->priv;
-	struct lpc32xx_nand_host *host = chip->priv;
-	int i;
-
-	/* DATA register must be read as 32 bits or it will fail */
-	for (i = 0; i < len; i++) {
-		if (buf[i] != (uint8_t)readl(SLC_DATA(host->io_base)))
-			return -EFAULT;
-	}
-
-	return 0;
 }
 
 /*
@@ -719,9 +702,15 @@ static int lpc32xx_nand_dma_setup(struct lpc32xx_nand_host *host)
 	struct mtd_info *mtd = &host->mtd;
 	dma_cap_mask_t mask;
 
+	if (!host->pdata || !host->pdata->dma_filter) {
+		dev_err(mtd->dev.parent, "no DMA platform data\n");
+		return -ENOENT;
+	}
+
 	dma_cap_zero(mask);
 	dma_cap_set(DMA_SLAVE, mask);
-	host->dma_chan = dma_request_channel(mask, pl08x_filter_id, "nand-slc");
+	host->dma_chan = dma_request_channel(mask, host->pdata->dma_filter,
+					     "nand-slc");
 	if (!host->dma_chan) {
 		dev_err(mtd->dev.parent, "Failed to request DMA channel\n");
 		return -EBUSY;
@@ -730,45 +719,38 @@ static int lpc32xx_nand_dma_setup(struct lpc32xx_nand_host *host)
 	return 0;
 }
 
-#ifdef CONFIG_OF
 static struct lpc32xx_nand_cfg_slc *lpc32xx_parse_dt(struct device *dev)
 {
-	struct lpc32xx_nand_cfg_slc *pdata;
+	struct lpc32xx_nand_cfg_slc *ncfg;
 	struct device_node *np = dev->of_node;
 
-	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
-	if (!pdata) {
-		dev_err(dev, "could not allocate memory for platform data\n");
+	ncfg = devm_kzalloc(dev, sizeof(*ncfg), GFP_KERNEL);
+	if (!ncfg) {
+		dev_err(dev, "could not allocate memory for NAND config\n");
 		return NULL;
 	}
 
-	of_property_read_u32(np, "nxp,wdr-clks", &pdata->wdr_clks);
-	of_property_read_u32(np, "nxp,wwidth", &pdata->wwidth);
-	of_property_read_u32(np, "nxp,whold", &pdata->whold);
-	of_property_read_u32(np, "nxp,wsetup", &pdata->wsetup);
-	of_property_read_u32(np, "nxp,rdr-clks", &pdata->rdr_clks);
-	of_property_read_u32(np, "nxp,rwidth", &pdata->rwidth);
-	of_property_read_u32(np, "nxp,rhold", &pdata->rhold);
-	of_property_read_u32(np, "nxp,rsetup", &pdata->rsetup);
+	of_property_read_u32(np, "nxp,wdr-clks", &ncfg->wdr_clks);
+	of_property_read_u32(np, "nxp,wwidth", &ncfg->wwidth);
+	of_property_read_u32(np, "nxp,whold", &ncfg->whold);
+	of_property_read_u32(np, "nxp,wsetup", &ncfg->wsetup);
+	of_property_read_u32(np, "nxp,rdr-clks", &ncfg->rdr_clks);
+	of_property_read_u32(np, "nxp,rwidth", &ncfg->rwidth);
+	of_property_read_u32(np, "nxp,rhold", &ncfg->rhold);
+	of_property_read_u32(np, "nxp,rsetup", &ncfg->rsetup);
 
-	if (!pdata->wdr_clks || !pdata->wwidth || !pdata->whold ||
-	    !pdata->wsetup || !pdata->rdr_clks || !pdata->rwidth ||
-	    !pdata->rhold || !pdata->rsetup) {
+	if (!ncfg->wdr_clks || !ncfg->wwidth || !ncfg->whold ||
+	    !ncfg->wsetup || !ncfg->rdr_clks || !ncfg->rwidth ||
+	    !ncfg->rhold || !ncfg->rsetup) {
 		dev_err(dev, "chip parameters not specified correctly\n");
 		return NULL;
 	}
 
-	pdata->use_bbt = of_get_nand_on_flash_bbt(np);
-	pdata->wp_gpio = of_get_named_gpio(np, "gpios", 0);
+	ncfg->use_bbt = of_get_nand_on_flash_bbt(np);
+	ncfg->wp_gpio = of_get_named_gpio(np, "gpios", 0);
 
-	return pdata;
+	return ncfg;
 }
-#else
-static struct lpc32xx_nand_cfg_slc *lpc32xx_parse_dt(struct device *dev)
-{
-	return NULL;
-}
-#endif
 
 /*
  * Probe for NAND controller
@@ -804,10 +786,9 @@ static int __devinit lpc32xx_nand_probe(struct platform_device *pdev)
 
 	if (pdev->dev.of_node)
 		host->ncfg = lpc32xx_parse_dt(&pdev->dev);
-	else
-		host->ncfg = pdev->dev.platform_data;
 	if (!host->ncfg) {
-		dev_err(&pdev->dev, "Missing platform data\n");
+		dev_err(&pdev->dev,
+			"Missing or bad NAND config from device tree\n");
 		return -ENOENT;
 	}
 	if (host->ncfg->wp_gpio == -EPROBE_DEFER)
@@ -818,6 +799,8 @@ static int __devinit lpc32xx_nand_probe(struct platform_device *pdev)
 		return -EBUSY;
 	}
 	lpc32xx_wp_disable(host);
+
+	host->pdata = pdev->dev.platform_data;
 
 	mtd = &host->mtd;
 	chip = &host->nand_chip;
@@ -862,7 +845,6 @@ static int __devinit lpc32xx_nand_probe(struct platform_device *pdev)
 	chip->ecc.correct = nand_correct_data;
 	chip->ecc.strength = 1;
 	chip->ecc.hwctl = lpc32xx_nand_ecc_enable;
-	chip->verify_buf = lpc32xx_verify_buf;
 
 	/* bitflip_threshold's default is defined as ecc_strength anyway.
 	 * Unfortunately, it is set only later at add_mtd_device(). Meanwhile
@@ -1031,13 +1013,11 @@ static int lpc32xx_nand_suspend(struct platform_device *pdev, pm_message_t pm)
 #define lpc32xx_nand_suspend NULL
 #endif
 
-#if defined(CONFIG_OF)
 static const struct of_device_id lpc32xx_nand_match[] = {
 	{ .compatible = "nxp,lpc3220-slc" },
 	{ /* sentinel */ },
 };
 MODULE_DEVICE_TABLE(of, lpc32xx_nand_match);
-#endif
 
 static struct platform_driver lpc32xx_nand_driver = {
 	.probe		= lpc32xx_nand_probe,

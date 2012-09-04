@@ -373,7 +373,7 @@ config MTD_FORTUNET
 	  have such a board, say 'Y'.
 
 config MTD_AUTCPU12
-	tristate "NV-RAM mapping AUTCPU12 board"
+	bool "NV-RAM mapping AUTCPU12 board"
 	depends on ARCH_AUTCPU12
 	help
 	  This enables access to the NV-RAM on autronix autcpu12 board.
@@ -443,7 +443,7 @@ config MTD_GPIO_ADDR
 
 config MTD_UCLINUX
 	bool "Generic uClinux RAM/ROM filesystem support"
-	depends on MTD_RAM=y && !MMU
+	depends on MTD_RAM=y && (!MMU || COLDFIRE)
 	help
 	  Map driver to support image based filesystems for uClinux.
 

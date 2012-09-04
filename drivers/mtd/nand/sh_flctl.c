@@ -29,6 +29,7 @@
 #include <linux/platform_device.h>
 #include <linux/pm_runtime.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/nand.h>
@@ -73,6 +74,8 @@ static struct nand_bbt_descr flctl_4secc_largepage = {
 	.pattern = scan_ff_pattern,
 };
 
+static int loop_timeout_max;
+
 static void empty_fifo(struct sh_flctl *flctl)
 {
 	writel(flctl->flintdmacr_base | AC1CLR | AC0CLR, FLINTDMACR(flctl));
@@ -91,7 +94,7 @@ static void timeout_error(struct sh_flctl *flctl, const char *str)
 
 static void wait_completion(struct sh_flctl *flctl)
 {
-	uint32_t timeout = LOOP_TIMEOUT_MAX;
+	uint32_t timeout = loop_timeout_max;
 
 	while (timeout--) {
 		if (readb(FLTRCR(flctl)) & TREND) {
@@ -138,7 +141,7 @@ static void set_addr(struct mtd_info *mtd, int column, int page_addr)
 
 static void wait_rfifo_ready(struct sh_flctl *flctl)
 {
-	uint32_t timeout = LOOP_TIMEOUT_MAX;
+	uint32_t timeout = loop_timeout_max;
 
 	while (timeout--) {
 		uint32_t val;
@@ -153,7 +156,7 @@ static void wait_rfifo_ready(struct sh_flctl *flctl)
 
 static void wait_wfifo_ready(struct sh_flctl *flctl)
 {
-	uint32_t len, timeout = LOOP_TIMEOUT_MAX;
+	uint32_t len, timeout = loop_timeout_max;
 
 	while (timeout--) {
 		/* check FIFO */
@@ -168,7 +171,7 @@ static void wait_wfifo_ready(struct sh_flctl *flctl)
 static enum flctl_ecc_res_t wait_recfifo_ready
 		(struct sh_flctl *flctl, int sector_number)
 {
-	uint32_t timeout = LOOP_TIMEOUT_MAX;
+	uint32_t timeout = loop_timeout_max;
 	void __iomem *ecc_reg[4];
 	int i;
 	int state = FL_SUCCESS;
@@ -247,7 +250,7 @@ static enum flctl_ecc_res_t wait_recfifo_ready
 
 static void wait_wecfifo_ready(struct sh_flctl *flctl)
 {
-	uint32_t timeout = LOOP_TIMEOUT_MAX;
+	uint32_t timeout = loop_timeout_max;
 	uint32_t len;
 
 	while (timeout--) {
@@ -395,7 +398,8 @@ static int flctl_read_page_hwecc(struct mtd_info *mtd, struct nand_chip *chip,
 				uint8_t *buf, int oob_required, int page)
 {
 	chip->read_buf(mtd, buf, mtd->writesize);
-	chip->read_buf(mtd, chip->oob_poi, mtd->oobsize);
+	if (oob_required)
+		chip->read_buf(mtd, chip->oob_poi, mtd->oobsize);
 	return 0;
 }
 
@@ -746,10 +750,9 @@ static void flctl_select_chip(struct mtd_info *mtd, int chipnr)
 static void flctl_write_buf(struct mtd_info *mtd, const uint8_t *buf, int len)
 {
 	struct sh_flctl *flctl = mtd_to_flctl(mtd);
-	int i, index = flctl->index;
+	int index = flctl->index;
 
-	for (i = 0; i < len; i++)
-		flctl->done_buff[index + i] = buf[i];
+	memcpy(&flctl->done_buff[index], buf, len);
 	flctl->index += len;
 }
 
@@ -778,20 +781,11 @@ static uint16_t flctl_read_word(struct mtd_info *mtd)
 
 static void flctl_read_buf(struct mtd_info *mtd, uint8_t *buf, int len)
 {
-	int i;
+	struct sh_flctl *flctl = mtd_to_flctl(mtd);
+	int index = flctl->index;
 
-	for (i = 0; i < len; i++)
-		buf[i] = flctl_read_byte(mtd);
-}
-
-static int flctl_verify_buf(struct mtd_info *mtd, const u_char *buf, int len)
-{
-	int i;
-
-	for (i = 0; i < len; i++)
-		if (buf[i] != flctl_read_byte(mtd))
-			return -EFAULT;
-	return 0;
+	memcpy(buf, &flctl->done_buff[index], len);
+	flctl->index += len;
 }
 
 static int flctl_chip_init_tail(struct mtd_info *mtd)
@@ -927,7 +921,6 @@ static int __devinit flctl_probe(struct platform_device *pdev)
 	nand->read_byte = flctl_read_byte;
 	nand->write_buf = flctl_write_buf;
 	nand->read_buf = flctl_read_buf;
-	nand->verify_buf = flctl_verify_buf;
 	nand->select_chip = flctl_select_chip;
 	nand->cmdfunc = flctl_cmdfunc;
 
@@ -938,6 +931,8 @@ static int __devinit flctl_probe(struct platform_device *pdev)
 
 	pm_runtime_enable(&pdev->dev);
 	pm_runtime_resume(&pdev->dev);
+
+	loop_timeout_max = loops_per_jiffy * msecs_to_jiffies(LOOP_TIMEOUT_MS);
 
 	ret = nand_scan_ident(flctl_mtd, 1, NULL);
 	if (ret)
