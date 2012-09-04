@@ -68,6 +68,8 @@ extern void kvmppc_emulate_dec(struct kvm_vcpu *vcpu);
 extern u32 kvmppc_get_dec(struct kvm_vcpu *vcpu, u64 tb);
 extern void kvmppc_decrementer_func(unsigned long data);
 extern int kvmppc_sanity_check(struct kvm_vcpu *vcpu);
+extern int kvmppc_subarch_vcpu_init(struct kvm_vcpu *vcpu);
+extern void kvmppc_subarch_vcpu_uninit(struct kvm_vcpu *vcpu);
 
 /* Core-specific hooks */
 
@@ -104,6 +106,7 @@ extern void kvmppc_core_queue_external(struct kvm_vcpu *vcpu,
                                        struct kvm_interrupt *irq);
 extern void kvmppc_core_dequeue_external(struct kvm_vcpu *vcpu,
                                          struct kvm_interrupt *irq);
+extern void kvmppc_core_flush_tlb(struct kvm_vcpu *vcpu);
 
 extern int kvmppc_core_emulate_op(struct kvm_run *run, struct kvm_vcpu *vcpu,
                                   unsigned int op, int *advance);
@@ -111,6 +114,7 @@ extern int kvmppc_core_emulate_mtspr(struct kvm_vcpu *vcpu, int sprn,
 				     ulong val);
 extern int kvmppc_core_emulate_mfspr(struct kvm_vcpu *vcpu, int sprn,
 				     ulong *val);
+extern int kvmppc_core_check_requests(struct kvm_vcpu *vcpu);
 
 extern int kvmppc_booke_init(void);
 extern void kvmppc_booke_exit(void);
@@ -148,6 +152,8 @@ extern int kvm_vm_ioctl_get_smmu_info(struct kvm *kvm,
 
 extern int kvmppc_bookehv_init(void);
 extern void kvmppc_bookehv_exit(void);
+
+extern int kvmppc_prepare_to_enter(struct kvm_vcpu *vcpu);
 
 /*
  * Cuts out inst bits with ordering according to spec.
@@ -230,5 +236,15 @@ static inline void kvmppc_mmu_flush_icache(pfn_t pfn)
 	}
 }
 
+/* Please call after prepare_to_enter. This function puts the lazy ee state
+   back to normal mode, without actually enabling interrupts. */
+static inline void kvmppc_lazy_ee_enable(void)
+{
+#ifdef CONFIG_PPC64
+	/* Only need to enable IRQs by hard enabling them after this */
+	local_paca->irq_happened = 0;
+	local_paca->soft_enabled = 1;
+#endif
+}
 
 #endif /* __POWERPC_KVM_PPC_H__ */
