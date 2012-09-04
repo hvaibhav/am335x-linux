@@ -140,13 +140,6 @@ struct omap2_mcspi_cs {
 	u32			chconf0;
 };
 
-#define MOD_REG_BIT(val, mask, set) do { \
-	if (set) \
-		val |= mask; \
-	else \
-		val &= ~mask; \
-} while (0)
-
 static inline void mcspi_write_reg(struct spi_master *master,
 		int idx, u32 val)
 {
@@ -205,7 +198,11 @@ static void omap2_mcspi_set_dma_req(const struct spi_device *spi,
 	else
 		rw = OMAP2_MCSPI_CHCONF_DMAW;
 
-	MOD_REG_BIT(l, rw, enable);
+	if (enable)
+		l |= rw;
+	else
+		l &= ~rw;
+
 	mcspi_write_chconf0(spi, l);
 }
 
@@ -224,7 +221,11 @@ static void omap2_mcspi_force_cs(struct spi_device *spi, int cs_active)
 	u32 l;
 
 	l = mcspi_cached_chconf0(spi);
-	MOD_REG_BIT(l, OMAP2_MCSPI_CHCONF_FORCE, cs_active);
+	if (cs_active)
+		l |= OMAP2_MCSPI_CHCONF_FORCE;
+	else
+		l &= ~OMAP2_MCSPI_CHCONF_FORCE;
+
 	mcspi_write_chconf0(spi, l);
 }
 
@@ -239,9 +240,8 @@ static void omap2_mcspi_set_master_mode(struct spi_master *master)
 	 * to single-channel master mode
 	 */
 	l = mcspi_read_reg(master, OMAP2_MCSPI_MODULCTRL);
-	MOD_REG_BIT(l, OMAP2_MCSPI_MODULCTRL_STEST, 0);
-	MOD_REG_BIT(l, OMAP2_MCSPI_MODULCTRL_MS, 0);
-	MOD_REG_BIT(l, OMAP2_MCSPI_MODULCTRL_SINGLE, 1);
+	l &= ~(OMAP2_MCSPI_MODULCTRL_STEST | OMAP2_MCSPI_MODULCTRL_MS);
+	l |= OMAP2_MCSPI_MODULCTRL_SINGLE;
 	mcspi_write_reg(master, OMAP2_MCSPI_MODULCTRL, l);
 
 	ctx->modulctrl = l;
@@ -259,16 +259,6 @@ static void omap2_mcspi_restore_ctx(struct omap2_mcspi *mcspi)
 
 	list_for_each_entry(cs, &ctx->cs, node)
 		__raw_writel(cs->chconf0, cs->base + OMAP2_MCSPI_CHCONF0);
-}
-static void omap2_mcspi_disable_clocks(struct omap2_mcspi *mcspi)
-{
-	pm_runtime_mark_last_busy(mcspi->dev);
-	pm_runtime_put_autosuspend(mcspi->dev);
-}
-
-static int omap2_mcspi_enable_clocks(struct omap2_mcspi *mcspi)
-{
-	return pm_runtime_get_sync(mcspi->dev);
 }
 
 static int omap2_prepare_transfer(struct spi_master *master)
@@ -848,12 +838,13 @@ static int omap2_mcspi_setup(struct spi_device *spi)
 			return ret;
 	}
 
-	ret = omap2_mcspi_enable_clocks(mcspi);
+	ret = pm_runtime_get_sync(mcspi->dev);
 	if (ret < 0)
 		return ret;
 
 	ret = omap2_mcspi_setup_transfer(spi, NULL);
-	omap2_mcspi_disable_clocks(mcspi);
+	pm_runtime_mark_last_busy(mcspi->dev);
+	pm_runtime_put_autosuspend(mcspi->dev);
 
 	return ret;
 }
@@ -1067,7 +1058,7 @@ static int __devinit omap2_mcspi_master_setup(struct omap2_mcspi *mcspi)
 	struct omap2_mcspi_regs	*ctx = &mcspi->ctx;
 	int			ret = 0;
 
-	ret = omap2_mcspi_enable_clocks(mcspi);
+	ret = pm_runtime_get_sync(mcspi->dev);
 	if (ret < 0)
 		return ret;
 
@@ -1076,7 +1067,8 @@ static int __devinit omap2_mcspi_master_setup(struct omap2_mcspi *mcspi)
 	ctx->wakeupenable = OMAP2_MCSPI_WAKEUPENABLE_WKEN;
 
 	omap2_mcspi_set_master_mode(master);
-	omap2_mcspi_disable_clocks(mcspi);
+	pm_runtime_mark_last_busy(mcspi->dev);
+	pm_runtime_put_autosuspend(mcspi->dev);
 	return 0;
 }
 
@@ -1238,7 +1230,6 @@ dma_chnl_free:
 	kfree(mcspi->dma_channels);
 free_master:
 	spi_master_put(master);
-	platform_set_drvdata(pdev, NULL);
 	return status;
 }
 
@@ -1252,12 +1243,11 @@ static int __devexit omap2_mcspi_remove(struct platform_device *pdev)
 	mcspi = spi_master_get_devdata(master);
 	dma_channels = mcspi->dma_channels;
 
-	omap2_mcspi_disable_clocks(mcspi);
+	pm_runtime_put_sync(mcspi->dev);
 	pm_runtime_disable(&pdev->dev);
 
 	spi_unregister_master(master);
 	kfree(dma_channels);
-	platform_set_drvdata(pdev, NULL);
 
 	return 0;
 }
@@ -1278,20 +1268,21 @@ static int omap2_mcspi_resume(struct device *dev)
 	struct omap2_mcspi_regs	*ctx = &mcspi->ctx;
 	struct omap2_mcspi_cs	*cs;
 
-	omap2_mcspi_enable_clocks(mcspi);
+	pm_runtime_get_sync(mcspi->dev);
 	list_for_each_entry(cs, &ctx->cs, node) {
 		if ((cs->chconf0 & OMAP2_MCSPI_CHCONF_FORCE) == 0) {
 			/*
 			 * We need to toggle CS state for OMAP take this
 			 * change in account.
 			 */
-			MOD_REG_BIT(cs->chconf0, OMAP2_MCSPI_CHCONF_FORCE, 1);
+			cs->chconf0 |= OMAP2_MCSPI_CHCONF_FORCE;
 			__raw_writel(cs->chconf0, cs->base + OMAP2_MCSPI_CHCONF0);
-			MOD_REG_BIT(cs->chconf0, OMAP2_MCSPI_CHCONF_FORCE, 0);
+			cs->chconf0 &= ~OMAP2_MCSPI_CHCONF_FORCE;
 			__raw_writel(cs->chconf0, cs->base + OMAP2_MCSPI_CHCONF0);
 		}
 	}
-	omap2_mcspi_disable_clocks(mcspi);
+	pm_runtime_mark_last_busy(mcspi->dev);
+	pm_runtime_put_autosuspend(mcspi->dev);
 	return 0;
 }
 #else
