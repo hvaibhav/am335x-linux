@@ -2138,7 +2138,7 @@ intel_alloc_context_page(struct drm_device *dev)
 		return NULL;
 	}
 
-	ret = i915_gem_object_pin(ctx, 4096, true);
+	ret = i915_gem_object_pin(ctx, 4096, true, false);
 	if (ret) {
 		DRM_ERROR("failed to pin power context: %d\n", ret);
 		goto err_unref;
@@ -2160,10 +2160,27 @@ err_unref:
 	return NULL;
 }
 
+/**
+ * Lock protecting IPS related data structures
+ *   - i915_mch_dev
+ *   - dev_priv->max_delay
+ *   - dev_priv->min_delay
+ *   - dev_priv->fmax
+ *   - dev_priv->gpu_busy
+ *   - dev_priv->gfx_power
+ */
+DEFINE_SPINLOCK(mchdev_lock);
+
+/* Global for IPS driver to get at the current i915 device. Protected by
+ * mchdev_lock. */
+static struct drm_i915_private *i915_mch_dev;
+
 bool ironlake_set_drps(struct drm_device *dev, u8 val)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
 	u16 rgvswctl;
+
+	assert_spin_locked(&mchdev_lock);
 
 	rgvswctl = I915_READ16(MEMSWCTL);
 	if (rgvswctl & MEMCTL_CMD_STS) {
@@ -2187,6 +2204,8 @@ static void ironlake_enable_drps(struct drm_device *dev)
 	struct drm_i915_private *dev_priv = dev->dev_private;
 	u32 rgvmodectl = I915_READ(MEMMODECTL);
 	u8 fmax, fmin, fstart, vstart;
+
+	spin_lock_irq(&mchdev_lock);
 
 	/* Enable temp reporting */
 	I915_WRITE16(PMMISC, I915_READ(PMMISC) | MCPPCE_EN);
@@ -2233,9 +2252,9 @@ static void ironlake_enable_drps(struct drm_device *dev)
 	rgvmodectl |= MEMMODE_SWMODE_EN;
 	I915_WRITE(MEMMODECTL, rgvmodectl);
 
-	if (wait_for((I915_READ(MEMSWCTL) & MEMCTL_CMD_STS) == 0, 10))
+	if (wait_for_atomic((I915_READ(MEMSWCTL) & MEMCTL_CMD_STS) == 0, 10))
 		DRM_ERROR("stuck trying to change perf mode\n");
-	msleep(1);
+	mdelay(1);
 
 	ironlake_set_drps(dev, fstart);
 
@@ -2244,12 +2263,18 @@ static void ironlake_enable_drps(struct drm_device *dev)
 	dev_priv->last_time1 = jiffies_to_msecs(jiffies);
 	dev_priv->last_count2 = I915_READ(0x112f4);
 	getrawmonotonic(&dev_priv->last_time2);
+
+	spin_unlock_irq(&mchdev_lock);
 }
 
 static void ironlake_disable_drps(struct drm_device *dev)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
-	u16 rgvswctl = I915_READ16(MEMSWCTL);
+	u16 rgvswctl;
+
+	spin_lock_irq(&mchdev_lock);
+
+	rgvswctl = I915_READ16(MEMSWCTL);
 
 	/* Ack interrupts, disable EFC interrupt */
 	I915_WRITE(MEMINTREN, I915_READ(MEMINTREN) & ~MEMINT_EVAL_CHG_EN);
@@ -2260,30 +2285,51 @@ static void ironlake_disable_drps(struct drm_device *dev)
 
 	/* Go back to the starting frequency */
 	ironlake_set_drps(dev, dev_priv->fstart);
-	msleep(1);
+	mdelay(1);
 	rgvswctl |= MEMCTL_CMD_STS;
 	I915_WRITE(MEMSWCTL, rgvswctl);
-	msleep(1);
+	mdelay(1);
 
+	spin_unlock_irq(&mchdev_lock);
+}
+
+/* There's a funny hw issue where the hw returns all 0 when reading from
+ * GEN6_RP_INTERRUPT_LIMITS. Hence we always need to compute the desired value
+ * ourselves, instead of doing a rmw cycle (which might result in us clearing
+ * all limits and the gpu stuck at whatever frequency it is at atm).
+ */
+static u32 gen6_rps_limits(struct drm_i915_private *dev_priv, u8 *val)
+{
+	u32 limits;
+
+	limits = 0;
+
+	if (*val >= dev_priv->rps.max_delay)
+		*val = dev_priv->rps.max_delay;
+	limits |= dev_priv->rps.max_delay << 24;
+
+	/* Only set the down limit when we've reached the lowest level to avoid
+	 * getting more interrupts, otherwise leave this clear. This prevents a
+	 * race in the hw when coming out of rc6: There's a tiny window where
+	 * the hw runs at the minimal clock before selecting the desired
+	 * frequency, if the down threshold expires in that window we will not
+	 * receive a down interrupt. */
+	if (*val <= dev_priv->rps.min_delay) {
+		*val = dev_priv->rps.min_delay;
+		limits |= dev_priv->rps.min_delay << 16;
+	}
+
+	return limits;
 }
 
 void gen6_set_rps(struct drm_device *dev, u8 val)
 {
 	struct drm_i915_private *dev_priv = dev->dev_private;
-	u32 limits;
+	u32 limits = gen6_rps_limits(dev_priv, &val);
 
-	limits = 0;
-	if (val >= dev_priv->max_delay)
-		val = dev_priv->max_delay;
-	else
-		limits |= dev_priv->max_delay << 24;
+	WARN_ON(!mutex_is_locked(&dev->struct_mutex));
 
-	if (val <= dev_priv->min_delay)
-		val = dev_priv->min_delay;
-	else
-		limits |= dev_priv->min_delay << 16;
-
-	if (val == dev_priv->cur_delay)
+	if (val == dev_priv->rps.cur_delay)
 		return;
 
 	I915_WRITE(GEN6_RPNSWREQ,
@@ -2296,7 +2342,7 @@ void gen6_set_rps(struct drm_device *dev, u8 val)
 	 */
 	I915_WRITE(GEN6_RP_INTERRUPT_LIMITS, limits);
 
-	dev_priv->cur_delay = val;
+	dev_priv->rps.cur_delay = val;
 }
 
 static void gen6_disable_rps(struct drm_device *dev)
@@ -2312,40 +2358,40 @@ static void gen6_disable_rps(struct drm_device *dev)
 	 * register (PMIMR) to mask PM interrupts. The only risk is in leaving
 	 * stale bits in PMIIR and PMIMR which gen6_enable_rps will clean up. */
 
-	spin_lock_irq(&dev_priv->rps_lock);
-	dev_priv->pm_iir = 0;
-	spin_unlock_irq(&dev_priv->rps_lock);
+	spin_lock_irq(&dev_priv->rps.lock);
+	dev_priv->rps.pm_iir = 0;
+	spin_unlock_irq(&dev_priv->rps.lock);
 
 	I915_WRITE(GEN6_PMIIR, I915_READ(GEN6_PMIIR));
 }
 
 int intel_enable_rc6(const struct drm_device *dev)
 {
-	/*
-	 * Respect the kernel parameter if it is set
-	 */
+	/* Respect the kernel parameter if it is set */
 	if (i915_enable_rc6 >= 0)
 		return i915_enable_rc6;
 
-	/*
-	 * Disable RC6 on Ironlake
-	 */
-	if (INTEL_INFO(dev)->gen == 5)
-		return 0;
-
-	/* On Haswell, only RC6 is available. So let's enable it by default to
-	 * provide better testing and coverage since the beginning.
-	 */
-	if (IS_HASWELL(dev))
+	if (INTEL_INFO(dev)->gen == 5) {
+#ifdef CONFIG_INTEL_IOMMU
+		/* Disable rc6 on ilk if VT-d is on. */
+		if (intel_iommu_gfx_mapped)
+			return false;
+#endif
+		DRM_DEBUG_DRIVER("Ironlake: only RC6 available\n");
 		return INTEL_RC6_ENABLE;
+	}
 
-	/*
-	 * Disable rc6 on Sandybridge
-	 */
+	if (IS_HASWELL(dev)) {
+		DRM_DEBUG_DRIVER("Haswell: only RC6 available\n");
+		return INTEL_RC6_ENABLE;
+	}
+
+	/* snb/ivb have more than one rc6 state. */
 	if (INTEL_INFO(dev)->gen == 6) {
 		DRM_DEBUG_DRIVER("Sandybridge: deep RC6 disabled\n");
 		return INTEL_RC6_ENABLE;
 	}
+
 	DRM_DEBUG_DRIVER("RC6 and deep RC6 enabled\n");
 	return (INTEL_RC6_ENABLE | INTEL_RC6p_ENABLE);
 }
@@ -2383,9 +2429,9 @@ static void gen6_enable_rps(struct drm_device *dev)
 	gt_perf_status = I915_READ(GEN6_GT_PERF_STATUS);
 
 	/* In units of 100MHz */
-	dev_priv->max_delay = rp_state_cap & 0xff;
-	dev_priv->min_delay = (rp_state_cap & 0xff0000) >> 16;
-	dev_priv->cur_delay = 0;
+	dev_priv->rps.max_delay = rp_state_cap & 0xff;
+	dev_priv->rps.min_delay = (rp_state_cap & 0xff0000) >> 16;
+	dev_priv->rps.cur_delay = 0;
 
 	/* disable the counters and set deterministic thresholds */
 	I915_WRITE(GEN6_RC_CONTROL, 0);
@@ -2438,8 +2484,8 @@ static void gen6_enable_rps(struct drm_device *dev)
 
 	I915_WRITE(GEN6_RP_DOWN_TIMEOUT, 1000000);
 	I915_WRITE(GEN6_RP_INTERRUPT_LIMITS,
-		   dev_priv->max_delay << 24 |
-		   dev_priv->min_delay << 16);
+		   dev_priv->rps.max_delay << 24 |
+		   dev_priv->rps.min_delay << 16);
 
 	I915_WRITE(GEN6_RP_UP_THRESHOLD, 59400);
 	I915_WRITE(GEN6_RP_DOWN_THRESHOLD, 245000);
@@ -2477,7 +2523,7 @@ static void gen6_enable_rps(struct drm_device *dev)
 		     500))
 		DRM_ERROR("timeout waiting for pcode mailbox to finish\n");
 	if (pcu_mbox & (1<<31)) { /* OC supported */
-		dev_priv->max_delay = pcu_mbox & 0xff;
+		dev_priv->rps.max_delay = pcu_mbox & 0xff;
 		DRM_DEBUG_DRIVER("overclocking supported, adjusting frequency max to %dMHz\n", pcu_mbox * 50);
 	}
 
@@ -2485,10 +2531,10 @@ static void gen6_enable_rps(struct drm_device *dev)
 
 	/* requires MSI enabled */
 	I915_WRITE(GEN6_PMIER, GEN6_PM_DEFERRED_EVENTS);
-	spin_lock_irq(&dev_priv->rps_lock);
-	WARN_ON(dev_priv->pm_iir != 0);
+	spin_lock_irq(&dev_priv->rps.lock);
+	WARN_ON(dev_priv->rps.pm_iir != 0);
 	I915_WRITE(GEN6_PMIMR, 0);
-	spin_unlock_irq(&dev_priv->rps_lock);
+	spin_unlock_irq(&dev_priv->rps.lock);
 	/* enable all PM interrupts */
 	I915_WRITE(GEN6_PMINTRMSK, 0);
 
@@ -2520,9 +2566,9 @@ static void gen6_update_ring_freq(struct drm_device *dev)
 	 * to use for memory access.  We do this by specifying the IA frequency
 	 * the PCU should use as a reference to determine the ring frequency.
 	 */
-	for (gpu_freq = dev_priv->max_delay; gpu_freq >= dev_priv->min_delay;
+	for (gpu_freq = dev_priv->rps.max_delay; gpu_freq >= dev_priv->rps.min_delay;
 	     gpu_freq--) {
-		int diff = dev_priv->max_delay - gpu_freq;
+		int diff = dev_priv->rps.max_delay - gpu_freq;
 
 		/*
 		 * For GPU frequencies less than 750MHz, just use the lowest
@@ -2692,6 +2738,8 @@ unsigned long i915_chipset_val(struct drm_i915_private *dev_priv)
 	u32 count1, count2, count3, m = 0, c = 0;
 	unsigned long now = jiffies_to_msecs(jiffies), diff1;
 	int i;
+
+	assert_spin_locked(&mchdev_lock);
 
 	diff1 = now - dev_priv->last_time1;
 
@@ -2894,15 +2942,14 @@ static u16 pvid_to_extvid(struct drm_i915_private *dev_priv, u8 pxvid)
 		return v_table[pxvid].vd;
 }
 
-void i915_update_gfx_val(struct drm_i915_private *dev_priv)
+static void __i915_update_gfx_val(struct drm_i915_private *dev_priv)
 {
 	struct timespec now, diff1;
 	u64 diff;
 	unsigned long diffms;
 	u32 count;
 
-	if (dev_priv->info->gen != 5)
-		return;
+	assert_spin_locked(&mchdev_lock);
 
 	getrawmonotonic(&now);
 	diff1 = timespec_sub(now, dev_priv->last_time2);
@@ -2930,12 +2977,26 @@ void i915_update_gfx_val(struct drm_i915_private *dev_priv)
 	dev_priv->gfx_power = diff;
 }
 
+void i915_update_gfx_val(struct drm_i915_private *dev_priv)
+{
+	if (dev_priv->info->gen != 5)
+		return;
+
+	spin_lock_irq(&mchdev_lock);
+
+	__i915_update_gfx_val(dev_priv);
+
+	spin_unlock_irq(&mchdev_lock);
+}
+
 unsigned long i915_gfx_val(struct drm_i915_private *dev_priv)
 {
 	unsigned long t, corr, state1, corr2, state2;
 	u32 pxvid, ext_v;
 
-	pxvid = I915_READ(PXVFREQ_BASE + (dev_priv->cur_delay * 4));
+	assert_spin_locked(&mchdev_lock);
+
+	pxvid = I915_READ(PXVFREQ_BASE + (dev_priv->rps.cur_delay * 4));
 	pxvid = (pxvid >> 24) & 0x7f;
 	ext_v = pvid_to_extvid(dev_priv, pxvid);
 
@@ -2960,22 +3021,10 @@ unsigned long i915_gfx_val(struct drm_i915_private *dev_priv)
 	state2 = (corr2 * state1) / 10000;
 	state2 /= 100; /* convert to mW */
 
-	i915_update_gfx_val(dev_priv);
+	__i915_update_gfx_val(dev_priv);
 
 	return dev_priv->gfx_power + state2;
 }
-
-/* Global for IPS driver to get at the current i915 device */
-static struct drm_i915_private *i915_mch_dev;
-/*
- * Lock protecting IPS related data structures
- *   - i915_mch_dev
- *   - dev_priv->max_delay
- *   - dev_priv->min_delay
- *   - dev_priv->fmax
- *   - dev_priv->gpu_busy
- */
-static DEFINE_SPINLOCK(mchdev_lock);
 
 /**
  * i915_read_mch_val - return value for IPS use
@@ -2988,7 +3037,7 @@ unsigned long i915_read_mch_val(void)
 	struct drm_i915_private *dev_priv;
 	unsigned long chipset_val, graphics_val, ret = 0;
 
-	spin_lock(&mchdev_lock);
+	spin_lock_irq(&mchdev_lock);
 	if (!i915_mch_dev)
 		goto out_unlock;
 	dev_priv = i915_mch_dev;
@@ -2999,7 +3048,7 @@ unsigned long i915_read_mch_val(void)
 	ret = chipset_val + graphics_val;
 
 out_unlock:
-	spin_unlock(&mchdev_lock);
+	spin_unlock_irq(&mchdev_lock);
 
 	return ret;
 }
@@ -3015,7 +3064,7 @@ bool i915_gpu_raise(void)
 	struct drm_i915_private *dev_priv;
 	bool ret = true;
 
-	spin_lock(&mchdev_lock);
+	spin_lock_irq(&mchdev_lock);
 	if (!i915_mch_dev) {
 		ret = false;
 		goto out_unlock;
@@ -3026,7 +3075,7 @@ bool i915_gpu_raise(void)
 		dev_priv->max_delay--;
 
 out_unlock:
-	spin_unlock(&mchdev_lock);
+	spin_unlock_irq(&mchdev_lock);
 
 	return ret;
 }
@@ -3043,7 +3092,7 @@ bool i915_gpu_lower(void)
 	struct drm_i915_private *dev_priv;
 	bool ret = true;
 
-	spin_lock(&mchdev_lock);
+	spin_lock_irq(&mchdev_lock);
 	if (!i915_mch_dev) {
 		ret = false;
 		goto out_unlock;
@@ -3054,7 +3103,7 @@ bool i915_gpu_lower(void)
 		dev_priv->max_delay++;
 
 out_unlock:
-	spin_unlock(&mchdev_lock);
+	spin_unlock_irq(&mchdev_lock);
 
 	return ret;
 }
@@ -3068,17 +3117,20 @@ EXPORT_SYMBOL_GPL(i915_gpu_lower);
 bool i915_gpu_busy(void)
 {
 	struct drm_i915_private *dev_priv;
+	struct intel_ring_buffer *ring;
 	bool ret = false;
+	int i;
 
-	spin_lock(&mchdev_lock);
+	spin_lock_irq(&mchdev_lock);
 	if (!i915_mch_dev)
 		goto out_unlock;
 	dev_priv = i915_mch_dev;
 
-	ret = dev_priv->busy;
+	for_each_ring(ring, dev_priv, i)
+		ret |= !list_empty(&ring->request_list);
 
 out_unlock:
-	spin_unlock(&mchdev_lock);
+	spin_unlock_irq(&mchdev_lock);
 
 	return ret;
 }
@@ -3095,7 +3147,7 @@ bool i915_gpu_turbo_disable(void)
 	struct drm_i915_private *dev_priv;
 	bool ret = true;
 
-	spin_lock(&mchdev_lock);
+	spin_lock_irq(&mchdev_lock);
 	if (!i915_mch_dev) {
 		ret = false;
 		goto out_unlock;
@@ -3108,7 +3160,7 @@ bool i915_gpu_turbo_disable(void)
 		ret = false;
 
 out_unlock:
-	spin_unlock(&mchdev_lock);
+	spin_unlock_irq(&mchdev_lock);
 
 	return ret;
 }
@@ -3136,19 +3188,20 @@ ips_ping_for_i915_load(void)
 
 void intel_gpu_ips_init(struct drm_i915_private *dev_priv)
 {
-	spin_lock(&mchdev_lock);
+	/* We only register the i915 ips part with intel-ips once everything is
+	 * set up, to avoid intel-ips sneaking in and reading bogus values. */
+	spin_lock_irq(&mchdev_lock);
 	i915_mch_dev = dev_priv;
-	dev_priv->mchdev_lock = &mchdev_lock;
-	spin_unlock(&mchdev_lock);
+	spin_unlock_irq(&mchdev_lock);
 
 	ips_ping_for_i915_load();
 }
 
 void intel_gpu_ips_teardown(void)
 {
-	spin_lock(&mchdev_lock);
+	spin_lock_irq(&mchdev_lock);
 	i915_mch_dev = NULL;
-	spin_unlock(&mchdev_lock);
+	spin_unlock_irq(&mchdev_lock);
 }
 static void intel_init_emon(struct drm_device *dev)
 {
@@ -3728,42 +3781,6 @@ void intel_init_clock_gating(struct drm_device *dev)
 		dev_priv->display.init_pch_clock_gating(dev);
 }
 
-static void gen6_sanitize_pm(struct drm_device *dev)
-{
-	struct drm_i915_private *dev_priv = dev->dev_private;
-	u32 limits, delay, old;
-
-	gen6_gt_force_wake_get(dev_priv);
-
-	old = limits = I915_READ(GEN6_RP_INTERRUPT_LIMITS);
-	/* Make sure we continue to get interrupts
-	 * until we hit the minimum or maximum frequencies.
-	 */
-	limits &= ~(0x3f << 16 | 0x3f << 24);
-	delay = dev_priv->cur_delay;
-	if (delay < dev_priv->max_delay)
-		limits |= (dev_priv->max_delay & 0x3f) << 24;
-	if (delay > dev_priv->min_delay)
-		limits |= (dev_priv->min_delay & 0x3f) << 16;
-
-	if (old != limits) {
-		/* Note that the known failure case is to read back 0. */
-		DRM_DEBUG_DRIVER("Power management discrepancy: GEN6_RP_INTERRUPT_LIMITS "
-				 "expected %08x, was %08x\n", limits, old);
-		I915_WRITE(GEN6_RP_INTERRUPT_LIMITS, limits);
-	}
-
-	gen6_gt_force_wake_put(dev_priv);
-}
-
-void intel_sanitize_pm(struct drm_device *dev)
-{
-	struct drm_i915_private *dev_priv = dev->dev_private;
-
-	if (dev_priv->display.sanitize_pm)
-		dev_priv->display.sanitize_pm(dev);
-}
-
 /* Starting with Haswell, we have different power wells for
  * different parts of the GPU. This attempts to enable them all.
  */
@@ -3849,7 +3866,6 @@ void intel_init_pm(struct drm_device *dev)
 				dev_priv->display.update_wm = NULL;
 			}
 			dev_priv->display.init_clock_gating = gen6_init_clock_gating;
-			dev_priv->display.sanitize_pm = gen6_sanitize_pm;
 		} else if (IS_IVYBRIDGE(dev)) {
 			/* FIXME: detect B0+ stepping and use auto training */
 			if (SNB_READ_WM0_LATENCY()) {
@@ -3861,7 +3877,6 @@ void intel_init_pm(struct drm_device *dev)
 				dev_priv->display.update_wm = NULL;
 			}
 			dev_priv->display.init_clock_gating = ivybridge_init_clock_gating;
-			dev_priv->display.sanitize_pm = gen6_sanitize_pm;
 		} else if (IS_HASWELL(dev)) {
 			if (SNB_READ_WM0_LATENCY()) {
 				dev_priv->display.update_wm = sandybridge_update_wm;
@@ -3873,7 +3888,6 @@ void intel_init_pm(struct drm_device *dev)
 				dev_priv->display.update_wm = NULL;
 			}
 			dev_priv->display.init_clock_gating = haswell_init_clock_gating;
-			dev_priv->display.sanitize_pm = gen6_sanitize_pm;
 		} else
 			dev_priv->display.update_wm = NULL;
 	} else if (IS_VALLEYVIEW(dev)) {
