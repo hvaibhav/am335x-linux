@@ -179,6 +179,16 @@ config SENSORS_ADM9240
 	  This driver can also be built as a module.  If so, the module
 	  will be called adm9240.
 
+config SENSORS_ADT7410
+	tristate "Analog Devices ADT7410"
+	depends on I2C && EXPERIMENTAL
+	help
+	  If you say yes here you get support for the Analog Devices
+	  ADT7410 temperature monitoring chip.
+
+	  This driver can also be built as a module. If so, the module
+	  will be called adt7410.
+
 config SENSORS_ADT7411
 	tristate "Analog Devices ADT7411"
 	depends on I2C && EXPERIMENTAL
@@ -802,6 +812,15 @@ config SENSORS_MAX1668
 
 	  This driver can also be built as a module.  If so, the module
 	  will be called max1668.
+
+config SENSORS_MAX197
+	tristate "Maxim MAX197 and compatibles"
+	help
+	  Support for the Maxim MAX197 A/D converter.
+	  Support will include, but not be limited to, MAX197, and MAX199.
+
+	  This driver can also be built as a module. If so, the module
+	  will be called max197.
 
 config SENSORS_MAX6639
 	tristate "Maxim MAX6639 sensor chip"
