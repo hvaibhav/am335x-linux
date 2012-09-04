@@ -66,7 +66,6 @@ struct pcpu {
 	unsigned long panic_stack;	/* panic stack for the cpu */
 	unsigned long ec_mask;		/* bit mask for ec_xxx functions */
 	int state;			/* physical cpu state */
-	u32 status;			/* last status received via sigp */
 	u16 address;			/* physical cpu address */
 };
 
@@ -99,7 +98,7 @@ static inline int __pcpu_sigp_relax(u16 addr, u8 order, u32 parm, u32 *status)
 	int cc;
 
 	while (1) {
-		cc = __pcpu_sigp(addr, order, parm, status);
+		cc = __pcpu_sigp(addr, order, parm, NULL);
 		if (cc != SIGP_CC_BUSY)
 			return cc;
 		cpu_relax();
@@ -111,7 +110,7 @@ static int pcpu_sigp_retry(struct pcpu *pcpu, u8 order, u32 parm)
 	int cc, retry;
 
 	for (retry = 0; ; retry++) {
-		cc = __pcpu_sigp(pcpu->address, order, parm, &pcpu->status);
+		cc = __pcpu_sigp(pcpu->address, order, parm, NULL);
 		if (cc != SIGP_CC_BUSY)
 			break;
 		if (retry >= 3)
@@ -122,16 +121,18 @@ static int pcpu_sigp_retry(struct pcpu *pcpu, u8 order, u32 parm)
 
 static inline int pcpu_stopped(struct pcpu *pcpu)
 {
+	u32 status;
+
 	if (__pcpu_sigp(pcpu->address, SIGP_SENSE,
-			0, &pcpu->status) != SIGP_CC_STATUS_STORED)
+			0, &status) != SIGP_CC_STATUS_STORED)
 		return 0;
-	return !!(pcpu->status & (SIGP_STATUS_CHECK_STOP|SIGP_STATUS_STOPPED));
+	return !!(status & (SIGP_STATUS_CHECK_STOP|SIGP_STATUS_STOPPED));
 }
 
 static inline int pcpu_running(struct pcpu *pcpu)
 {
 	if (__pcpu_sigp(pcpu->address, SIGP_SENSE_RUNNING,
-			0, &pcpu->status) != SIGP_CC_STATUS_STORED)
+			0, NULL) != SIGP_CC_STATUS_STORED)
 		return 1;
 	/* Status stored condition code is equivalent to cpu not running. */
 	return 0;
@@ -959,22 +960,16 @@ static int __cpuinit smp_cpu_notify(struct notifier_block *self,
 	struct device *s = &c->dev;
 	int err = 0;
 
-	switch (action) {
+	switch (action & ~CPU_TASKS_FROZEN) {
 	case CPU_ONLINE:
-	case CPU_ONLINE_FROZEN:
 		err = sysfs_create_group(&s->kobj, &cpu_online_attr_group);
 		break;
 	case CPU_DEAD:
-	case CPU_DEAD_FROZEN:
 		sysfs_remove_group(&s->kobj, &cpu_online_attr_group);
 		break;
 	}
 	return notifier_from_errno(err);
 }
-
-static struct notifier_block __cpuinitdata smp_cpu_nb = {
-	.notifier_call = smp_cpu_notify,
-};
 
 static int __devinit smp_add_present_cpu(int cpu)
 {
@@ -1050,7 +1045,7 @@ static int __init s390_smp_init(void)
 {
 	int cpu, rc;
 
-	register_cpu_notifier(&smp_cpu_nb);
+	hotcpu_notifier(smp_cpu_notify, 0);
 #ifdef CONFIG_HOTPLUG_CPU
 	rc = device_create_file(cpu_subsys.dev_root, &dev_attr_rescan);
 	if (rc)

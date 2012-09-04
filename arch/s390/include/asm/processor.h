@@ -17,6 +17,7 @@
 #include <asm/page.h>
 #include <asm/ptrace.h>
 #include <asm/setup.h>
+#include <asm/runtime_instr.h>
 
 /*
  * Default implementation of macro that returns current
@@ -75,10 +76,19 @@ struct thread_struct {
 	unsigned long gmap_addr;	/* address of last gmap fault. */
 	struct per_regs per_user;	/* User specified PER registers */
 	struct per_event per_event;	/* Cause of the last PER trap */
+	unsigned long per_flags;	/* Flags to control debug behavior */
         /* pfault_wait is used to block the process on a pfault event */
 	unsigned long pfault_wait;
 	struct list_head list;
+	/* cpu runtime instrumentation */
+	struct runtime_instr_cb *ri_cb;
+	int ri_signum;
+#ifdef CONFIG_64BIT
+	unsigned char trap_tdb[256];	/* Transaction abort diagnose block */
+#endif
 };
+
+#define PER_FLAG_NO_TE		1UL	/* Flag to disable transactions. */
 
 typedef struct thread_struct thread_struct;
 
@@ -130,6 +140,12 @@ struct task_struct;
 struct mm_struct;
 struct seq_file;
 
+#ifdef CONFIG_64BIT
+extern void show_cacheinfo(struct seq_file *m);
+#else
+static inline void show_cacheinfo(struct seq_file *m) { }
+#endif
+
 /* Free all resources held by a thread. */
 extern void release_thread(struct task_struct *);
 extern int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags);
@@ -140,6 +156,7 @@ extern int kernel_thread(int (*fn)(void *), void * arg, unsigned long flags);
 extern unsigned long thread_saved_pc(struct task_struct *t);
 
 extern void show_code(struct pt_regs *regs);
+extern void print_fn_code(unsigned char *code, unsigned long len);
 
 unsigned long get_wchan(struct task_struct *p);
 #define task_pt_regs(tsk) ((struct pt_regs *) \

@@ -302,7 +302,7 @@ static int __init parse_vmalloc(char *arg)
 }
 early_param("vmalloc", parse_vmalloc);
 
-unsigned int addressing_mode = HOME_SPACE_MODE;
+unsigned int addressing_mode = PRIMARY_SPACE_MODE;
 EXPORT_SYMBOL_GPL(addressing_mode);
 
 static int set_amode_primary(void)
@@ -322,16 +322,6 @@ static int set_amode_primary(void)
 		return 0;
 	}
 }
-
-/*
- * Switch kernel/user addressing modes?
- */
-static int __init early_parse_switch_amode(char *p)
-{
-	addressing_mode = PRIMARY_SPACE_MODE;
-	return 0;
-}
-early_param("switch_amode", early_parse_switch_amode);
 
 static int __init early_parse_user_mode(char *p)
 {
@@ -979,6 +969,14 @@ static void __init setup_hwcaps(void)
 	 * HWCAP_S390_HIGH_GPRS is bit 9.
 	 */
 	elf_hwcap |= HWCAP_S390_HIGH_GPRS;
+
+#if defined(CONFIG_64BIT)
+	/*
+	 * Transactional execution support HWCAP_S390_TE is bit 10.
+	 */
+	if (test_facility(50) && test_facility(73))
+		elf_hwcap |= HWCAP_S390_TE;
+#endif
 
 	get_cpu_id(&cpu_id);
 	switch (cpu_id.machine) {
