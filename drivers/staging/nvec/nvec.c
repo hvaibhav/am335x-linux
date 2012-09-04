@@ -366,8 +366,7 @@ static void nvec_request_master(struct work_struct *work)
 static int parse_msg(struct nvec_chip *nvec, struct nvec_msg *msg)
 {
 	if ((msg->data[0] & 1 << 7) == 0 && msg->data[3]) {
-		dev_err(nvec->dev, "ec responded %02x %02x %02x %02x\n",
-			msg->data[0], msg->data[1], msg->data[2], msg->data[3]);
+		dev_err(nvec->dev, "ec responded %*ph\n", 4, msg->data);
 		return -EINVAL;
 	}
 
@@ -737,12 +736,14 @@ static int __devinit tegra_nvec_probe(struct platform_device *pdev)
 		nvec->gpio = pdata->gpio;
 		nvec->i2c_addr = pdata->i2c_addr;
 	} else if (nvec->dev->of_node) {
-		nvec->gpio = of_get_named_gpio(nvec->dev->of_node, "request-gpios", 0);
+		nvec->gpio = of_get_named_gpio(nvec->dev->of_node,
+					"request-gpios", 0);
 		if (nvec->gpio < 0) {
 			dev_err(&pdev->dev, "no gpio specified");
 			return -ENODEV;
 		}
-		if (of_property_read_u32(nvec->dev->of_node, "slave-addr", &nvec->i2c_addr)) {
+		if (of_property_read_u32(nvec->dev->of_node,
+					"slave-addr", &nvec->i2c_addr)) {
 			dev_err(&pdev->dev, "no i2c address specified");
 			return -ENODEV;
 		}

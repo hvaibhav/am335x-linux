@@ -676,30 +676,27 @@ config COMEDI_ADL_PCI6208
 	  To compile this driver as a module, choose M here: the module will be
 	  called adl_pci6208.
 
-config COMEDI_ADL_PCI7230
-	tristate "ADLink PCI-7230 digital io board support"
+config COMEDI_ADL_PCI7X3X
+	tristate "ADLink PCI-723X/743X isolated digital i/o board support"
 	---help---
-	  Enable support for ADlink PCI-7230 digital io board support
+	  Enable support for ADlink PCI-723X/743X isolated digital i/o boards.
+	  Supported boards include the 32-channel PCI-7230 (16 in/16 out),
+	  PCI-7233 (32 in), and PCI-7234 (32 out) as well as the 64-channel
+	  PCI-7432 (32 in/32 out), PCI-7433 (64 in), and PCI-7434 (64 out).
 
 	  To compile this driver as a module, choose M here: the module will be
-	  called adl_pci7230.
+	  called adl_pci7x3x.
 
 config COMEDI_ADL_PCI7296
-	tristate "ADLink PCI-7296 96 ch. digital io board support"
+	tristate "ADLink PCI-72xx opto-22 compatible digital i/o board support"
 	select COMEDI_8255
 	---help---
-	  Enable support for ADlink PCI-7296 96 ch. digital io board support
+	  Enable support for ADlink PCI-72xx opto-22 compatible digital i/o
+	  boards. Supported boards include the 24-channel PCI-7224, 48-channel
+	  PCI-7248, and 96-channel PCI-7296.
 
 	  To compile this driver as a module, choose M here: the module will be
 	  called adl_pci7296.
-
-config COMEDI_ADL_PCI7432
-	tristate "ADLink PCI-7432 64 ch. isolated digital io board support"
-	---help---
-	  Enable support for ADlink PCI-7432 64 ch. isolated digital io board
-
-	  To compile this driver as a module, choose M here: the module will be
-	  called adl_pci7432.
 
 config COMEDI_ADL_PCI8164
 	tristate "ADLink PCI-8164 4 Axes Motion Control board support"
