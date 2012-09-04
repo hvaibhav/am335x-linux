@@ -1,0 +1,59 @@
+Importing i2c based on 155e36d40cf31c17f2b629fc2f2f5527e4cfc324
+$ git clone -s -l -n -q . ../quilt-tmp
+$ cd ../quilt-tmp
+$ git reset --hard 155e36d40cf31c17f2b629fc2f2f5527e4cfc324
+HEAD is now at 155e36d Merge branch 'drm-fixes' of git://people.freedesktop.org/~airlied/linux
+$ git am ../quilt/i2c/i2c-i801-add-device-ids-for-intel-lynx-point-lp-pch.patch
+Applying: i2c-i801: Add Device IDs for Intel Lynx Point-LP PCH
+$ git am ../quilt/i2c/i2c-designware-fix-build-error-if-platform-y-and-pci-y.patch
+Applying: i2c-designware: Fix build error if CONFIG_I2C_DESIGNWARE_PLATFORM=y && CONFIG_I2C_DESIGNWARE_PCI=y
+$ git am ../quilt/i2c/i2c-mux-support-class.patch
+Applying: i2c-mux: Add support for device auto-detection
+$ git am ../quilt/i2c/i2c-i801-asus-multiplexing-2.patch
+Applying: i2c-i801: Support SMBus multiplexing on Asus Z8 series
+$ git am ../quilt/i2c/i2c-smbus-convert-kzalloc-to-devm_kzalloc.patch
+Applying: i2c-smbus: Convert kzalloc to devm_kzalloc
+$ git am ../quilt/i2c/i2c-convert-struct-i2c_msg-initialization-to-c99-format.patch
+Applying: i2c: Convert struct i2c_msg initialization to C99 format
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/i2c
+From ../quilt-tmp
+ + a918790...0e27487 master     -> quilt/i2c  (forced update)
+Importing jdelvare-hwmon based on e7882d6c40874a5b5033ca85f7508a602a60b662
+Unchanged quilt series jdelvare-hwmon
+Importing rr based on v3.6-rc1-133-g42a579a
+$ cd ../quilt-tmp
+$ git reset --hard 42a579a0f960081cd16fc945036e4780c3ad3202
+HEAD is now at 42a579a Merge branches 'timers-urgent-for-linus' and 'perf-urgent-for-linus' of git://git.kernel.org/pub/scm/linux/kernel/git/tip/tip
+$ git am ../quilt/rr/module:taint_kernel_when_lve_is_loaded.patch
+Applying: module: taint kernel when lve module is loaded
+$ git am ../quilt/rr/module:mips_fix_c_build_for_32_bit.patch
+Applying: MIPS: Fix module.c build for 32 bit
+$ git am ../quilt/rr/module:make_most_arch_asm_h_files_use_asm_generic_h.patch
+Applying: Make most arch asm/module.h files use asm-generic/module.h
+$ git am ../quilt/rr/virtio:console_add_splice_write_support.patch
+Applying: virtio/console: Add splice_write support
+$ git am ../quilt/rr/virtio:console_add_a_failback_for_unstealable_pipe_buffer.patch
+Applying: virtio/console: Add a failback for unstealable pipe buffer
+$ git am ../quilt/rr/virtio:console_wait_until_the_port_is_ready_on_splice.patch
+Applying: virtio/console: Wait until the port is ready on splice
+$ git am ../quilt/rr/misc:ftrace_allow_stealing_pages_from_pipe_buffer.patch
+Applying: ftrace: Allow stealing pages from pipe buffer
+$ git am ../quilt/rr/virtio:console_allocate_scatterlist_according_to_the_current_pipe_size.patch
+Applying: virtio/console: Allocate scatterlist according to the current pipe size
+$ git am ../quilt/rr/misc:tools_add_guest_trace_agent_as_a_user_tool.patch
+Applying: tools: Add guest trace agent as a user tool
+$ git am ../quilt/rr/misc:block_introduce_blk_segment_map_sg_helper.patch
+Applying: block: Introduce __blk_segment_map_sg() helper
+$ git am ../quilt/rr/misc:block_add_blk_bio_map_sg_helper.patch
+Applying: block: Add blk_bio_map_sg() helper
+$ git am ../quilt/rr/virtio:blk_add_bio_based_io_path_for_blk.patch
+Applying: virtio-blk: Add bio-based IO path for virtio-blk
+$ git am ../quilt/rr/virtio:blk_add_req_flush_and_req_fua_support_to_bio_path.patch
+Applying: virtio-blk: Add REQ_FLUSH and REQ_FUA support to bio path
+$ cd ../next
+$ git fetch -f ../quilt-tmp master:quilt/rr
+From ../quilt-tmp
+ + ba05c76...98db24b master     -> quilt/rr  (forced update)
+Importing device-mapper based on v3.6-rc1
+Unchanged quilt series device-mapper
