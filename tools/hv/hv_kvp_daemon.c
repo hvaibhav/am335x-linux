@@ -69,15 +69,16 @@ enum key_index {
 };
 
 static char kvp_send_buffer[4096];
-static char kvp_recv_buffer[4096];
+static char kvp_recv_buffer[4096 * 2];
 static struct sockaddr_nl addr;
+static int in_hand_shake = 1;
 
 static char *os_name = "";
 static char *os_major = "";
 static char *os_minor = "";
 static char *processor_arch;
 static char *os_build;
-static char *lic_version;
+static char *lic_version = "Unknown version";
 static struct utsname uts_buf;
 
 
@@ -394,7 +395,7 @@ static int kvp_get_value(int pool, __u8 *key, int key_size, __u8 *value,
 	return 1;
 }
 
-static void kvp_pool_enumerate(int pool, int index, __u8 *key, int key_size,
+static int kvp_pool_enumerate(int pool, int index, __u8 *key, int key_size,
 				__u8 *value, int value_size)
 {
 	struct kvp_record *record;
@@ -406,16 +407,12 @@ static void kvp_pool_enumerate(int pool, int index, __u8 *key, int key_size,
 	record = kvp_file_info[pool].records;
 
 	if (index >= kvp_file_info[pool].num_records) {
-		/*
-		 * This is an invalid index; terminate enumeration;
-		 * - a NULL value will do the trick.
-		 */
-		strcpy(value, "");
-		return;
+		return 1;
 	}
 
 	memcpy(key, record[index].key, key_size);
 	memcpy(value, record[index].value, value_size);
+	return 0;
 }
 
 
@@ -494,21 +491,141 @@ done:
 	return;
 }
 
+static void kvp_process_ipconfig_file(char *cmd,
+					char *config_buf, int len,
+					int element_size, int offset)
+{
+	char buf[256];
+	char *p;
+	char *x;
+	FILE *file;
+
+	/*
+	 * First execute the command.
+	 */
+	file = popen(cmd, "r");
+	if (file == NULL)
+		return;
+
+	if (offset == 0)
+		memset(config_buf, 0, len);
+	while ((p = fgets(buf, sizeof(buf), file)) != NULL) {
+		if ((len - strlen(config_buf)) < (element_size + 1))
+			break;
+
+		x = strchr(p, '\n');
+		*x = '\0';
+		strcat(config_buf, p);
+		strcat(config_buf, ";");
+	}
+	pclose(file);
+}
+
+static void kvp_get_ipconfig_info(char *if_name,
+				 struct hv_kvp_ipaddr_value *buffer)
+{
+	char cmd[512];
+
+	/*
+	 * Get the address of default gateway (ipv4).
+	 */
+	sprintf(cmd, "%s %s", "ip route show dev", if_name);
+	strcat(cmd, " | awk '/default/ {print $3 }'");
+
+	/*
+	 * Execute the command to gather gateway info.
+	 */
+	kvp_process_ipconfig_file(cmd, (char *)buffer->gate_way,
+				(MAX_GATEWAY_SIZE * 2), INET_ADDRSTRLEN, 0);
+
+	/*
+	 * Get the address of default gateway (ipv6).
+	 */
+	sprintf(cmd, "%s %s", "ip -f inet6  route show dev", if_name);
+	strcat(cmd, " | awk '/default/ {print $3 }'");
+
+	/*
+	 * Execute the command to gather gateway info (ipv6).
+	 */
+	kvp_process_ipconfig_file(cmd, (char *)buffer->gate_way,
+				(MAX_GATEWAY_SIZE * 2), INET6_ADDRSTRLEN, 1);
+
+}
+
+
+static unsigned int hweight32(unsigned int *w)
+{
+	unsigned int res = *w - ((*w >> 1) & 0x55555555);
+	res = (res & 0x33333333) + ((res >> 2) & 0x33333333);
+	res = (res + (res >> 4)) & 0x0F0F0F0F;
+	res = res + (res >> 8);
+	return (res + (res >> 16)) & 0x000000FF;
+}
+
+static int kvp_process_ip_address(void *addrp,
+				int family, char *buffer,
+				int length,  int *offset)
+{
+	struct sockaddr_in *addr;
+	struct sockaddr_in6 *addr6;
+	int addr_length;
+	char tmp[50];
+	const char *str;
+
+	if (family == AF_INET) {
+		addr = (struct sockaddr_in *)addrp;
+		str = inet_ntop(family, &addr->sin_addr, tmp, 50);
+		addr_length = INET_ADDRSTRLEN;
+	} else {
+		addr6 = (struct sockaddr_in6 *)addrp;
+		str = inet_ntop(family, &addr6->sin6_addr.s6_addr, tmp, 50);
+		addr_length = INET6_ADDRSTRLEN;
+	}
+
+	if ((length - *offset) < addr_length + 1)
+		return 1;
+	if (str == NULL) {
+		strcpy(buffer, "inet_ntop failed\n");
+		return 1;
+	}
+	if (*offset == 0)
+		strcpy(buffer, tmp);
+	else
+		strcat(buffer, tmp);
+	strcat(buffer, ";");
+
+	*offset += strlen(str) + 1;
+	return 0;
+}
+
 static int
-kvp_get_ip_address(int family, char *buffer, int length)
+kvp_get_ip_address(int family, char *if_name, int op,
+		 void  *out_buffer, int length)
 {
 	struct ifaddrs *ifap;
 	struct ifaddrs *curp;
-	int ipv4_len = strlen("255.255.255.255") + 1;
-	int ipv6_len = strlen("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")+1;
 	int offset = 0;
-	const char *str;
-	char tmp[50];
+	int sn_offset = 0;
 	int error = 0;
+	char *buffer;
+	struct hv_kvp_ipaddr_value *ip_buffer;
+	char cidr_mask[5]; /* /xyz */
+	int weight;
+	int i;
+	unsigned int *w;
+	char *sn_str;
+	struct sockaddr_in6 *addr6;
 
+	if (op == KVP_OP_ENUMERATE) {
+		buffer = out_buffer;
+	} else {
+		ip_buffer = out_buffer;
+		buffer = (char *)ip_buffer->ip_addr;
+		ip_buffer->addr_family = 0;
+	}
 	/*
 	 * On entry into this function, the buffer is capable of holding the
-	 * maximum key value (2048 bytes).
+	 * maximum key value.
 	 */
 
 	if (getifaddrs(&ifap)) {
@@ -518,58 +635,99 @@ kvp_get_ip_address(int family, char *buffer, int length)
 
 	curp = ifap;
 	while (curp != NULL) {
-		if ((curp->ifa_addr != NULL) &&
-		   (curp->ifa_addr->sa_family == family)) {
-			if (family == AF_INET) {
-				struct sockaddr_in *addr =
-				(struct sockaddr_in *) curp->ifa_addr;
+		if (curp->ifa_addr == NULL) {
+			curp = curp->ifa_next;
+			continue;
+		}
 
-				str = inet_ntop(family, &addr->sin_addr,
-						tmp, 50);
-				if (str == NULL) {
-					strcpy(buffer, "inet_ntop failed\n");
-					error = 1;
-					goto getaddr_done;
-				}
-				if (offset == 0)
-					strcpy(buffer, tmp);
-				else
-					strcat(buffer, tmp);
-				strcat(buffer, ";");
-
-				offset += strlen(str) + 1;
-				if ((length - offset) < (ipv4_len + 1))
-					goto getaddr_done;
-
-			} else {
-
+		if ((if_name != NULL) &&
+			(strncmp(curp->ifa_name, if_name, strlen(if_name)))) {
 			/*
-			 * We only support AF_INET and AF_INET6
-			 * and the list of addresses is separated by a ";".
+			 * We want info about a specific interface;
+			 * just continue.
 			 */
-				struct sockaddr_in6 *addr =
-				(struct sockaddr_in6 *) curp->ifa_addr;
+			curp = curp->ifa_next;
+			continue;
+		}
 
-				str = inet_ntop(family,
-					&addr->sin6_addr.s6_addr,
-					tmp, 50);
-				if (str == NULL) {
-					strcpy(buffer, "inet_ntop failed\n");
-					error = 1;
-					goto getaddr_done;
-				}
-				if (offset == 0)
-					strcpy(buffer, tmp);
+		/*
+		 * We only support two address families: AF_INET and AF_INET6.
+		 * If a family value of 0 is specified, we collect both
+		 * supported address families; if not we gather info on
+		 * the specified address family.
+		 */
+		if ((family != 0) && (curp->ifa_addr->sa_family != family)) {
+			curp = curp->ifa_next;
+			continue;
+		}
+		if ((curp->ifa_addr->sa_family != AF_INET) &&
+			(curp->ifa_addr->sa_family != AF_INET6)) {
+			curp = curp->ifa_next;
+			continue;
+		}
+
+		if (op == KVP_OP_GET_IP_INFO) {
+			/*
+			 * Gather info other than the IP address.
+			 * IP address info will be gathered later.
+			 */
+			if (curp->ifa_addr->sa_family == AF_INET) {
+				ip_buffer->addr_family |= ADDR_FAMILY_IPV4;
+				/*
+				 * Get subnet info.
+				 */
+				error = kvp_process_ip_address(
+							     curp->ifa_netmask,
+							     AF_INET,
+							     (char *)
+							     ip_buffer->sub_net,
+							     length,
+							     &sn_offset);
+				if (error)
+					goto gather_ipaddr;
+			} else {
+				ip_buffer->addr_family |= ADDR_FAMILY_IPV6;
+
+				/*
+				 * Get subnet info in CIDR format.
+				 */
+				weight = 0;
+				sn_str = (char *)ip_buffer->sub_net;
+				addr6 = (struct sockaddr_in6 *)
+					curp->ifa_netmask;
+				w = addr6->sin6_addr.s6_addr32;
+
+				for (i = 0; i < 4; i++)
+					weight += hweight32(&w[i]);
+
+				sprintf(cidr_mask, "/%d", weight);
+				if ((length - sn_offset) <
+					(strlen(cidr_mask) + 1))
+					goto gather_ipaddr;
+
+				if (sn_offset == 0)
+					strcpy(sn_str, cidr_mask);
 				else
-					strcat(buffer, tmp);
-				strcat(buffer, ";");
-				offset += strlen(str) + 1;
-				if ((length - offset) < (ipv6_len + 1))
-					goto getaddr_done;
-
+					strcat(sn_str, cidr_mask);
+				strcat((char *)ip_buffer->sub_net, ";");
+				sn_offset += strlen(sn_str) + 1;
 			}
 
+			/*
+			 * Collect other ip related configuration info.
+			 */
+
+			kvp_get_ipconfig_info(if_name, ip_buffer);
 		}
+
+gather_ipaddr:
+		error = kvp_process_ip_address(curp->ifa_addr,
+						curp->ifa_addr->sa_family,
+						buffer,
+						length, &offset);
+		if (error)
+			goto getaddr_done;
+
 		curp = curp->ifa_next;
 	}
 
@@ -646,6 +804,8 @@ int main(void)
 	char	*p;
 	char	*key_value;
 	char	*key_name;
+	int	op;
+	int	pool;
 
 	daemon(1, 0);
 	openlog("KVP", 0, LOG_USER);
@@ -687,7 +847,7 @@ int main(void)
 	message->id.val = CN_KVP_VAL;
 
 	hv_msg = (struct hv_kvp_msg *)message->data;
-	hv_msg->kvp_hdr.operation = KVP_OP_REGISTER;
+	hv_msg->kvp_hdr.operation = KVP_OP_REGISTER1;
 	message->ack = 0;
 	message->len = sizeof(struct hv_kvp_msg);
 
@@ -721,12 +881,21 @@ int main(void)
 		incoming_cn_msg = (struct cn_msg *)NLMSG_DATA(incoming_msg);
 		hv_msg = (struct hv_kvp_msg *)incoming_cn_msg->data;
 
-		switch (hv_msg->kvp_hdr.operation) {
-		case KVP_OP_REGISTER:
+		/*
+		 * We will use the KVP header information to pass back
+		 * the error from this daemon. So, first copy the state
+		 * and set the error code to success.
+		 */
+		op = hv_msg->kvp_hdr.operation;
+		pool = hv_msg->kvp_hdr.pool;
+		hv_msg->error = HV_S_OK;
+
+		if ((in_hand_shake) && (op == KVP_OP_REGISTER1)) {
 			/*
 			 * Driver is registering with us; stash away the version
 			 * information.
 			 */
+			in_hand_shake = 0;
 			p = (char *)hv_msg->body.kvp_register.version;
 			lic_version = malloc(strlen(p) + 1);
 			if (lic_version) {
@@ -737,44 +906,39 @@ int main(void)
 				syslog(LOG_ERR, "malloc failed");
 			}
 			continue;
+		}
 
-		/*
-		 * The current protocol with the kernel component uses a
-		 * NULL key name to pass an error condition.
-		 * For the SET, GET and DELETE operations,
-		 * use the existing protocol to pass back error.
-		 */
-
+		switch (op) {
 		case KVP_OP_SET:
-			if (kvp_key_add_or_modify(hv_msg->kvp_hdr.pool,
+			if (kvp_key_add_or_modify(pool,
 					hv_msg->body.kvp_set.data.key,
 					hv_msg->body.kvp_set.data.key_size,
 					hv_msg->body.kvp_set.data.value,
 					hv_msg->body.kvp_set.data.value_size))
-				strcpy(hv_msg->body.kvp_set.data.key, "");
+					hv_msg->error = HV_S_CONT;
 			break;
 
 		case KVP_OP_GET:
-			if (kvp_get_value(hv_msg->kvp_hdr.pool,
+			if (kvp_get_value(pool,
 					hv_msg->body.kvp_set.data.key,
 					hv_msg->body.kvp_set.data.key_size,
 					hv_msg->body.kvp_set.data.value,
 					hv_msg->body.kvp_set.data.value_size))
-				strcpy(hv_msg->body.kvp_set.data.key, "");
+					hv_msg->error = HV_S_CONT;
 			break;
 
 		case KVP_OP_DELETE:
-			if (kvp_key_delete(hv_msg->kvp_hdr.pool,
+			if (kvp_key_delete(pool,
 					hv_msg->body.kvp_delete.key,
 					hv_msg->body.kvp_delete.key_size))
-				strcpy(hv_msg->body.kvp_delete.key, "");
+					hv_msg->error = HV_S_CONT;
 			break;
 
 		default:
 			break;
 		}
 
-		if (hv_msg->kvp_hdr.operation != KVP_OP_ENUMERATE)
+		if (op != KVP_OP_ENUMERATE)
 			goto kvp_done;
 
 		/*
@@ -782,13 +946,14 @@ int main(void)
 		 * both the key and the value; if not read from the
 		 * appropriate pool.
 		 */
-		if (hv_msg->kvp_hdr.pool != KVP_POOL_AUTO) {
-			kvp_pool_enumerate(hv_msg->kvp_hdr.pool,
+		if (pool != KVP_POOL_AUTO) {
+			if (kvp_pool_enumerate(pool,
 					hv_msg->body.kvp_enum_data.index,
 					hv_msg->body.kvp_enum_data.data.key,
 					HV_KVP_EXCHANGE_MAX_KEY_SIZE,
 					hv_msg->body.kvp_enum_data.data.value,
-					HV_KVP_EXCHANGE_MAX_VALUE_SIZE);
+					HV_KVP_EXCHANGE_MAX_VALUE_SIZE))
+					hv_msg->error = HV_S_CONT;
 			goto kvp_done;
 		}
 
@@ -807,13 +972,13 @@ int main(void)
 			strcpy(key_value, lic_version);
 			break;
 		case NetworkAddressIPv4:
-			kvp_get_ip_address(AF_INET, key_value,
-					HV_KVP_EXCHANGE_MAX_VALUE_SIZE);
+			kvp_get_ip_address(AF_INET, NULL, KVP_OP_ENUMERATE,
+				key_value, HV_KVP_EXCHANGE_MAX_VALUE_SIZE);
 			strcpy(key_name, "NetworkAddressIPv4");
 			break;
 		case NetworkAddressIPv6:
-			kvp_get_ip_address(AF_INET6, key_value,
-					HV_KVP_EXCHANGE_MAX_VALUE_SIZE);
+			kvp_get_ip_address(AF_INET6, NULL, KVP_OP_ENUMERATE,
+				key_value, HV_KVP_EXCHANGE_MAX_VALUE_SIZE);
 			strcpy(key_name, "NetworkAddressIPv6");
 			break;
 		case OSBuildNumber:
@@ -841,11 +1006,7 @@ int main(void)
 			strcpy(key_name, "ProcessorArchitecture");
 			break;
 		default:
-			strcpy(key_value, "Unknown Key");
-			/*
-			 * We use a null key name to terminate enumeration.
-			 */
-			strcpy(key_name, "");
+			hv_msg->error = HV_S_CONT;
 			break;
 		}
 		/*
