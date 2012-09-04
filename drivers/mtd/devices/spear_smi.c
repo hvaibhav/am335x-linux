@@ -26,6 +26,7 @@
 #include <linux/module.h>
 #include <linux/param.h>
 #include <linux/platform_device.h>
+#include <linux/pm.h>
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/partitions.h>
 #include <linux/mtd/spear_smi.h>
@@ -240,8 +241,8 @@ static int spear_smi_read_sr(struct spear_smi *dev, u32 bank)
 	/* copy dev->status (lower 16 bits) in order to release lock */
 	if (ret > 0)
 		ret = dev->status & 0xffff;
-	else
-		ret = -EIO;
+	else if (ret == 0)
+		ret = -ETIMEDOUT;
 
 	/* restore the ctrl regs state */
 	writel(ctrlreg1, dev->io_base + SMI_CR1);
@@ -269,16 +270,19 @@ static int spear_smi_wait_till_ready(struct spear_smi *dev, u32 bank,
 	finish = jiffies + timeout;
 	do {
 		status = spear_smi_read_sr(dev, bank);
-		if (status < 0)
-			continue; /* try till timeout */
-		else if (!(status & SR_WIP))
+		if (status < 0) {
+			if (status == -ETIMEDOUT)
+				continue; /* try till finish */
+			return status;
+		} else if (!(status & SR_WIP)) {
 			return 0;
+		}
 
 		cond_resched();
 	} while (!time_after_eq(jiffies, finish));
 
 	dev_err(&dev->pdev->dev, "smi controller is busy, timeout\n");
-	return status;
+	return -EBUSY;
 }
 
 /**
@@ -335,6 +339,9 @@ static void spear_smi_hw_init(struct spear_smi *dev)
 	val = HOLD1 | BANK_EN | DSEL_TIME | (prescale << 8);
 
 	mutex_lock(&dev->lock);
+	/* clear all interrupt conditions */
+	writel(0, dev->io_base + SMI_SR);
+
 	writel(val, dev->io_base + SMI_CR1);
 	mutex_unlock(&dev->lock);
 }
@@ -391,11 +398,11 @@ static int spear_smi_write_enable(struct spear_smi *dev, u32 bank)
 	writel(ctrlreg1, dev->io_base + SMI_CR1);
 	writel(0, dev->io_base + SMI_CR2);
 
-	if (ret <= 0) {
+	if (ret == 0) {
 		ret = -EIO;
 		dev_err(&dev->pdev->dev,
 			"smi controller failed on write enable\n");
-	} else {
+	} else if (ret > 0) {
 		/* check whether write mode status is set for required bank */
 		if (dev->status & (1 << (bank + WM_SHIFT)))
 			ret = 0;
@@ -462,10 +469,10 @@ static int spear_smi_erase_sector(struct spear_smi *dev,
 	ret = wait_event_interruptible_timeout(dev->cmd_complete,
 			dev->status & TFF, SMI_CMD_TIMEOUT);
 
-	if (ret <= 0) {
+	if (ret == 0) {
 		ret = -EIO;
 		dev_err(&dev->pdev->dev, "sector erase failed\n");
-	} else
+	} else if (ret > 0)
 		ret = 0; /* success */
 
 	/* restore ctrl regs */
@@ -1086,28 +1093,32 @@ static int __devexit spear_smi_remove(struct platform_device *pdev)
 	return 0;
 }
 
-int spear_smi_suspend(struct platform_device *pdev, pm_message_t state)
+#ifdef CONFIG_PM
+static int spear_smi_suspend(struct device *dev)
 {
-	struct spear_smi *dev = platform_get_drvdata(pdev);
+	struct spear_smi *sdev = dev_get_drvdata(dev);
 
-	if (dev && dev->clk)
-		clk_disable_unprepare(dev->clk);
+	if (sdev && sdev->clk)
+		clk_disable_unprepare(sdev->clk);
 
 	return 0;
 }
 
-int spear_smi_resume(struct platform_device *pdev)
+static int spear_smi_resume(struct device *dev)
 {
-	struct spear_smi *dev = platform_get_drvdata(pdev);
+	struct spear_smi *sdev = dev_get_drvdata(dev);
 	int ret = -EPERM;
 
-	if (dev && dev->clk)
-		ret = clk_prepare_enable(dev->clk);
+	if (sdev && sdev->clk)
+		ret = clk_prepare_enable(sdev->clk);
 
 	if (!ret)
-		spear_smi_hw_init(dev);
+		spear_smi_hw_init(sdev);
 	return ret;
 }
+
+static SIMPLE_DEV_PM_OPS(spear_smi_pm_ops, spear_smi_suspend, spear_smi_resume);
+#endif
 
 #ifdef CONFIG_OF
 static const struct of_device_id spear_smi_id_table[] = {
@@ -1123,11 +1134,12 @@ static struct platform_driver spear_smi_driver = {
 		.bus = &platform_bus_type,
 		.owner = THIS_MODULE,
 		.of_match_table = of_match_ptr(spear_smi_id_table),
+#ifdef CONFIG_PM
+		.pm = &spear_smi_pm_ops,
+#endif
 	},
 	.probe = spear_smi_probe,
 	.remove = __devexit_p(spear_smi_remove),
-	.suspend = spear_smi_suspend,
-	.resume = spear_smi_resume,
 };
 
 static int spear_smi_init(void)

@@ -22,7 +22,7 @@
  * BBT on flash. If a BBT is found then the contents are read and the memory
  * based BBT is created. If a mirrored BBT is selected then the mirror is
  * searched too and the versions are compared. If the mirror has a greater
- * version number than the mirror BBT is used to build the memory based BBT.
+ * version number, then the mirror BBT is used to build the memory based BBT.
  * If the tables are not versioned, then we "or" the bad block information.
  * If one of the BBTs is out of date or does not exist it is (re)created.
  * If no BBT exists at all then the device is scanned for factory marked
@@ -71,12 +71,9 @@
 
 static int check_pattern_no_oob(uint8_t *buf, struct nand_bbt_descr *td)
 {
-	int ret;
-
-	ret = memcmp(buf, td->pattern, td->len);
-	if (!ret)
-		return ret;
-	return -1;
+	if (memcmp(buf, td->pattern, td->len))
+		return -1;
+	return 0;
 }
 
 /**
@@ -390,7 +387,7 @@ static int read_abs_bbts(struct mtd_info *mtd, uint8_t *buf,
 	/* Read the mirror version, if available */
 	if (md && (md->options & NAND_BBT_VERSION)) {
 		scan_read_raw(mtd, buf, (loff_t)md->pages[0] << this->page_shift,
-			      mtd->writesize, td);
+			      mtd->writesize, md);
 		md->version[0] = buf[bbt_get_ver_offs(mtd, md)];
 		pr_info("Bad block table at page %d, version 0x%02X\n",
 			 md->pages[0], md->version[0]);
@@ -1274,7 +1271,7 @@ static struct nand_bbt_descr bbt_mirror_descr = {
 	.pattern = mirror_pattern
 };
 
-static struct nand_bbt_descr bbt_main_no_bbt_descr = {
+static struct nand_bbt_descr bbt_main_no_oob_descr = {
 	.options = NAND_BBT_LASTBLOCK | NAND_BBT_CREATE | NAND_BBT_WRITE
 		| NAND_BBT_2BIT | NAND_BBT_VERSION | NAND_BBT_PERCHIP
 		| NAND_BBT_NO_OOB,
@@ -1284,7 +1281,7 @@ static struct nand_bbt_descr bbt_main_no_bbt_descr = {
 	.pattern = bbt_pattern
 };
 
-static struct nand_bbt_descr bbt_mirror_no_bbt_descr = {
+static struct nand_bbt_descr bbt_mirror_no_oob_descr = {
 	.options = NAND_BBT_LASTBLOCK | NAND_BBT_CREATE | NAND_BBT_WRITE
 		| NAND_BBT_2BIT | NAND_BBT_VERSION | NAND_BBT_PERCHIP
 		| NAND_BBT_NO_OOB,
@@ -1355,8 +1352,8 @@ int nand_default_bbt(struct mtd_info *mtd)
 		/* Use the default pattern descriptors */
 		if (!this->bbt_td) {
 			if (this->bbt_options & NAND_BBT_NO_OOB) {
-				this->bbt_td = &bbt_main_no_bbt_descr;
-				this->bbt_md = &bbt_mirror_no_bbt_descr;
+				this->bbt_td = &bbt_main_no_oob_descr;
+				this->bbt_md = &bbt_mirror_no_oob_descr;
 			} else {
 				this->bbt_td = &bbt_main_descr;
 				this->bbt_md = &bbt_mirror_descr;

@@ -766,11 +766,13 @@ static int fsl_elbc_read_page(struct mtd_info *mtd, struct nand_chip *chip,
 /* ECC will be calculated automatically, and errors will be detected in
  * waitfunc.
  */
-static void fsl_elbc_write_page(struct mtd_info *mtd, struct nand_chip *chip,
+static int fsl_elbc_write_page(struct mtd_info *mtd, struct nand_chip *chip,
 				const uint8_t *buf, int oob_required)
 {
 	fsl_elbc_write_buf(mtd, buf, mtd->writesize);
 	fsl_elbc_write_buf(mtd, chip->oob_poi, mtd->oobsize);
+
+	return 0;
 }
 
 static int fsl_elbc_chip_init(struct fsl_elbc_mtd *priv)
@@ -805,7 +807,6 @@ static int fsl_elbc_chip_init(struct fsl_elbc_mtd *priv)
 	chip->bbt_md = &bbt_mirror_descr;
 
 	/* set up nand options */
-	chip->options = NAND_NO_READRDY;
 	chip->bbt_options = NAND_BBT_USE_FLASH;
 
 	chip->controller = &elbc_fcm_ctrl->controller;
@@ -916,7 +917,8 @@ static int __devinit fsl_elbc_nand_probe(struct platform_device *pdev)
 	elbc_fcm_ctrl->chips[bank] = priv;
 	priv->bank = bank;
 	priv->ctrl = fsl_lbc_ctrl_dev;
-	priv->dev = dev;
+	priv->dev = &pdev->dev;
+	dev_set_drvdata(priv->dev, priv);
 
 	priv->vbase = ioremap(res.start, resource_size(&res));
 	if (!priv->vbase) {
@@ -963,11 +965,10 @@ err:
 
 static int fsl_elbc_nand_remove(struct platform_device *pdev)
 {
-	int i;
 	struct fsl_elbc_fcm_ctrl *elbc_fcm_ctrl = fsl_lbc_ctrl_dev->nand;
-	for (i = 0; i < MAX_BANKS; i++)
-		if (elbc_fcm_ctrl->chips[i])
-			fsl_elbc_chip_remove(elbc_fcm_ctrl->chips[i]);
+	struct fsl_elbc_mtd *priv = dev_get_drvdata(&pdev->dev);
+
+	fsl_elbc_chip_remove(priv);
 
 	mutex_lock(&fsl_elbc_nand_mutex);
 	elbc_fcm_ctrl->counter--;
