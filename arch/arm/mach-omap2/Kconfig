@@ -104,6 +104,9 @@ config SOC_AM33XX
 	select CPU_V7
 	select ARM_CPU_SUSPEND if PM
 	select MULTI_IRQ_HANDLER
+	select MACH_AM335XEVM
+	select MACH_AM335XIAEVM
+	select MACH_TAM335X
 
 config OMAP_PACKAGE_ZAF
        bool
@@ -139,6 +142,15 @@ config MACH_OMAP_GENERIC
 	help
 	  Support for generic TI OMAP2+ boards using Flattened Device Tree.
 	  More information at Documentation/devicetree
+
+config MACH_AM335XEVM
+	bool
+
+config MACH_AM335XIAEVM
+	bool
+
+config MACH_TAM335X
+	bool
 
 config MACH_OMAP2_TUSB6010
 	bool
@@ -202,6 +214,12 @@ config MACH_OMAP3_TORPEDO
 	 for full description please see the products webpage at
 	 http://www.logicpd.com/products/development-kits/zoom-omap35x-torpedo-development-kit
 
+config MACH_ENCORE
+	bool "Barnes & Noble Encore (Nook Color)"
+	depends on ARCH_OMAP3
+	default y
+	select OMAP_PACKAGE_CBP
+
 config MACH_OVERO
 	bool "Gumstix Overo board"
 	depends on ARCH_OMAP3
@@ -232,10 +250,11 @@ config MACH_OMAP3_PANDORA
 	select OMAP_PACKAGE_CBB
 	select REGULATOR_FIXED_VOLTAGE if REGULATOR
 
-config MACH_OMAP3_TOUCHBOOK
+config MACH_TOUCHBOOK
 	bool "OMAP3 Touch Book"
 	depends on ARCH_OMAP3
 	default y
+	select OMAP_PACKAGE_CBB
 
 config MACH_OMAP_3430SDP
 	bool "OMAP 3430 SDP board"
@@ -360,6 +379,13 @@ config MACH_OMAP4_PANDA
 	select OMAP_PACKAGE_CBL
 	select OMAP_PACKAGE_CBS
 	select REGULATOR_FIXED_VOLTAGE if REGULATOR
+
+config MACH_PCM049
+	bool "OMAP4 based phyCORE OMAP4"
+	depends on ARCH_OMAP4
+	default y
+	select OMAP_PACKAGE_CBS
+
 
 config OMAP3_EMU
 	bool "OMAP3 debugging peripherals"
