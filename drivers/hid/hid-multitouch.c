@@ -691,12 +691,10 @@ static int mt_probe(struct hid_device *hdev, const struct hid_device_id *id)
 	struct mt_device *td;
 	struct mt_class *mtclass = mt_classes; /* MT_CLS_DEFAULT */
 
-	if (id) {
-		for (i = 0; mt_classes[i].name ; i++) {
-			if (id->driver_data == mt_classes[i].name) {
-				mtclass = &(mt_classes[i]);
-				break;
-			}
+	for (i = 0; mt_classes[i].name ; i++) {
+		if (id->driver_data == mt_classes[i].name) {
+			mtclass = &(mt_classes[i]);
+			break;
 		}
 	}
 
@@ -765,6 +763,32 @@ static int mt_reset_resume(struct hid_device *hdev)
 {
 	mt_set_maxcontacts(hdev);
 	mt_set_input_mode(hdev);
+	return 0;
+}
+
+static int mt_resume(struct hid_device *hdev)
+{
+	struct usb_interface *intf;
+	struct usb_host_interface *interface;
+	struct usb_device *dev;
+
+	if (hdev->bus != BUS_USB)
+		return 0;
+
+	intf = to_usb_interface(hdev->dev.parent);
+	interface = intf->cur_altsetting;
+	dev = hid_to_usb_dev(hdev);
+
+	/* Some Elan legacy devices require SET_IDLE to be set on resume.
+	 * It should be safe to send it to other devices too.
+	 * Tested on 3M, Stantum, Cypress, Zytronic, eGalax, and Elan panels. */
+
+	usb_control_msg(dev, usb_sndctrlpipe(dev, 0),
+			HID_REQ_SET_IDLE,
+			USB_TYPE_CLASS | USB_RECIP_INTERFACE,
+			0, interface->desc.bInterfaceNumber,
+			NULL, 0, USB_CTRL_SET_TIMEOUT);
+
 	return 0;
 }
 #endif
@@ -885,7 +909,19 @@ static const struct hid_device_id mt_devices[] = {
 			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_7349) },
 	{ .driver_data = MT_CLS_EGALAX_SERIAL,
 		MT_USB_DEVICE(USB_VENDOR_ID_DWAV,
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_73F7) },
+	{ .driver_data = MT_CLS_EGALAX_SERIAL,
+		MT_USB_DEVICE(USB_VENDOR_ID_DWAV,
 			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_A001) },
+	{ .driver_data = MT_CLS_EGALAX,
+		HID_USB_DEVICE(USB_VENDOR_ID_DWAV,
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_7224) },
+	{ .driver_data = MT_CLS_EGALAX,
+		HID_USB_DEVICE(USB_VENDOR_ID_DWAV,
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_72D0) },
+	{ .driver_data = MT_CLS_EGALAX,
+		HID_USB_DEVICE(USB_VENDOR_ID_DWAV,
+			USB_DEVICE_ID_DWAV_EGALAX_MULTITOUCH_72C4) },
 
 	/* Elo TouchSystems IntelliTouch Plus panel */
 	{ .driver_data = MT_CLS_DUAL_NSMU_CONTACTID,
@@ -1092,6 +1128,7 @@ static struct hid_driver mt_driver = {
 	.event = mt_event,
 #ifdef CONFIG_PM
 	.reset_resume = mt_reset_resume,
+	.resume = mt_resume,
 #endif
 };
 
