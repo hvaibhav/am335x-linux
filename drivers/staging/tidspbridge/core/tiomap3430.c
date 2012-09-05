@@ -16,7 +16,7 @@
  * WARRANTIES OF MERCHANTIBILITY AND FITNESS FOR A PARTICULAR PURPOSE.
  */
 
-#include <plat/dsp.h>
+#include <linux/platform_data/dsp-omap.h>
 
 #include <linux/types.h>
 /*  ----------------------------------- Host OS */
@@ -415,10 +415,10 @@ static int bridge_brd_start(struct bridge_dev_context *dev_ctxt,
 		/* Assert RST1 i.e only the RST only for DSP megacell */
 		if (!status) {
 			/*
-			 * XXX: ioremapping  MUST be removed once ctrl
+			 * XXX: OMAP343X_CTRL_BASE ioremapping  MUST be removed once ctrl
 			 * function is made available.
 			 */
-			void __iomem *ctrl = ioremap(OMAP343X_CTRL_BASE, SZ_4K);
+			void __iomem *ctrl = ioremap(0x48002000, SZ_4K);
 			if (!ctrl)
 				return -ENOMEM;
 

@@ -29,11 +29,11 @@
 
 #include <plat/omap-serial.h>
 #include "common.h"
-#include <plat/board.h>
 #include <plat/dma.h>
 #include <plat/omap_hwmod.h>
 #include <plat/omap_device.h>
 #include <plat/omap-pm.h>
+#include <plat/serial.h>
 
 #include "prm2xxx_3xxx.h"
 #include "pm.h"

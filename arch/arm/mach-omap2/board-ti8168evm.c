@@ -15,15 +15,13 @@
 #include <linux/kernel.h>
 #include <linux/init.h>
 
-#include <mach/hardware.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include <plat/irqs.h>
-#include <plat/board.h>
-#include "common.h"
 #include <plat/usb.h>
+
+#include "common.h"
 
 static struct omap_musb_board_data musb_board_data = {
 	.set_phy_power	= ti81xx_musb_phy_power,
@@ -32,15 +30,10 @@ static struct omap_musb_board_data musb_board_data = {
 	.power		= 500,
 };
 
-static struct omap_board_config_kernel ti81xx_evm_config[] __initdata = {
-};
-
 static void __init ti81xx_evm_init(void)
 {
 	omap_serial_init();
 	omap_sdrc_init(NULL, NULL);
-	omap_board_config = ti81xx_evm_config;
-	omap_board_config_size = ARRAY_SIZE(ti81xx_evm_config);
 	usb_musb_init(&musb_board_data);
 }
 

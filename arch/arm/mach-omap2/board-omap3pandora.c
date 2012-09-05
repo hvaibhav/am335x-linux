@@ -20,7 +20,6 @@
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/platform_device.h>
-
 #include <linux/spi/spi.h>
 #include <linux/regulator/machine.h>
 #include <linux/i2c/twl.h>
@@ -35,19 +34,18 @@
 #include <linux/mmc/host.h>
 #include <linux/mmc/card.h>
 #include <linux/regulator/fixed.h>
+#include <linux/platform_data/spi-omap2-mcspi.h>
+#include <linux/platform_data/mtd-nand-omap2.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include <plat/board.h>
-#include "common.h"
-#include <mach/hardware.h>
-#include <plat/mcspi.h>
 #include <plat/usb.h>
-#include <video/omapdss.h>
-#include <plat/nand.h>
 
+#include <video/omapdss.h>
+
+#include "common.h"
 #include "mux.h"
 #include "sdram-micron-mt46h32m32lf-6.h"
 #include "hsmmc.h"
@@ -321,9 +319,6 @@ static int omap3pandora_twl_gpio_setup(struct device *dev,
 }
 
 static struct twl4030_gpio_platform_data omap3pandora_gpio_data = {
-	.gpio_base	= OMAP_MAX_GPIO_LINES,
-	.irq_base	= TWL4030_GPIO_IRQ_BASE,
-	.irq_end	= TWL4030_GPIO_IRQ_END,
 	.setup		= omap3pandora_twl_gpio_setup,
 };
 

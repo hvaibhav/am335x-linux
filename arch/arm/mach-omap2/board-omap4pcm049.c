@@ -32,19 +32,18 @@
 #include <linux/regulator/fixed.h>
 #include <linux/smsc911x.h>
 
-#include <mach/hardware.h>
 #include <asm/hardware/gic.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
-#include <video/omapdss.h>
 
-#include <plat/board.h>
 #include <plat/usb.h>
 #include <plat/gpmc.h>
 #include <plat/gpmc-smsc911x.h>
 #include <plat/mmc.h>
+
 #include <video/omap-panel-generic-dpi.h>
+#include <video/omapdss.h>
 
 #include "common.h"
 #include "hsmmc.h"
@@ -207,7 +206,6 @@ static struct stmpe_ts_platform_data pba_ts_stm_pdata = {
 
 static struct stmpe_platform_data pba_stm_pdata = {
 	.blocks = STMPE_BLOCK_GPIO | STMPE_BLOCK_TOUCHSCREEN,
-	.irq_base = TWL6030_IRQ_END,
 	.irq_trigger = IRQF_TRIGGER_RISING,
 	.irq_invert_polarity = true,
 	.gpio = &pba_gpio_stm_data,

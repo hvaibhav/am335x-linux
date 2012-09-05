@@ -31,8 +31,7 @@
 #include <plat/mux.h>
 #include <plat/flash.h>
 #include <plat/fpga.h>
-#include <plat/keypad.h>
-#include <plat/board.h>
+#include <linux/platform_data/keypad-omap.h>
 
 #include <mach/hardware.h>
 

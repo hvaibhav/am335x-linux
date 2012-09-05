@@ -14,7 +14,8 @@
 #include <linux/string.h>
 #include <linux/delay.h>
 #include <linux/gpio.h>
-#include <mach/hardware.h>
+#include <linux/platform_data/gpio-omap.h>
+
 #include <plat/mmc.h>
 #include <plat/omap-pm.h>
 #include <plat/mux.h>

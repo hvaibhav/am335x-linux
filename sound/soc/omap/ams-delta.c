@@ -33,7 +33,7 @@
 #include <asm/mach-types.h>
 
 #include <plat/board-ams-delta.h>
-#include <plat/mcbsp.h>
+#include <linux/platform_data/ti-mcbsp.h>
 
 #include "omap-mcbsp.h"
 #include "omap-pcm.h"

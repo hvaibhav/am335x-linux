@@ -29,19 +29,17 @@
 #include <linux/smc91x.h>
 #include <linux/gpio.h>
 
-#include <mach/hardware.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/flash.h>
 
 #include <plat/led.h>
-#include <plat/board.h>
-#include "common.h"
 #include <plat/gpmc.h>
 
 #include <video/omapdss.h>
 #include <video/omap-panel-generic-dpi.h>
 
+#include "common.h"
 #include "mux.h"
 #include "control.h"
 

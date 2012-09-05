@@ -266,9 +266,6 @@ static int __ref encore_twl_gpio_setup(struct device *dev,
 }
 
 static struct twl4030_gpio_platform_data encore_gpio_data = {
-	.gpio_base	= OMAP_MAX_GPIO_LINES,
-	.irq_base	= TWL4030_GPIO_IRQ_BASE,
-	.irq_end	= TWL4030_GPIO_IRQ_END,
 	.setup		= encore_twl_gpio_setup,
 };
 
@@ -289,7 +286,7 @@ static struct i2c_board_info __initdata encore_i2c_bus1_info[] = {
 	{
 		I2C_BOARD_INFO("tps65921", 0x48),
 		.flags = I2C_CLIENT_WAKE,
-		.irq = INT_34XX_SYS_NIRQ,
+		.irq = 7 + OMAP_INTC_START,
 		.platform_data = &encore_twldata,
 	},
 };
@@ -302,9 +299,6 @@ static struct omap_board_mux board_mux[] __initdata = {
 	{ .reg_offset = OMAP_MUX_TERMINATOR },
 };
 #endif
-
-static struct omap_board_config_kernel encore_config[] __initdata = {
-};
 
 static void __init omap_i2c_init(void)
 {
@@ -323,10 +317,6 @@ static void __init omap_encore_init(void)
 	omap_sdrc_init(h8mbx00u0mer0em_sdrc_params,
 				  h8mbx00u0mer0em_sdrc_params);
 	usb_musb_init(NULL);
-
-	omap_board_config = encore_config;
-	omap_board_config_size = ARRAY_SIZE(encore_config);
-
 	platform_add_devices(encore_devices, ARRAY_SIZE(encore_devices));
 }
 
