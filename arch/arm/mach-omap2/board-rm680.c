@@ -26,7 +26,7 @@
 #include <plat/usb.h>
 #include <plat/gpmc.h>
 #include "common.h"
-#include <plat/onenand.h>
+#include <linux/platform_data/mtd-onenand-omap2.h>
 
 #include "mux.h"
 #include "hsmmc.h"

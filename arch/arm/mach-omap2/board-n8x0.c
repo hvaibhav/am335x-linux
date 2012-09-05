@@ -29,8 +29,8 @@
 #include "common.h"
 #include <plat/menelaus.h>
 #include <mach/irqs.h>
-#include <plat/mcspi.h>
-#include <plat/onenand.h>
+#include <linux/platform_data/spi-omap2-mcspi.h>
+#include <linux/platform_data/mtd-onenand-omap2.h>
 #include <plat/mmc.h>
 #include <plat/serial.h>
 

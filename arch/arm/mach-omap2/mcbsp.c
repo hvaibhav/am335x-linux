@@ -21,7 +21,7 @@
 #include <mach/irqs.h>
 #include <plat/dma.h>
 #include <plat/cpu.h>
-#include <plat/mcbsp.h>
+#include <linux/platform_data/ti-mcbsp.h>
 #include <plat/omap_device.h>
 #include <linux/pm_runtime.h>
 

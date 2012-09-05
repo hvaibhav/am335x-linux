@@ -35,7 +35,7 @@
 #include <asm/mach/map.h>
 
 #include <plat/board-ams-delta.h>
-#include <plat/keypad.h>
+#include <linux/platform_data/keypad-omap.h>
 #include <plat/mux.h>
 #include <plat/board.h>
 

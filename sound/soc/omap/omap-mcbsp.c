@@ -33,7 +33,7 @@
 #include <sound/soc.h>
 
 #include <plat/dma.h>
-#include <plat/mcbsp.h>
+#include <linux/platform_data/ti-mcbsp.h>
 #include "mcbsp.h"
 #include "omap-mcbsp.h"
 #include "omap-pcm.h"

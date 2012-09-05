@@ -19,7 +19,7 @@
 #include <asm/mach/flash.h>
 
 #include <plat/cpu.h>
-#include <plat/onenand.h>
+#include <linux/platform_data/mtd-onenand-omap2.h>
 #include <plat/board.h>
 #include <plat/gpmc.h>
 

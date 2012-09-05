@@ -36,7 +36,7 @@
 #include <linux/errno.h>
 #include <linux/slab.h>
 #include <asm/gpio.h>
-#include <plat/keypad.h>
+#include <linux/platform_data/keypad-omap.h>
 #include <plat/menelaus.h>
 #include <asm/irq.h>
 #include <mach/hardware.h>

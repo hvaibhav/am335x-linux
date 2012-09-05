@@ -22,7 +22,7 @@
 #include <plat/dma.h>
 #include <plat/mux.h>
 #include <plat/cpu.h>
-#include <plat/mcbsp.h>
+#include <linux/platform_data/ti-mcbsp.h>
 
 #include <mach/irqs.h>
 

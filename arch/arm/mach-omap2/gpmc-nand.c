@@ -17,7 +17,7 @@
 #include <asm/mach/flash.h>
 
 #include <plat/cpu.h>
-#include <plat/nand.h>
+#include <linux/platform_data/mtd-nand-omap2.h>
 #include <plat/board.h>
 #include <plat/gpmc.h>
 

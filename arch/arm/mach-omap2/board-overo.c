@@ -49,8 +49,8 @@
 #include <video/omap-panel-tfp410.h>
 #include <plat/gpmc.h>
 #include <mach/hardware.h>
-#include <plat/nand.h>
-#include <plat/mcspi.h>
+#include <linux/platform_data/mtd-nand-omap2.h>
+#include <linux/platform_data/spi-omap2-mcspi.h>
 #include <plat/mux.h>
 #include <plat/usb.h>
 

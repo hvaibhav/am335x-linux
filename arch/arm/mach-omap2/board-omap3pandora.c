@@ -43,10 +43,10 @@
 #include <plat/board.h>
 #include "common.h"
 #include <mach/hardware.h>
-#include <plat/mcspi.h>
+#include <linux/platform_data/spi-omap2-mcspi.h>
 #include <plat/usb.h>
 #include <video/omapdss.h>
-#include <plat/nand.h>
+#include <linux/platform_data/mtd-nand-omap2.h>
 
 #include "mux.h"
 #include "sdram-micron-mt46h32m32lf-6.h"

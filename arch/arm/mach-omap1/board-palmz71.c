@@ -41,7 +41,7 @@
 #include <plat/tc.h>
 #include <plat/board.h>
 #include <plat/irda.h>
-#include <plat/keypad.h>
+#include <linux/platform_data/keypad-omap.h>
 
 #include <mach/hardware.h>
 #include <mach/usb.h>

@@ -26,8 +26,8 @@
 #include <plat/i2c.h>
 #include <plat/gpio.h>
 #include <plat/mmc.h>
-#include <plat/mcbsp.h>
-#include <plat/mcspi.h>
+#include <linux/platform_data/ti-mcbsp.h>
+#include <linux/platform_data/spi-omap2-mcspi.h>
 #include <plat/dmtimer.h>
 
 #include "omap_hwmod_common_data.h"

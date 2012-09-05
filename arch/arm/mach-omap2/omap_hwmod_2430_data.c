@@ -19,8 +19,8 @@
 #include <plat/serial.h>
 #include <plat/i2c.h>
 #include <plat/gpio.h>
-#include <plat/mcbsp.h>
-#include <plat/mcspi.h>
+#include <linux/platform_data/ti-mcbsp.h>
+#include <linux/platform_data/spi-omap2-mcspi.h>
 #include <plat/dmtimer.h>
 #include <plat/mmc.h>
 #include <plat/l3_2xxx.h>

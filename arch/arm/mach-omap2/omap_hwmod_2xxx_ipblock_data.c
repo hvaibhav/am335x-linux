@@ -13,7 +13,7 @@
 #include <plat/gpio.h>
 #include <plat/dma.h>
 #include <plat/dmtimer.h>
-#include <plat/mcspi.h>
+#include <linux/platform_data/spi-omap2-mcspi.h>
 
 #include <mach/irqs.h>
 
