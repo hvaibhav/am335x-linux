@@ -128,7 +128,7 @@
 	bus-width = <4>;
 };
 
-&emif {
+&emif1 {
 	cs1-used;
 	device-handle = <&elpida_ECB240ABACN>;
 };
