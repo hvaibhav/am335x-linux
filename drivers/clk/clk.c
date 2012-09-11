@@ -27,7 +27,6 @@ static LIST_HEAD(clk_notifier_list);
 
 /***        debugfs support        ***/
 
-#ifdef CONFIG_COMMON_CLK_DEBUG
 #include <linux/debugfs.h>
 
 static struct dentry *rootdir;
@@ -193,9 +192,6 @@ static int __init clk_debug_init(void)
 	return 0;
 }
 late_initcall(clk_debug_init);
-#else
-static inline int clk_debug_register(struct clk *clk) { return 0; }
-#endif
 
 /* caller must hold prepare_lock */
 static void clk_disable_unused_subtree(struct clk *clk)
@@ -1023,10 +1019,8 @@ out:
 
 void __clk_reparent(struct clk *clk, struct clk *new_parent)
 {
-#ifdef CONFIG_COMMON_CLK_DEBUG
 	struct dentry *d;
 	struct dentry *new_parent_d;
-#endif
 
 	if (!clk || !new_parent)
 		return;
@@ -1038,7 +1032,6 @@ void __clk_reparent(struct clk *clk, struct clk *new_parent)
 	else
 		hlist_add_head(&clk->child_node, &clk_orphan_list);
 
-#ifdef CONFIG_COMMON_CLK_DEBUG
 	if (!inited)
 		goto out;
 
@@ -1055,7 +1048,6 @@ void __clk_reparent(struct clk *clk, struct clk *new_parent)
 		pr_debug("%s: failed to rename debugfs entry for %s\n",
 				__func__, clk->name);
 out:
-#endif
 
 	clk->parent = new_parent;
 
