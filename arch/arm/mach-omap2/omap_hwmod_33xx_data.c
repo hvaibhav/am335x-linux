@@ -19,7 +19,7 @@
 #include <linux/platform_data/gpio-omap.h>
 #include <plat/dma.h>
 #include <plat/mmc.h>
-#include <plat/mcspi.h>
+#include <linux/platform_data/spi-omap2-mcspi.h>
 #include <plat/i2c.h>
 
 #include "omap_hwmod_common_data.h"
