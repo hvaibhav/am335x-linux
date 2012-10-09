@@ -1044,6 +1044,14 @@ config MFD_PALMAS
 	  If you say yes here you get support for the Palmas
 	  series of PMIC chips from Texas Instruments.
 
+config MFD_RETU
+	tristate "Support for Retu multi-function device"
+	select MFD_CORE
+	depends on I2C
+	help
+	  Retu is a multi-function device found on Nokia Internet Tablets
+	  (770, N800 and N810).
+
 endmenu
 endif
 
