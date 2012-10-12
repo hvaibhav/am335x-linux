@@ -40,15 +40,6 @@ extern int migrate_vmas(struct mm_struct *mm,
 extern void migrate_page_copy(struct page *newpage, struct page *page);
 extern int migrate_huge_page_move_mapping(struct address_space *mapping,
 				  struct page *newpage, struct page *page);
-#ifdef CONFIG_NUMA_BALANCING
-extern int migrate_misplaced_page(struct page *page, int node);
-#else
-static inline
-int migrate_misplaced_page(struct page *page, int node)
-{
-	return -EAGAIN; /* can't migrate now */
-}
-#endif
 #else
 
 static inline void putback_lru_pages(struct list_head *l) {}
@@ -82,11 +73,34 @@ static inline int migrate_huge_page_move_mapping(struct address_space *mapping,
 #define migrate_page NULL
 #define fail_migrate_page NULL
 
-static inline
-int migrate_misplaced_page(struct page *page, int node)
+#endif /* CONFIG_MIGRATION */
+
+#ifdef CONFIG_NUMA_BALANCING
+extern bool migrate_balanced_pgdat(struct pglist_data *pgdat, int nr_migrate_pages);
+extern int migrate_misplaced_page_put(struct page *page, int node);
+extern int migrate_misplaced_transhuge_page_put(struct mm_struct *mm,
+			struct vm_area_struct *vma,
+			pmd_t *pmd, pmd_t entry,
+			unsigned long address,
+			struct page *page, int node);
+
+#else
+static inline bool migrate_balanced_pgdat(struct pglist_data *pgdat, int nr_migrate_pages)
+{
+	return true;
+}
+static inline int migrate_misplaced_page_put(struct page *page, int node)
 {
 	return -EAGAIN; /* can't migrate now */
 }
-#endif /* CONFIG_MIGRATION */
+static inline int migrate_misplaced_transhuge_page_put(struct mm_struct *mm,
+			struct vm_area_struct *vma,
+			pmd_t *pmd, pmd_t entry,
+			unsigned long address,
+			struct page *page, int node)
+{
+	return -EAGAIN;
+}
+#endif /* CONFIG_NUMA_BALANCING */
 
 #endif /* _LINUX_MIGRATE_H */

@@ -2268,10 +2268,9 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 {
 	struct mempolicy *pol;
 	struct zone *zone;
-	int curnid = page_to_nid(page);
+	int page_nid = page_to_nid(page);
 	unsigned long pgoff;
-	int polnid = -1;
-	int ret = -1;
+	int target_node = page_nid;
 
 	BUG_ON(!vma);
 
@@ -2286,14 +2285,15 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 
 		pgoff = vma->vm_pgoff;
 		pgoff += (addr - vma->vm_start) >> PAGE_SHIFT;
-		polnid = offset_il_node(pol, vma, pgoff);
+		target_node = offset_il_node(pol, vma, pgoff);
 		break;
 
 	case MPOL_PREFERRED:
 		if (pol->flags & MPOL_F_LOCAL)
-			polnid = numa_node_id();
+
+			target_node = numa_node_id();
 		else
-			polnid = pol->v.preferred_node;
+			target_node = pol->v.preferred_node;
 		break;
 
 	case MPOL_BIND:
@@ -2303,13 +2303,13 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 		 * else select nearest allowed node, if any.
 		 * If no allowed nodes, use current [!misplaced].
 		 */
-		if (node_isset(curnid, pol->v.nodes))
+		if (node_isset(page_nid, pol->v.nodes))
 			goto out;
 		(void)first_zones_zonelist(
 				node_zonelist(numa_node_id(), GFP_HIGHUSER),
 				gfp_zone(GFP_HIGHUSER),
 				&pol->v.nodes, &zone);
-		polnid = zone->node;
+		target_node = zone->node;
 		break;
 
 	default:
@@ -2317,15 +2317,50 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 	}
 
 	/* Migrate the page towards the node whose CPU is referencing it */
-	if (pol->flags & MPOL_F_MORON)
-		polnid = numa_node_id();
+	if (pol->flags & MPOL_F_MORON) {
+		int cpu_last_access;
+		int this_cpu;
+		int this_node;
 
-	if (curnid != polnid)
-		ret = polnid;
+		this_cpu = raw_smp_processor_id();
+		this_node = numa_node_id();
+
+		/*
+		 * Multi-stage node selection is used in conjunction
+		 * with a periodic migration fault to build a temporal
+		 * task<->page relation. By using a two-stage filter we
+		 * remove short/unlikely relations.
+		 *
+		 * Using P(p) ~ n_p / n_t as per frequentist
+		 * probability, we can equate a task's usage of a
+		 * particular page (n_p) per total usage of this
+		 * page (n_t) (in a given time-span) to a probability.
+		 *
+		 * Our periodic faults will sample this probability and
+		 * getting the same result twice in a row, given these
+		 * samples are fully independent, is then given by
+		 * P(n)^2, provided our sample period is sufficiently
+		 * short compared to the usage pattern.
+		 *
+		 * This quadric squishes small probabilities, making
+		 * it less likely we act on an unlikely task<->page
+		 * relation.
+		 */
+		cpu_last_access = page_xchg_last_cpu(page, this_cpu);
+
+		/* Migrate towards us: */
+		if (cpu_last_access == this_cpu)
+			target_node = this_node;
+	}
 out:
 	mpol_cond_put(pol);
 
-	return ret;
+	/* Page already at its ideal target node: */
+	if (target_node == page_nid)
+		return -1;
+
+	/* Migrate: */
+	return target_node;
 }
 
 static void sp_delete(struct shared_policy *sp, struct sp_node *n)

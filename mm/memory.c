@@ -3453,12 +3453,25 @@ static int do_nonlinear_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	return __do_fault(mm, vma, address, pmd, pgoff, flags, orig_pte);
 }
 
+static int numa_migration_target(struct page *page, struct vm_area_struct *vma,
+			       unsigned long addr, int page_nid)
+{
+	count_vm_numa_event(NUMA_HINT_FAULTS);
+	if (page_nid == numa_node_id())
+		count_vm_numa_event(NUMA_HINT_FAULTS_LOCAL);
+
+	return mpol_misplaced(page, vma, addr);
+}
+
 int do_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		   unsigned long addr, pte_t pte, pte_t *ptep, pmd_t *pmd)
 {
 	struct page *page = NULL;
+	bool migrated = false;
 	spinlock_t *ptl;
-	int current_nid, target_nid;
+	int target_nid;
+	int last_cpu;
+	int page_nid;
 
 	/*
 	* The "pte" at this point cannot be used safely without
@@ -3473,40 +3486,40 @@ int do_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	spin_lock(ptl);
 	if (unlikely(!pte_same(*ptep, pte))) {
 		pte_unmap_unlock(ptep, ptl);
-		goto out;
+		return 0;
 	}
 
 	pte = pte_mknonnuma(pte);
 	set_pte_at(mm, addr, ptep, pte);
 	update_mmu_cache(vma, addr, ptep);
 
-	count_vm_numa_event(NUMA_HINT_FAULTS);
 	page = vm_normal_page(vma, addr, pte);
 	if (!page) {
 		pte_unmap_unlock(ptep, ptl);
 		return 0;
 	}
 
-	get_page(page);
-	current_nid = page_to_nid(page);
-	if (current_nid == numa_node_id())
-		count_vm_numa_event(NUMA_HINT_FAULTS_LOCAL);
-	target_nid = mpol_misplaced(page, vma, addr);
-	pte_unmap_unlock(ptep, ptl);
+	page_nid = page_to_nid(page);
+	WARN_ON_ONCE(page_nid == -1);
+
+	/* Get it before mpol_misplaced() flips it: */
+	last_cpu = page_last_cpu(page);
+	WARN_ON_ONCE(last_cpu == -1);
+
+	target_nid = numa_migration_target(page, vma, addr, page_nid);
 	if (target_nid == -1) {
-		/*
-		 * Account for the fault against the current node if it not
-		 * being replaced regardless of where the page is located.
-		 */
-		current_nid = numa_node_id();
-		put_page(page);
+		pte_unmap_unlock(ptep, ptl);
 		goto out;
 	}
 
-	/* Migrate to the requested node */
-	if (migrate_misplaced_page(page, target_nid))
-		current_nid = target_nid;
+	/* Get a reference for migration: */
+	get_page(page);
+	pte_unmap_unlock(ptep, ptl);
 
+	/* Migrate to the requested node */
+	migrated = migrate_misplaced_page_put(page, target_nid); /* Drops the reference */
+	if (migrated)
+		page_nid = target_nid;
 out:
 	return 0;
 }
@@ -3521,10 +3534,6 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	unsigned long offset;
 	spinlock_t *ptl;
 	bool numa = false;
-	int local_nid = numa_node_id();
-	int curr_nid;
-	unsigned long nr_faults = 0;
-	unsigned long nr_faults_local = 0;
 
 	spin_lock(&mm->page_table_lock);
 	pmd = *pmdp;
@@ -3545,8 +3554,15 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	orig_pte = pte = pte_offset_map_lock(mm, pmdp, _addr, &ptl);
 	pte += offset >> PAGE_SHIFT;
 	for (addr = _addr + offset; addr < _addr + PMD_SIZE; pte++, addr += PAGE_SIZE) {
-		pte_t pteval = *pte;
 		struct page *page;
+		int page_nid;
+		int target_nid;
+		int last_cpu;
+		bool migrated;
+		pte_t pteval;
+
+		pteval = ACCESS_ONCE(*pte);
+
 		if (!pte_present(pteval))
 			continue;
 		if (!pte_numa(pteval))
@@ -3564,16 +3580,33 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		page = vm_normal_page(vma, addr, pteval);
 		if (unlikely(!page))
 			continue;
-		curr_nid = page_to_nid(page);
+		/* only check non-shared pages */
+		if (unlikely(page_mapcount(page) != 1))
+			continue;
 
-		nr_faults++;
-		if (curr_nid == local_nid)
-			nr_faults_local++;
+		page_nid = page_to_nid(page);
+		WARN_ON_ONCE(page_nid == -1);
+
+		last_cpu = page_last_cpu(page);
+		WARN_ON_ONCE(last_cpu == -1);
+
+		target_nid = numa_migration_target(page, vma, addr, page_nid);
+		if (target_nid == -1)
+			continue;
+
+		/* Get a reference for the migration: */
+		get_page(page);
+		pte_unmap_unlock(pte, ptl);
+
+		/* Migrate to the requested node */
+		migrated = migrate_misplaced_page_put(page, target_nid); /* Drops the reference */
+		if (migrated)
+			page_nid = target_nid;
+
+		pte = pte_offset_map_lock(mm, pmdp, addr, &ptl);
 	}
 	pte_unmap_unlock(orig_pte, ptl);
 
-	count_vm_numa_events(NUMA_HINT_FAULTS, nr_faults);
-	count_vm_numa_events(NUMA_HINT_FAULTS_LOCAL, nr_faults_local);
 	return 0;
 }
 
@@ -3715,8 +3748,7 @@ retry:
 	 * run pte_offset_map on the pmd, if an huge pmd could
 	 * materialize from under us from a different thread.
 	 */
-	if (unlikely(pmd_none(*pmd)) &&
-	    unlikely(__pte_alloc(mm, vma, pmd, address)))
+	if (unlikely(pmd_none(*pmd)) && __pte_alloc(mm, vma, pmd, address))
 		return VM_FAULT_OOM;
 	/* if an huge pmd materialized from under us just retry later */
 	if (unlikely(pmd_trans_huge(*pmd)))
