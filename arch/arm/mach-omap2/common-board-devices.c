@@ -23,6 +23,7 @@
 #include <linux/gpio.h>
 #include <linux/spi/spi.h>
 #include <linux/spi/ads7846.h>
+#include <linux/wl12xx.h>
 
 #include <linux/platform_data/spi-omap2-mcspi.h>
 #include <linux/platform_data/mtd-nand-omap2.h>
@@ -139,5 +140,37 @@ void __init omap_nand_flash_init(int options, struct mtd_partition *parts,
 void __init omap_nand_flash_init(int options, struct mtd_partition *parts,
 				 int nr_parts)
 {
+}
+#endif
+
+#ifdef CONFIG_WL12XX_PLATFORM_DATA
+int __init wl12xx_board_init(struct wl12xx_platform_data *wlan_data, int gpio)
+{
+	int ret;
+
+	wlan_data->irq = gpio_to_irq(gpio);
+	if (wlan_data->irq < 0) {
+		ret = wlan_data->irq;
+		pr_err("wl12xx: gpio_to_irq(%d) failed: %d\n", gpio, ret);
+		return ret;
+	}
+
+	ret = wl12xx_set_platform_data(wlan_data);
+	/* bail out silently in case wl12xx isn't configured */
+	if (ret == -ENOSYS)
+		return ret;
+
+	/* bail out verbosely on any other error */
+	if (ret) {
+		pr_err("error setting wl12xx data: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+#else /* !CONFIG_WL12XX_PLATFORM_DATA */
+int __init wl12xx_board_init(struct wl12xx_platform_data *wlan_data, int gpio)
+{
+	return 0;
 }
 #endif

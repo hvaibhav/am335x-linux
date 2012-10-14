@@ -286,19 +286,24 @@ static void enable_board_wakeup_source(void)
 		OMAP_WAKEUP_EN | OMAP_PIN_INPUT_PULLUP);
 }
 
-void __init zoom_peripherals_init(void)
+static void __init zoom_wlan_init(void)
 {
 	int ret;
 
-	omap_zoom_wlan_data.irq = gpio_to_irq(OMAP_ZOOM_WLAN_IRQ_GPIO);
-	ret = wl12xx_set_platform_data(&omap_zoom_wlan_data);
-
+	ret = wl12xx_board_init(&omap_zoom_wlan_data, OMAP_ZOOM_WLAN_IRQ_GPIO);
 	if (ret)
-		pr_err("error setting wl12xx data: %d\n", ret);
+		return;
 
+	ret = platform_device_register(&omap_vwlan_device);
+	if (ret)
+		pr_err("error registering wl12xx's fixed regulator: %d\n", ret);
+}
+
+void __init zoom_peripherals_init(void)
+{
 	omap_hsmmc_init(mmc);
+	zoom_wlan_init();
 	omap_i2c_init();
-	platform_device_register(&omap_vwlan_device);
 	usb_musb_init(NULL);
 	enable_board_wakeup_source();
 	omap_serial_init();
