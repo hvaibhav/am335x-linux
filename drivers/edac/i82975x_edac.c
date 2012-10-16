@@ -435,11 +435,9 @@ static void i82975x_init_csrows(struct mem_ctl_info *mci,
 	}
 }
 
-/* #define  i82975x_DEBUG_IOMEM */
-
-#ifdef i82975x_DEBUG_IOMEM
-static void i82975x_print_dram_timings(void __iomem *mch_window)
+static void i82975x_print_dram_config(void __iomem *mch_window, u32 mchbar, u32 *drc)
 {
+#ifdef CONFIG_EDAC_DEBUG
 	/*
 	 * The register meanings are from Intel specs;
 	 * (shows 13-5-5-5 for 800-DDR2)
@@ -448,56 +446,14 @@ static void i82975x_print_dram_timings(void __iomem *mch_window)
 	 */
 	static const int caslats[4] = { 5, 4, 3, 6 };
 	u32	dtreg[2];
-
-	dtreg[0] = readl(mch_window + 0x114);
-	dtreg[1] = readl(mch_window + 0x194);
-	i82975x_printk(KERN_INFO, "DRAM Timings :     Ch0    Ch1\n"
-		"                RAS Active Min = %d     %d\n"
-		"                CAS latency    =  %d      %d\n"
-		"                RAS to CAS     =  %d      %d\n"
-		"                RAS precharge  =  %d      %d\n",
-		(dtreg[0] >> 19 ) & 0x0f,
-			(dtreg[1] >> 19) & 0x0f,
-		caslats[(dtreg[0] >> 8) & 0x03],
-			caslats[(dtreg[1] >> 8) & 0x03],
-		((dtreg[0] >> 4) & 0x07) + 2,
-			((dtreg[1] >> 4) & 0x07) + 2,
-		(dtreg[0] & 0x07) + 2,
-			(dtreg[1] & 0x07) + 2
-	);
-
-}
-#endif
-
-static int i82975x_probe1(struct pci_dev *pdev, int dev_idx)
-{
-	int rc = -ENODEV;
-	struct mem_ctl_info *mci;
-	struct edac_mc_layer layers[2];
-	struct i82975x_pvt *pvt;
-	void __iomem *mch_window;
-	u32 mchbar;
-	u32 drc[2];
-	struct i82975x_error_info discard;
-	int	chans;
-#ifdef i82975x_DEBUG_IOMEM
 	u8 c0drb[4];
 	u8 c1drb[4];
-#endif
 
-	edac_dbg(0, "\n");
+	if (!edac_debug_level)
+		return;
 
-	pci_read_config_dword(pdev, I82975X_MCHBAR, &mchbar);
-	if (!(mchbar & 1)) {
-		edac_dbg(3, "failed, MCHBAR disabled!\n");
-		goto fail0;
-	}
-	mchbar &= 0xffffc000;	/* bits 31:14 used for 16K window */
-	mch_window = ioremap_nocache(mchbar, 0x1000);
-
-#ifdef i82975x_DEBUG_IOMEM
 	i82975x_printk(KERN_INFO, "MCHBAR real = %0x, remapped = %p\n",
-					mchbar, mch_window);
+		       mchbar, mch_window);
 
 	c0drb[0] = readb(mch_window + I82975X_DRB_CH0R0);
 	c0drb[1] = readb(mch_window + I82975X_DRB_CH0R1);
@@ -515,25 +471,66 @@ static int i82975x_probe1(struct pci_dev *pdev, int dev_idx)
 	i82975x_printk(KERN_INFO, "DRBCH1R1 = 0x%02x\n", c1drb[1]);
 	i82975x_printk(KERN_INFO, "DRBCH1R2 = 0x%02x\n", c1drb[2]);
 	i82975x_printk(KERN_INFO, "DRBCH1R3 = 0x%02x\n", c1drb[3]);
-#endif
 
-	drc[0] = readl(mch_window + I82975X_DRC_CH0M0);
-	drc[1] = readl(mch_window + I82975X_DRC_CH1M0);
-#ifdef i82975x_DEBUG_IOMEM
 	i82975x_printk(KERN_INFO, "DRC_CH0 = %0x, %s\n", drc[0],
-			((drc[0] >> 21) & 3) == 1 ?
+		       ((drc[0] >> 21) & 3) == 1 ?
 				"ECC enabled" : "ECC disabled");
 	i82975x_printk(KERN_INFO, "DRC_CH1 = %0x, %s\n", drc[1],
-			((drc[1] >> 21) & 3) == 1 ?
-				"ECC enabled" : "ECC disabled");
+		       ((drc[1] >> 21) & 3) == 1 ?
+		       "ECC enabled" : "ECC disabled");
 
 	i82975x_printk(KERN_INFO, "C0 BNKARC = %0x\n",
 		readw(mch_window + I82975X_C0BNKARC));
 	i82975x_printk(KERN_INFO, "C1 BNKARC = %0x\n",
 		readw(mch_window + I82975X_C1BNKARC));
-	i82975x_print_dram_timings(mch_window);
-	goto fail1;
+
+	dtreg[0] = readl(mch_window + 0x114);
+	dtreg[1] = readl(mch_window + 0x194);
+	i82975x_printk(KERN_INFO,
+		"DRAM Timings :  Ch0    Ch1\n"
+		"                RAS Active Min = %d     %d\n"
+		"                CAS latency    =  %d      %d\n"
+		"                RAS to CAS     =  %d      %d\n"
+		"                RAS precharge  =  %d      %d\n",
+		(dtreg[0] >> 19 ) & 0x0f,
+		(dtreg[1] >> 19) & 0x0f,
+		caslats[(dtreg[0] >> 8) & 0x03],
+		caslats[(dtreg[1] >> 8) & 0x03],
+		((dtreg[0] >> 4) & 0x07) + 2,
+		((dtreg[1] >> 4) & 0x07) + 2,
+		(dtreg[0] & 0x07) + 2,
+		(dtreg[1] & 0x07) + 2
+	);
 #endif
+}
+
+static int i82975x_probe1(struct pci_dev *pdev, int dev_idx)
+{
+	int rc = -ENODEV;
+	struct mem_ctl_info *mci;
+	struct edac_mc_layer layers[2];
+	struct i82975x_pvt *pvt;
+	void __iomem *mch_window;
+	u32 mchbar;
+	u32 drc[2];
+	struct i82975x_error_info discard;
+	int	chans;
+
+	edac_dbg(0, "\n");
+
+	pci_read_config_dword(pdev, I82975X_MCHBAR, &mchbar);
+	if (!(mchbar & 1)) {
+		edac_dbg(3, "failed, MCHBAR disabled!\n");
+		goto fail0;
+	}
+	mchbar &= 0xffffc000;	/* bits 31:14 used for 16K window */
+	mch_window = ioremap_nocache(mchbar, 0x1000);
+
+	drc[0] = readl(mch_window + I82975X_DRC_CH0M0);
+	drc[1] = readl(mch_window + I82975X_DRC_CH1M0);
+
+	i82975x_print_dram_config(mch_window, mchbar, drc);
+
 	if (!(((drc[0] >> 21) & 3) == 1 || ((drc[1] >> 21) & 3) == 1)) {
 		i82975x_printk(KERN_INFO, "ECC disabled on both channels.\n");
 		goto fail1;
