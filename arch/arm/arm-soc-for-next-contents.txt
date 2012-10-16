@@ -4,4 +4,4 @@ next/fixes-non-critical:
 
 next/cleanup:
 imx/multiplatform	git://git.linaro.org/people/shawnguo/linux-2.6.git imx/multi-platform
-
+vt8500/cleanup		git://server.prisktech.co.nz/git/linuxwmt.git/ tags/cleanup-for-3.8 
