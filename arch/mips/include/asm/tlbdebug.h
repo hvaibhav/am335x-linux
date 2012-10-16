@@ -12,5 +12,6 @@
  * TLB debugging functions:
  */
 extern void dump_tlb_all(void);
+extern void dump_current_addr(unsigned long addr);
 
 #endif /* __ASM_TLBDEBUG_H */
