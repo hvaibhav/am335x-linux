@@ -94,7 +94,7 @@
 /* set:pagecache unset:swap */
 #define _PAGE_FILE		(_PAGE_MODIFIED)
 
-#ifdef CONFIG_HUGETLB_PAGE
+#ifdef CONFIG_MIPS_HUGE_TLB_SUPPORT
 /* huge tlb page */
 #define _PAGE_HUGE_SHIFT	(_PAGE_MODIFIED_SHIFT + 1)
 #define _PAGE_HUGE		(1 << _PAGE_HUGE_SHIFT)
