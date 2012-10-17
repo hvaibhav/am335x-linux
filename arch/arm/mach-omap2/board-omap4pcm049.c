@@ -40,11 +40,10 @@
 #include <video/omapdss.h>
 
 #include <plat/usb.h>
-#include <plat/gpmc.h>
-#include <plat/mmc.h>
 #include <video/omap-panel-generic-dpi.h>
 
 #include "common.h"
+#include "mmc.h"
 #include "hsmmc.h"
 #include "control.h"
 #include "mux.h"

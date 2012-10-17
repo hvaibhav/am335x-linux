@@ -22,10 +22,10 @@
 #include <asm/mach/arch.h>
 
 #include <plat/usb.h>
-#include <plat/mmc.h>
 
 #include "common.h"
 #include "mux.h"
+#include "mmc.h"
 #include "hsmmc.h"
 #include "sdram-hynix-h8mbx00u0mer-0em.h"
 
