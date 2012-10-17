@@ -25,14 +25,6 @@ dtb-$(CONFIG_ARCH_EXYNOS) += exynos4210-origen.dtb \
 	exynos4210-trats.dtb \
 	exynos5250-smdk5250.dtb
 dtb-$(CONFIG_ARCH_HIGHBANK) += highbank.dtb
-dtb-$(CONFIG_ARCH_IMX5) += imx51-babbage.dtb \
-	imx53-ard.dtb \
-	imx53-evk.dtb \
-	imx53-qsb.dtb \
-	imx53-smd.dtb
-dtb-$(CONFIG_SOC_IMX6Q) += imx6q-arm2.dtb \
-	imx6q-sabrelite.dtb \
-	imx6q-sabresd.dtb
 dtb-$(CONFIG_ARCH_LPC32XX) += ea3250.dtb phy3250.dtb
 dtb-$(CONFIG_ARCH_KIRKWOOD) += kirkwood-dns320.dtb \
 	kirkwood-dns325.dtb \
@@ -106,5 +98,8 @@ dtb-$(CONFIG_ARCH_VEXPRESS) += vexpress-v2p-ca5s.dtb \
 	vexpress-v2p-ca15-tc1.dtb \
 	vexpress-v2p-ca15_a7.dtb \
 	xenvm-4.2.dtb
+dtb-$(CONFIG_ARCH_VT8500) += vt8500-bv07.dtb \
+	wm8505-ref.dtb \
+	wm8650-mid.dtb
 
 endif
