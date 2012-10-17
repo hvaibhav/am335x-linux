@@ -24,9 +24,9 @@
 #include <asm/mach/map.h>
 
 #include "iomap.h"
-#include <plat/dma.h>
+#include <plat-omap/dma-omap.h>
 #include <plat/omap_hwmod.h>
-#include <plat/omap_device.h>
+#include "omap_device.h"
 #include "omap4-keypad.h"
 
 #include "soc.h"
@@ -34,6 +34,7 @@
 #include "mux.h"
 #include "control.h"
 #include "devices.h"
+#include "dma.h"
 
 #define L3_MODULES_MAX_LEN 12
 #define L3_MODULES 3

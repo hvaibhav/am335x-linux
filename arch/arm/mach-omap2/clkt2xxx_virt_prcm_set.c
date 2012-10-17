@@ -34,8 +34,8 @@
 #include <linux/slab.h>
 
 #include <plat/clock.h>
-#include <plat/sram.h>
-#include <plat/sdrc.h>
+
+#include "../plat-omap/sram.h"
 
 #include "soc.h"
 #include "clock.h"
@@ -43,6 +43,7 @@
 #include "opp2xxx.h"
 #include "cm2xxx_3xxx.h"
 #include "cm-regbits-24xx.h"
+#include "sdrc.h"
 
 const struct prcm_config *curr_prcm_set;
 const struct prcm_config *rate_table;

@@ -41,9 +41,9 @@
 #include <asm/mach/map.h>
 
 #include <mach/mux.h>
-#include <plat/tc.h>
+#include <mach/tc.h>
 #include <linux/platform_data/keypad-omap.h>
-#include <plat/dma.h>
+#include <plat-omap/dma-omap.h>
 #include <mach/flash.h>
 
 #include <mach/hardware.h>

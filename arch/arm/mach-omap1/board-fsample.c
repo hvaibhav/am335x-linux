@@ -27,10 +27,10 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include <plat/tc.h>
+#include <mach/tc.h>
 #include <mach/mux.h>
 #include <mach/flash.h>
-#include <plat/fpga.h>
+#include <../plat-omap/fpga.h>
 #include <linux/platform_data/keypad-omap.h>
 
 #include <mach/hardware.h>
@@ -123,9 +123,9 @@ static struct resource smc91x_resources[] = {
 
 static void __init fsample_init_smc91x(void)
 {
-	fpga_write(1, H2P2_DBG_FPGA_LAN_RESET);
+	__raw_writeb(1, H2P2_DBG_FPGA_LAN_RESET);
 	mdelay(50);
-	fpga_write(fpga_read(H2P2_DBG_FPGA_LAN_RESET) & ~1,
+	__raw_writeb(__raw_readb(H2P2_DBG_FPGA_LAN_RESET) & ~1,
 		   H2P2_DBG_FPGA_LAN_RESET);
 	mdelay(50);
 }

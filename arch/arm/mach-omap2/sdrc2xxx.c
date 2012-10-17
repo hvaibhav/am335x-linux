@@ -25,8 +25,8 @@
 #include <linux/io.h>
 
 #include <plat/clock.h>
-#include <plat/sram.h>
-#include <plat/sdrc.h>
+
+#include "../plat-omap/sram.h"
 
 #include "soc.h"
 #include "iomap.h"
