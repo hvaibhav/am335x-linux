@@ -35,6 +35,8 @@ struct palmas {
 
 	/* Stored chip id */
 	int id;
+	int designrev;
+	int sw_revision;
 
 	/* IRQ Data */
 	int irq;
@@ -427,11 +429,13 @@ enum usb_irq_events {
 #define PALMAS_PU_PD_OD_BASE					0x1F4
 #define PALMAS_LED_BASE						0x200
 #define PALMAS_INTERRUPT_BASE					0x210
+#define PALMAS_ID_BASE						0x24F
 #define PALMAS_USB_OTG_BASE					0x250
 #define PALMAS_VIBRATOR_BASE					0x270
 #define PALMAS_GPIO_BASE					0x280
 #define PALMAS_USB_BASE						0x290
 #define PALMAS_GPADC_BASE					0x2C0
+#define PALMAS_DESIGNREV_BASE					0x357
 #define PALMAS_TRIM_GPADC_BASE					0x3CD
 
 /* Registers for function RTC */
@@ -2149,6 +2153,28 @@ enum usb_irq_events {
 #define PALMAS_INT_CTRL_INT_CLEAR				0x01
 #define PALMAS_INT_CTRL_INT_CLEAR_SHIFT				0
 
+/* Registers for function ID */
+#define PALMAS_VENDOR_ID_LSB					0x0
+#define PALMAS_VENDOR_ID_MSB					0x1
+#define PALMAS_PRODUCT_ID_LSB					0x2
+#define PALMAS_PRODUCT_ID_MSB					0x3
+
+/* Bit definitions for VENDOR_ID_LSB */
+#define PALMAS_VENDOR_ID_LSB_VENDOR_ID_MASK			0xff
+#define PALMAS_VENDOR_ID_LSB_VENDOR_ID_SHIFT			0
+
+/* Bit definitions for VENDOR_ID_MSB */
+#define PALMAS_VENDOR_ID_MSB_VENDOR_ID_MASK			0xff
+#define PALMAS_VENDOR_ID_MSB_VENDOR_ID_SHIFT			0
+
+/* Bit definitions for PRODUCT_ID_LSB */
+#define PALMAS_PRODUCT_ID_LSB_PRODUCT_ID_MASK			0xff
+#define PALMAS_PRODUCT_ID_LSB_PRODUCT_ID_SHIFT			0
+
+/* Bit definitions for PRODUCT_ID_MSB */
+#define PALMAS_PRODUCT_ID_MSB_PRODUCT_ID_MASK			0xff
+#define PALMAS_PRODUCT_ID_MSB_PRODUCT_ID_SHIFT			0
+
 /* Registers for function USB_OTG */
 #define PALMAS_USB_WAKEUP					0x3
 #define PALMAS_USB_VBUS_CTRL_SET				0x4
@@ -2770,6 +2796,13 @@ enum usb_irq_events {
 #define PALMAS_GPADC_SMPS_VSEL_MONITORING_ACTIVE_PHASE_SHIFT	7
 #define PALMAS_GPADC_SMPS_VSEL_MONITORING_SMPS_VSEL_MONITORING_MASK	0x7f
 #define PALMAS_GPADC_SMPS_VSEL_MONITORING_SMPS_VSEL_MONITORING_SHIFT	0
+
+/* Registers for function DESIGNREV */
+#define PALMAS_DESIGNREV                                        0x0
+
+/* Bit definitions for DESIGNREV */
+#define PALMAS_DESIGNREV_DESIGNREV_MASK                         0x0f
+#define PALMAS_DESIGNREV_DESIGNREV_SHIFT                        0
 
 /* Registers for function GPADC */
 #define PALMAS_GPADC_TRIM1					0x0
