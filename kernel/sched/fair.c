@@ -823,11 +823,12 @@ static void account_numa_dequeue(struct rq *rq, struct task_struct *p)
 }
 
 /*
- * numa task sample period in ms: 5s
+ * Scan @scan_size MB every @scan_period after an initial @scan_delay.
  */
-unsigned int sysctl_sched_numa_scan_period_min = 100;
-unsigned int sysctl_sched_numa_scan_period_max = 100*16;
-unsigned int sysctl_sched_numa_scan_size = 256;   /* MB */
+unsigned int sysctl_sched_numa_scan_delay = 1000;	/* ms */
+unsigned int sysctl_sched_numa_scan_period_min = 100;	/* ms */
+unsigned int sysctl_sched_numa_scan_period_max = 100*16;/* ms */
+unsigned int sysctl_sched_numa_scan_size = 256;		/* MB */
 
 /*
  * Wait for the 2-sample stuff to settle before migrating again
@@ -938,9 +939,11 @@ void task_numa_work(struct callback_head *work)
 	if (time_before(now, migrate))
 		return;
 
-	next_scan = now + 2*msecs_to_jiffies(sysctl_sched_numa_scan_period_min);
+	next_scan = now + msecs_to_jiffies(sysctl_sched_numa_scan_period_min);
 	if (cmpxchg(&mm->numa_next_scan, migrate, next_scan) != migrate)
 		return;
+
+	current->numa_scan_period += jiffies_to_msecs(2);
 
 	start = mm->numa_scan_offset;
 	pages = sysctl_sched_numa_scan_size;
@@ -998,7 +1001,8 @@ void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	period = (u64)curr->numa_scan_period * NSEC_PER_MSEC;
 
 	if (now - curr->node_stamp > period) {
-		curr->node_stamp = now;
+		curr->node_stamp += period;
+		curr->numa_scan_period = sysctl_sched_numa_scan_period_min;
 
 		/*
 		 * We are comparing runtime to wall clock time here, which

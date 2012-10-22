@@ -353,6 +353,13 @@ static struct ctl_table kern_table[] = {
 #endif /* CONFIG_SMP */
 #ifdef CONFIG_NUMA_BALANCING
 	{
+		.procname	= "sched_numa_scan_delay_ms",
+		.data		= &sysctl_sched_numa_scan_delay,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
 		.procname	= "sched_numa_scan_period_min_ms",
 		.data		= &sysctl_sched_numa_scan_period_min,
 		.maxlen		= sizeof(unsigned int),
