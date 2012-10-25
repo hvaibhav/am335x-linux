@@ -636,10 +636,10 @@ static void __init omap3_evm_wl12xx_init(void)
 	int ret;
 
 	/* WL12xx WLAN Init */
-	omap3evm_wlan_data.irq = gpio_to_irq(OMAP3EVM_WLAN_IRQ_GPIO);
-	ret = wl12xx_set_platform_data(&omap3evm_wlan_data);
+	ret = wl12xx_board_init(&omap3evm_wlan_data, OMAP3EVM_WLAN_IRQ_GPIO);
 	if (ret)
-		pr_err("error setting wl12xx data: %d\n", ret);
+		return;
+
 	ret = platform_device_register(&omap3evm_wlan_regulator);
 	if (ret)
 		pr_err("error registering wl12xx device: %d\n", ret);

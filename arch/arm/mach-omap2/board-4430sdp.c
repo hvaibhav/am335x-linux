@@ -825,10 +825,11 @@ static void __init omap4_sdp4430_wifi_init(void)
 	int ret;
 
 	omap4_sdp4430_wifi_mux_init();
-	omap4_sdp4430_wlan_data.irq = gpio_to_irq(GPIO_WIFI_IRQ);
-	ret = wl12xx_set_platform_data(&omap4_sdp4430_wlan_data);
+
+	ret = wl12xx_board_init(&omap4_sdp4430_wlan_data, GPIO_WIFI_IRQ);
 	if (ret)
-		pr_err("Error setting wl12xx data: %d\n", ret);
+		return;
+
 	ret = platform_device_register(&omap_vwlan_device);
 	if (ret)
 		pr_err("Error registering wl12xx device: %d\n", ret);

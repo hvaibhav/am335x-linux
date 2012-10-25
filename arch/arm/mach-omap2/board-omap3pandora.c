@@ -543,13 +543,10 @@ static void __init pandora_wl1251_init(void)
 	if (ret < 0)
 		goto fail;
 
-	pandora_wl1251_pdata.irq = gpio_to_irq(PANDORA_WIFI_IRQ_GPIO);
-	if (pandora_wl1251_pdata.irq < 0)
-		goto fail_irq;
-
 	pandora_wl1251_pdata.use_eeprom = true;
-	ret = wl12xx_set_platform_data(&pandora_wl1251_pdata);
-	if (ret < 0)
+
+	ret = wl12xx_board_init(&pandora_wl1251_pdata, PANDORA_WIFI_IRQ_GPIO);
+	if (ret)
 		goto fail_irq;
 
 	return;
