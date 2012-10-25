@@ -10,6 +10,7 @@ vt8500/cleanup		git://server.prisktech.co.nz/git/linuxwmt.git/ tags/cleanup-for-
 
 next/soc:
 ux500/core		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
+clps711x/soc		patches from Alexander Shiyan <shc_work@mail.ru>
 
 next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
