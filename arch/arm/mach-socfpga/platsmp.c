@@ -51,7 +51,6 @@ static int __cpuinit socfpga_boot_secondary(unsigned int cpu, struct task_struct
 
 	__raw_writel(virt_to_phys(secondary_startup), (sys_manager_base_addr+0x10));
 
-	pen_release = 0;
 	flush_cache_all();
 	smp_wmb();
 	outer_clean_range(0, trampoline_size);
