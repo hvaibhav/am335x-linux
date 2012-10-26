@@ -6,7 +6,7 @@ vexpress/fixes		git://git.linaro.org/people/pawelmoll/linux.git vexpress-fixes
 next/cleanup:
 imx/multiplatform	git://git.linaro.org/people/shawnguo/linux-2.6.git imx/multi-platform
 			(pulled twice)
-vt8500/cleanup		git://server.prisktech.co.nz/git/linuxwmt.git/ tags/cleanup-for-3.8 
+vt8500/cleanup		git://server.prisktech.co.nz/git/linuxwmt.git/ tags/cleanup-for-3.8
 
 next/soc:
 ux500/core		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
@@ -14,3 +14,6 @@ clps711x/soc		patches from Alexander Shiyan <shc_work@mail.ru>
 
 next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
+
+next/multiplatform
+vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
