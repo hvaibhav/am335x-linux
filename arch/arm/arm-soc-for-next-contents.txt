@@ -7,13 +7,19 @@ next/cleanup:
 imx/multiplatform	git://git.linaro.org/people/shawnguo/linux-2.6.git imx/multi-platform
 			(pulled twice)
 vt8500/cleanup		git://server.prisktech.co.nz/git/linuxwmt.git/ tags/cleanup-for-3.8
+omap/headers		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-signed
+
+next/multiplatform:
+vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
 
 next/soc:
 ux500/core		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
 clps711x/soc		patches from Alexander Shiyan <shc_work@mail.ru>
+vexpress/soc		git://git.linaro.org/people/pawelmoll/linux vexpress-soc
 
 next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
 
-next/multiplatform
-vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
+next/drivers:
+vexpress/drivers	git://git.linaro.org/people/pawelmoll/linux vexpress/drivers
+
