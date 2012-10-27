@@ -228,6 +228,13 @@ static void dmatest_callback(void *arg)
 	wake_up_all(done->wait);
 }
 
+static unsigned int min_odd(unsigned int x, unsigned int y)
+{
+	unsigned int val = min(x, y);
+
+	return val % 2 ? val : val - 1;
+}
+
 /*
  * This function repeatedly tests DMA transfers of various lengths and
  * offsets for a given operation type until it is told to exit by
@@ -248,6 +255,7 @@ static int dmatest_func(void *data)
 	struct dmatest_thread	*thread = data;
 	struct dmatest_done	done = { .wait = &done_wait };
 	struct dma_chan		*chan;
+	struct dma_device	*dev;
 	const char		*thread_name;
 	unsigned int		src_off, dst_off, len;
 	unsigned int		error_count;
@@ -269,13 +277,16 @@ static int dmatest_func(void *data)
 
 	smp_rmb();
 	chan = thread->chan;
+	dev = chan->device;
 	if (thread->type == DMA_MEMCPY)
 		src_cnt = dst_cnt = 1;
 	else if (thread->type == DMA_XOR) {
-		src_cnt = xor_sources | 1; /* force odd to ensure dst = src */
+		/* force odd to ensure dst = src */
+		src_cnt = min_odd(xor_sources | 1, dev->max_xor);
 		dst_cnt = 1;
 	} else if (thread->type == DMA_PQ) {
-		src_cnt = pq_sources | 1; /* force odd to ensure dst = src */
+		/* force odd to ensure dst = src */
+		src_cnt = min_odd(pq_sources | 1, dma_maxpq(dev, 0));
 		dst_cnt = 2;
 		for (i = 0; i < src_cnt; i++)
 			pq_coefs[i] = 1;
@@ -313,7 +324,6 @@ static int dmatest_func(void *data)
 
 	while (!kthread_should_stop()
 	       && !(iterations && total_tests >= iterations)) {
-		struct dma_device *dev = chan->device;
 		struct dma_async_tx_descriptor *tx = NULL;
 		dma_addr_t dma_srcs[src_cnt];
 		dma_addr_t dma_dsts[dst_cnt];
