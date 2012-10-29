@@ -135,6 +135,21 @@ int am33xx_prm_deassert_hardreset(u8 shift, s16 inst,
 	return (c == MAX_MODULE_HARDRESET_WAIT) ? -EBUSY : 0;
 }
 
+void am33xx_prm_global_warm_sw_reset(void)
+{
+	u32 v;
+
+	v = am33xx_prm_read_reg(AM33XX_PRM_DEVICE_MOD,
+				    AM33XX_PRM_RSTCTRL_OFFSET);
+	v |= AM33XX_GLOBAL_WARM_SW_RST_MASK;
+	am33xx_prm_write_reg(v, AM33XX_PRM_DEVICE_MOD,
+				 AM33XX_PRM_RSTCTRL_OFFSET);
+
+	/* OCP barrier */
+	v = am33xx_prm_read_reg(AM33XX_PRM_DEVICE_MOD,
+				    AM33XX_PRM_RSTCTRL_OFFSET);
+}
+
 static int am33xx_pwrdm_set_next_pwrst(struct powerdomain *pwrdm, u8 pwrst)
 {
 	am33xx_prm_rmw_reg_bits(OMAP_POWERSTATE_MASK,

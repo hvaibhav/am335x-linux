@@ -126,4 +126,5 @@ extern int am33xx_prm_is_hardreset_asserted(u8 shift, s16 inst,
 extern int am33xx_prm_assert_hardreset(u8 shift, s16 inst, u16 rstctrl_offs);
 extern int am33xx_prm_deassert_hardreset(u8 shift, s16 inst,
 		u16 rstctrl_offs, u16 rstst_offs);
+extern void am33xx_prm_global_warm_sw_reset(void);
 #endif
