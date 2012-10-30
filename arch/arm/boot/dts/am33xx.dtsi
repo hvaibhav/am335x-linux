@@ -392,5 +392,17 @@
 			interrupts = <4>;
 			ti,hwmods = "elm";
 		};
+
+		gpmc: gpmc@50000000 {
+			compatible = "ti,am3352-gpmc";
+			ti,hwmods = "gpmc";
+			reg = <0x50000000 0x2000>;
+			interrupts = <100>;
+			num-cs = <8>;
+			num-waitpins = <2>;
+			#address-cells = <2>;
+			#size-cells = <1>;
+			ranges = <0 0 0x08000000 0x10000000>;	/* CS0: NAND */
+		};
 	};
 };
