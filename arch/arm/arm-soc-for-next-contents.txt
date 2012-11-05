@@ -1,5 +1,11 @@
 arm-soc for-next contents for 3.8:
 
+External dependencies:
+depends/tty             gregkh's tty tree @54ec52b6dd3b0ba4bc4eb97e7e1b2534705b326c
+depends/omap-cleanup-headers-usb        git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-usb
+depends/omap-cleanup-headers-menelaus   git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-menelaus
+
+
 next/fixes-non-critical:
 vexpress/fixes		git://git.linaro.org/people/pawelmoll/linux.git vexpress-fixes
 
@@ -10,6 +16,10 @@ vt8500/cleanup		git://server.prisktech.co.nz/git/linuxwmt.git/ tags/cleanup-for-
 
 next/headers:
 omap/headers		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-signed
+omap/cleanup-headers-3  git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-headers-part3-signed
+			depends on depends/tty and depends/omap-cleanup*
+omap/cleanup-prcm	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-prcm-part1-take2-signed
+
 
 next/multiplatform:
 vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
@@ -21,6 +31,8 @@ vexpress/soc		git://git.linaro.org/people/pawelmoll/linux vexpress-soc
 
 next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
++ patch <1351183299-17346-1-git-send-email-dinguyen@altera.com>
++ patch <20121029002724.GA27891@elf.ucw.cz>
 
 next/drivers:
 vexpress/drivers	git://git.linaro.org/people/pawelmoll/linux vexpress/drivers
