@@ -50,6 +50,8 @@
 #define SCPCELLID2		0xFF8
 #define SCPCELLID3		0xFFC
 
+#define SCCTRL_TIMERENnSEL_SHIFT(n)	(15 + ((n) * 2))
+
 static inline void sysctl_soft_reset(void __iomem *base)
 {
 	/* switch to slow mode */
