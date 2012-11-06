@@ -36,6 +36,7 @@ vexpress/soc		git://git.linaro.org/people/pawelmoll/linux vexpress-soc
 renesas/soc		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas soc
 calxeda/ecx-2000	git://sources.calxeda.com/kernel/linux.git tags/calxeda-ecx-2000
 integrator/irq		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator.git tags/integrator-irq
++ patch "ARM: highbank: add ifdef guards to core.h"
 
 next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
