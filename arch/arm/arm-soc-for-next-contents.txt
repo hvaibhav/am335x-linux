@@ -32,6 +32,10 @@ next/soc:
 ux500/core		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
 clps711x/soc		patches from Alexander Shiyan <shc_work@mail.ru>
 vexpress/soc		git://git.linaro.org/people/pawelmoll/linux vexpress-soc
+renesas/soc		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas soc
+calxeda/ecx-2000	git://sources.calxeda.com/kernel/linux.git tags/calxeda-ecx-2000
+integrator/irq		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator.git tags/integrator-irq
+
 
 next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
