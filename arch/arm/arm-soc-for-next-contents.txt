@@ -36,6 +36,7 @@ renesas/soc		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas soc
 calxeda/ecx-2000	git://sources.calxeda.com/kernel/linux.git tags/calxeda-ecx-2000
 integrator/irq		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator.git tags/integrator-irq
 + patch "ARM: highbank: add ifdef guards to core.h"
++ patch <201211062208.47390.arnd@arndb.de>
 
 next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
@@ -48,6 +49,7 @@ next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
 + patch <1351183299-17346-1-git-send-email-dinguyen@altera.com>
 + patch <20121029002724.GA27891@elf.ucw.cz>
++ patch <201211062219.43459.arnd@arndb.de>
 
 next/drivers:
 vexpress/drivers	git://git.linaro.org/people/pawelmoll/linux vexpress/drivers
