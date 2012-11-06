@@ -40,6 +40,8 @@ next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
 renesas/defconfig	git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git defconfig
 
+next/dt:
+ux500/dt		git://git.linaro.org/people/ljones/linux-3.0-ux500.git ste-dt-for-next
 
 next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
