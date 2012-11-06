@@ -13,6 +13,8 @@ next/cleanup:
 imx/multiplatform	git://git.linaro.org/people/shawnguo/linux-2.6.git imx/multi-platform
 			(pulled twice)
 vt8500/cleanup		git://server.prisktech.co.nz/git/linuxwmt.git/ tags/cleanup-for-3.8
++ cherry-pick of "ARM: pxa: use module_platform_driver macro"
+zynq/cleanup		git://git.xilinx.com/linux-xlnx.git arm-next                    
 
 next/headers:
 omap/headers		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-signed
