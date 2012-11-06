@@ -36,6 +36,10 @@ renesas/soc		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas soc
 calxeda/ecx-2000	git://sources.calxeda.com/kernel/linux.git tags/calxeda-ecx-2000
 integrator/irq		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator.git tags/integrator-irq
 
+next/boards:
+renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
+renesas/defconfig	git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git defconfig
+
 
 next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
