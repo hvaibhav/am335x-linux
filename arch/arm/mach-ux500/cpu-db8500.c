@@ -18,6 +18,7 @@
 #include <linux/io.h>
 #include <linux/mfd/abx500/ab8500.h>
 #include <linux/platform_data/usb-musb-ux500.h>
+#include <linux/platform_data/pinctrl-nomadik.h>
 #include <linux/random.h>
 #include <linux/mfd/dbx500-prcmu.h>
 #include <linux/of.h>
@@ -28,11 +29,11 @@
 #include <asm/mach/map.h>
 #include <asm/mach/arch.h>
 #include <asm/hardware/gic.h>
-#include <plat/gpio-nomadik.h>
 #include <mach/hardware.h>
 #include <mach/setup.h>
 #include <mach/devices.h>
 #include <mach/db8500-regs.h>
+#include <mach/irqs.h>
 
 #include "devices-db8500.h"
 #include "ste-dma40-db8500.h"

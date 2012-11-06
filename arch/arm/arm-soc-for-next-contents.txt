@@ -27,6 +27,7 @@ omap/cleanup-prcm	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-oma
 next/multiplatform:
 vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
 devel/debug_ll_init     patch <1350927774-14020-1-git-send-email-swarren@wwwdotorg.org>
+nomadik/plat-removal	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.git tags/kill-plat-sparse-irq
 
 next/soc:
 ux500/core		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core

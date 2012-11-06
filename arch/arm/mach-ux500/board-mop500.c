@@ -34,13 +34,12 @@
 #include <linux/delay.h>
 #include <linux/leds.h>
 #include <linux/pinctrl/consumer.h>
+#include <linux/platform_data/pinctrl-nomadik.h>
+#include <linux/platform_data/dma-ste-dma40.h>
 
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
 #include <asm/hardware/gic.h>
-
-#include <plat/ste_dma40.h>
-#include <plat/gpio-nomadik.h>
 
 #include <mach/hardware.h>
 #include <mach/setup.h>

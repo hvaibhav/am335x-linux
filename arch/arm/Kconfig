@@ -872,6 +872,7 @@ config ARCH_U8500
 	select GENERIC_CLOCKEVENTS
 	select HAVE_SMP
 	select MIGHT_HAVE_CACHE_L2X0
+	select SPARSE_IRQ
 	help
 	  Support for ST-Ericsson's Ux500 architecture
 
@@ -886,6 +887,7 @@ config ARCH_NOMADIK
 	select MIGHT_HAVE_CACHE_L2X0
 	select PINCTRL
 	select PINCTRL_STN8815
+	select SPARSE_IRQ
 	help
 	  Support for the Nomadik platform by ST-Ericsson
 
@@ -1053,7 +1055,6 @@ source "arch/arm/mach-mxs/Kconfig"
 source "arch/arm/mach-netx/Kconfig"
 
 source "arch/arm/mach-nomadik/Kconfig"
-source "arch/arm/plat-nomadik/Kconfig"
 
 source "arch/arm/plat-omap/Kconfig"
 
