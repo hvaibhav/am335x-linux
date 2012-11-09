@@ -808,7 +808,7 @@ enum {
 #define EE_HAS_DIGEST          (1<<__EE_HAS_DIGEST)
 
 /* global flag bits */
-enum {
+enum drbd_flag {
 	CREATE_BARRIER,		/* next P_DATA is preceded by a P_BARRIER */
 	SIGNAL_ASENDER,		/* whether asender wants to be interrupted */
 	SEND_PING,		/* whether asender should send a ping asap */
@@ -831,7 +831,8 @@ enum {
 				   once no more io in flight, start bitmap io */
 	BITMAP_IO_QUEUED,       /* Started bitmap IO */
 	GO_DISKLESS,		/* Disk is being detached, on io-error or admin request. */
-	WAS_IO_ERROR,		/* Local disk failed returned IO error */
+	WAS_IO_ERROR,		/* Local disk failed, returned IO error */
+	WAS_READ_ERROR,		/* Local disk READ failed (set additionally to the above) */
 	FORCE_DETACH,		/* Force-detach from local disk, aborting any pending local IO */
 	RESYNC_AFTER_NEG,       /* Resync after online grow after the attach&negotiate finished. */
 	NET_CONGESTED,		/* The data socket is congested */
@@ -857,6 +858,10 @@ enum {
 				 * so shrink_page_list() would not recurse into,
 				 * and potentially deadlock on, this drbd worker.
 				 */
+	DISCONNECT_SENT,	/* Currently the last bit in this 32bit word */
+
+	/* keep last */
+	DRBD_N_FLAGS,
 };
 
 struct drbd_bitmap; /* opaque for drbd_conf */
@@ -912,6 +917,7 @@ struct drbd_md {
 	u64 md_offset;		/* sector offset to 'super' block */
 
 	u64 la_size_sect;	/* last agreed size, unit sectors */
+	spinlock_t uuid_lock;
 	u64 uuid[UI_SIZE];
 	u64 device_uuid;
 	u32 flags;
@@ -968,8 +974,7 @@ struct fifo_buffer {
 };
 
 struct drbd_conf {
-	/* things that are stored as / read from meta data on disk */
-	unsigned long flags;
+	unsigned long drbd_flags[(DRBD_N_FLAGS + BITS_PER_LONG -1)/BITS_PER_LONG];
 
 	/* configured by drbdsetup */
 	struct net_conf *net_conf; /* protected by get_net_conf() and put_net_conf() */
@@ -1051,6 +1056,7 @@ struct drbd_conf {
 
 	/* where does the admin want us to start? (sector) */
 	sector_t ov_start_sector;
+	sector_t ov_stop_sector;
 	/* where are we now? (sector) */
 	sector_t ov_position;
 	/* Start sector of out of sync range (to merge printk reporting). */
@@ -1139,6 +1145,31 @@ struct drbd_conf {
 	unsigned int peer_max_bio_size;
 	unsigned int local_max_bio_size;
 };
+
+static inline void drbd_set_flag(struct drbd_conf *mdev, enum drbd_flag f)
+{
+	set_bit(f, &mdev->drbd_flags[0]);
+}
+
+static inline void drbd_clear_flag(struct drbd_conf *mdev, enum drbd_flag f)
+{
+	clear_bit(f, &mdev->drbd_flags[0]);
+}
+
+static inline int drbd_test_flag(struct drbd_conf *mdev, enum drbd_flag f)
+{
+	return test_bit(f, &mdev->drbd_flags[0]);
+}
+
+static inline int drbd_test_and_set_flag(struct drbd_conf *mdev, enum drbd_flag f)
+{
+	return test_and_set_bit(f, &mdev->drbd_flags[0]);
+}
+
+static inline int drbd_test_and_clear_flag(struct drbd_conf *mdev, enum drbd_flag f)
+{
+	return test_and_clear_bit(f, &mdev->drbd_flags[0]);
+}
 
 static inline struct drbd_conf *minor_to_mdev(unsigned int minor)
 {
@@ -1283,8 +1314,9 @@ extern int  drbd_md_read(struct drbd_conf *mdev, struct drbd_backing_dev *bdev);
 extern void drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local);
 extern void _drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local);
 extern void drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local);
-extern void _drbd_uuid_new_current(struct drbd_conf *mdev) __must_hold(local);
 extern void drbd_uuid_set_bm(struct drbd_conf *mdev, u64 val) __must_hold(local);
+extern void drbd_uuid_move_history(struct drbd_conf *mdev) __must_hold(local);
+extern void __drbd_uuid_set(struct drbd_conf *mdev, int idx, u64 val) __must_hold(local);
 extern void drbd_md_set_flag(struct drbd_conf *mdev, int flags) __must_hold(local);
 extern void drbd_md_clear_flag(struct drbd_conf *mdev, int flags)__must_hold(local);
 extern int drbd_md_test_flag(struct drbd_backing_dev *, int);
@@ -1577,8 +1609,8 @@ extern void *drbd_md_get_buffer(struct drbd_conf *mdev);
 extern void drbd_md_put_buffer(struct drbd_conf *mdev);
 extern int drbd_md_sync_page_io(struct drbd_conf *mdev,
 				struct drbd_backing_dev *bdev, sector_t sector, int rw);
-extern void wait_until_done_or_disk_failure(struct drbd_conf *mdev, struct drbd_backing_dev *bdev,
-					    unsigned int *done);
+extern void wait_until_done_or_force_detached(struct drbd_conf *mdev,
+		struct drbd_backing_dev *bdev, unsigned int *done);
 extern void drbd_ov_oos_found(struct drbd_conf*, sector_t, int);
 extern void drbd_rs_controller_reset(struct drbd_conf *mdev);
 
@@ -1808,12 +1840,12 @@ static inline int drbd_ee_has_active_page(struct drbd_epoch_entry *e)
 static inline void drbd_state_lock(struct drbd_conf *mdev)
 {
 	wait_event(mdev->misc_wait,
-		   !test_and_set_bit(CLUSTER_ST_CHANGE, &mdev->flags));
+		   !drbd_test_and_set_flag(mdev, CLUSTER_ST_CHANGE));
 }
 
 static inline void drbd_state_unlock(struct drbd_conf *mdev)
 {
-	clear_bit(CLUSTER_ST_CHANGE, &mdev->flags);
+	drbd_clear_flag(mdev, CLUSTER_ST_CHANGE);
 	wake_up(&mdev->misc_wait);
 }
 
@@ -1848,31 +1880,54 @@ static inline int drbd_request_state(struct drbd_conf *mdev,
 }
 
 enum drbd_force_detach_flags {
-	DRBD_IO_ERROR,
+	DRBD_READ_ERROR,
+	DRBD_WRITE_ERROR,
 	DRBD_META_IO_ERROR,
 	DRBD_FORCE_DETACH,
 };
 
 #define __drbd_chk_io_error(m,f) __drbd_chk_io_error_(m,f, __func__)
 static inline void __drbd_chk_io_error_(struct drbd_conf *mdev,
-		enum drbd_force_detach_flags forcedetach,
+		enum drbd_force_detach_flags df,
 		const char *where)
 {
 	switch (mdev->ldev->dc.on_io_error) {
 	case EP_PASS_ON:
-		if (forcedetach == DRBD_IO_ERROR) {
+		if (df == DRBD_READ_ERROR || df == DRBD_WRITE_ERROR) {
 			if (__ratelimit(&drbd_ratelimit_state))
 				dev_err(DEV, "Local IO failed in %s.\n", where);
 			if (mdev->state.disk > D_INCONSISTENT)
 				_drbd_set_state(_NS(mdev, disk, D_INCONSISTENT), CS_HARD, NULL);
 			break;
 		}
-		/* NOTE fall through to detach case if forcedetach set */
+		/* NOTE fall through for DRBD_META_IO_ERROR or DRBD_FORCE_DETACH */
 	case EP_DETACH:
 	case EP_CALL_HELPER:
-		set_bit(WAS_IO_ERROR, &mdev->flags);
-		if (forcedetach == DRBD_FORCE_DETACH)
-			set_bit(FORCE_DETACH, &mdev->flags);
+		/* Remember whether we saw a READ or WRITE error.
+		 *
+		 * Recovery of the affected area for WRITE failure is covered
+		 * by the activity log.
+		 * READ errors may fall outside that area though. Certain READ
+		 * errors can be "healed" by writing good data to the affected
+		 * blocks, which triggers block re-allocation in lower layers.
+		 *
+		 * If we can not write the bitmap after a READ error,
+		 * we may need to trigger a full sync (see w_go_diskless()).
+		 *
+		 * Force-detach is not really an IO error, but rather a
+		 * desperate measure to try to deal with a completely
+		 * unresponsive lower level IO stack.
+		 * Still it should be treated as a WRITE error.
+		 *
+		 * Meta IO error is always WRITE error:
+		 * we read meta data only once during attach,
+		 * which will fail in case of errors.
+		 */
+		drbd_set_flag(mdev, WAS_IO_ERROR);
+		if (df == DRBD_READ_ERROR)
+			drbd_set_flag(mdev, WAS_READ_ERROR);
+		if (df == DRBD_FORCE_DETACH)
+			drbd_set_flag(mdev, FORCE_DETACH);
 		if (mdev->state.disk > D_FAILED) {
 			_drbd_set_state(_NS(mdev, disk, D_FAILED), CS_HARD, NULL);
 			dev_err(DEV,
@@ -2033,13 +2088,13 @@ drbd_queue_work(struct drbd_work_queue *q, struct drbd_work *w)
 
 static inline void wake_asender(struct drbd_conf *mdev)
 {
-	if (test_bit(SIGNAL_ASENDER, &mdev->flags))
+	if (drbd_test_flag(mdev, SIGNAL_ASENDER))
 		force_sig(DRBD_SIG, mdev->asender.task);
 }
 
 static inline void request_ping(struct drbd_conf *mdev)
 {
-	set_bit(SEND_PING, &mdev->flags);
+	drbd_set_flag(mdev, SEND_PING);
 	wake_asender(mdev);
 }
 
@@ -2370,7 +2425,7 @@ static inline bool may_inc_ap_bio(struct drbd_conf *mdev)
 
 	if (is_susp(mdev->state))
 		return false;
-	if (test_bit(SUSPEND_IO, &mdev->flags))
+	if (drbd_test_flag(mdev, SUSPEND_IO))
 		return false;
 
 	/* to avoid potential deadlock or bitmap corruption,
@@ -2385,7 +2440,7 @@ static inline bool may_inc_ap_bio(struct drbd_conf *mdev)
 	 * and we are within the spinlock anyways, we have this workaround.  */
 	if (atomic_read(&mdev->ap_bio_cnt) > mxb)
 		return false;
-	if (test_bit(BITMAP_IO, &mdev->flags))
+	if (drbd_test_flag(mdev, BITMAP_IO))
 		return false;
 	return true;
 }
@@ -2423,8 +2478,8 @@ static inline void dec_ap_bio(struct drbd_conf *mdev)
 
 	D_ASSERT(ap_bio >= 0);
 
-	if (ap_bio == 0 && test_bit(BITMAP_IO, &mdev->flags)) {
-		if (!test_and_set_bit(BITMAP_IO_QUEUED, &mdev->flags))
+	if (ap_bio == 0 && drbd_test_flag(mdev, BITMAP_IO)) {
+		if (!drbd_test_and_set_flag(mdev, BITMAP_IO_QUEUED))
 			drbd_queue_work(&mdev->data.work, &mdev->bm_io_work.w);
 	}
 
@@ -2473,7 +2528,7 @@ static inline void drbd_update_congested(struct drbd_conf *mdev)
 {
 	struct sock *sk = mdev->data.socket->sk;
 	if (sk->sk_wmem_queued > sk->sk_sndbuf * 4 / 5)
-		set_bit(NET_CONGESTED, &mdev->flags);
+		drbd_set_flag(mdev, NET_CONGESTED);
 }
 
 static inline int drbd_queue_order_type(struct drbd_conf *mdev)
@@ -2490,14 +2545,15 @@ static inline void drbd_md_flush(struct drbd_conf *mdev)
 {
 	int r;
 
-	if (test_bit(MD_NO_FUA, &mdev->flags))
+	if (drbd_test_flag(mdev, MD_NO_FUA))
 		return;
 
-	r = blkdev_issue_flush(mdev->ldev->md_bdev, GFP_KERNEL, NULL);
+	r = blkdev_issue_flush(mdev->ldev->md_bdev, GFP_NOIO, NULL);
 	if (r) {
-		set_bit(MD_NO_FUA, &mdev->flags);
+		drbd_set_flag(mdev, MD_NO_FUA);
 		dev_err(DEV, "meta data flush failed with status %d, disabling md-flushes\n", r);
 	}
 }
+
 
 #endif

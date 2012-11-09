@@ -111,7 +111,7 @@ void drbd_endio_read_sec_final(struct drbd_epoch_entry *e) __releases(local)
 	if (list_empty(&mdev->read_ee))
 		wake_up(&mdev->ee_wait);
 	if (test_bit(__EE_WAS_ERROR, &e->flags))
-		__drbd_chk_io_error(mdev, DRBD_IO_ERROR);
+		__drbd_chk_io_error(mdev, DRBD_READ_ERROR);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
 	drbd_queue_work(&mdev->data.work, &e->w);
@@ -154,7 +154,7 @@ static void drbd_endio_write_sec_final(struct drbd_epoch_entry *e) __releases(lo
 		: list_empty(&mdev->active_ee);
 
 	if (test_bit(__EE_WAS_ERROR, &e->flags))
-		__drbd_chk_io_error(mdev, DRBD_IO_ERROR);
+		__drbd_chk_io_error(mdev, DRBD_WRITE_ERROR);
 	spin_unlock_irqrestore(&mdev->req_lock, flags);
 
 	if (is_syncer_req)
@@ -225,6 +225,42 @@ void drbd_endio_pri(struct bio *bio, int error)
 		 * fail the request by clearing the uptodate flag,
 		 * but do not return any error?! */
 		error = -EIO;
+	}
+
+	/* If this request was aborted locally before,
+	 * but now was completed "successfully",
+	 * chances are that this caused arbitrary data corruption.
+	 *
+	 * "aborting" requests, or force-detaching the disk, is intended for
+	 * completely blocked/hung local backing devices which do no longer
+	 * complete requests at all, not even do error completions.  In this
+	 * situation, usually a hard-reset and failover is the only way out.
+	 *
+	 * By "aborting", basically faking a local error-completion,
+	 * we allow for a more graceful swichover by cleanly migrating services.
+	 * Still the affected node has to be rebooted "soon".
+	 *
+	 * By completing these requests, we allow the upper layers to re-use
+	 * the associated data pages.
+	 *
+	 * If later the local backing device "recovers", and now DMAs some data
+	 * from disk into the original request pages, in the best case it will
+	 * just put random data into unused pages; but typically it will corrupt
+	 * meanwhile completely unrelated data, causing all sorts of damage.
+	 *
+	 * Which means delayed successful completion,
+	 * especially for READ requests,
+	 * is a reason to panic().
+	 *
+	 * We assume that a delayed *error* completion is OK,
+	 * though we still will complain noisily about it.
+	 */
+	if (unlikely(req->rq_state & RQ_LOCAL_ABORTED)) {
+		if (__ratelimit(&drbd_ratelimit_state))
+			dev_emerg(DEV, "delayed completion of aborted local request; disk-timeout may be too aggressive\n");
+
+		if (!error)
+			panic("possible random memory corruption caused by delayed completion of aborted local request\n");
 	}
 
 	/* to avoid recursion in __req_mod */
@@ -691,6 +727,7 @@ static int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int ca
 	int number, i, size;
 	sector_t sector;
 	const sector_t capacity = drbd_get_capacity(mdev->this_bdev);
+	bool stop_sector_reached = false;
 
 	if (unlikely(cancel))
 		return 1;
@@ -699,9 +736,17 @@ static int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int ca
 
 	sector = mdev->ov_position;
 	for (i = 0; i < number; i++) {
-		if (sector >= capacity) {
+		if (sector >= capacity)
 			return 1;
-		}
+
+		/* We check for "finished" only in the reply path:
+		 * w_e_end_ov_reply().
+		 * We need to send at least one request out. */
+		stop_sector_reached = i > 0
+			&& mdev->agreed_pro_version >= 97
+			&& sector >= mdev->ov_stop_sector;
+		if (stop_sector_reached)
+			break;
 
 		size = BM_BLOCK_SIZE;
 
@@ -725,7 +770,8 @@ static int w_make_ov_request(struct drbd_conf *mdev, struct drbd_work *w, int ca
 
  requeue:
 	mdev->rs_in_flight += (i << (BM_BLOCK_SHIFT - 9));
-	mod_timer(&mdev->resync_timer, jiffies + SLEEP_TIME);
+	if (i == 0 || !stop_sector_reached)
+		mod_timer(&mdev->resync_timer, jiffies + SLEEP_TIME);
 	return 1;
 }
 
@@ -747,7 +793,7 @@ int w_start_resync(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	}
 
 	drbd_start_resync(mdev, C_SYNC_SOURCE);
-	clear_bit(AHEAD_TO_SYNC_SOURCE, &mdev->flags);
+	drbd_clear_flag(mdev, AHEAD_TO_SYNC_SOURCE);
 	return 1;
 }
 
@@ -771,10 +817,10 @@ static int w_resync_finished(struct drbd_conf *mdev, struct drbd_work *w, int ca
 
 static void ping_peer(struct drbd_conf *mdev)
 {
-	clear_bit(GOT_PING_ACK, &mdev->flags);
+	drbd_clear_flag(mdev, GOT_PING_ACK);
 	request_ping(mdev);
 	wait_event(mdev->misc_wait,
-		   test_bit(GOT_PING_ACK, &mdev->flags) || mdev->state.conn < C_CONNECTED);
+		   drbd_test_flag(mdev, GOT_PING_ACK) || mdev->state.conn < C_CONNECTED);
 }
 
 int drbd_resync_finished(struct drbd_conf *mdev)
@@ -808,7 +854,12 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	dt = (jiffies - mdev->rs_start - mdev->rs_paused) / HZ;
 	if (dt <= 0)
 		dt = 1;
+	
 	db = mdev->rs_total;
+	/* adjust for verify start and stop sectors, respective reached position */
+	if (mdev->state.conn == C_VERIFY_S || mdev->state.conn == C_VERIFY_T)
+		db -= mdev->ov_left;
+
 	dbdt = Bit2KB(db/dt);
 	mdev->rs_paused /= HZ;
 
@@ -831,7 +882,7 @@ int drbd_resync_finished(struct drbd_conf *mdev)
 	ns.conn = C_CONNECTED;
 
 	dev_info(DEV, "%s done (total %lu sec; paused %lu sec; %lu K/sec)\n",
-	     verify_done ? "Online verify " : "Resync",
+	     verify_done ? "Online verify" : "Resync",
 	     dt + mdev->rs_paused, mdev->rs_paused, dbdt);
 
 	n_oos = drbd_bm_total_weight(mdev);
@@ -912,7 +963,9 @@ out:
 	mdev->rs_total  = 0;
 	mdev->rs_failed = 0;
 	mdev->rs_paused = 0;
-	if (verify_done)
+
+	/* reset start sector, if we reached end of device */
+	if (verify_done && mdev->ov_left == 0)
 		mdev->ov_start_sector = 0;
 
 	drbd_md_sync(mdev);
@@ -1158,6 +1211,7 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	unsigned int size = e->size;
 	int digest_size;
 	int ok, eq = 0;
+	bool stop_sector_reached = false;
 
 	if (unlikely(cancel)) {
 		drbd_free_ee(mdev, e);
@@ -1208,7 +1262,10 @@ int w_e_end_ov_reply(struct drbd_conf *mdev, struct drbd_work *w, int cancel)
 	if ((mdev->ov_left & 0x200) == 0x200)
 		drbd_advance_rs_marks(mdev, mdev->ov_left);
 
-	if (mdev->ov_left == 0) {
+	stop_sector_reached = mdev->agreed_pro_version >= 97 &&
+		(sector + (size>>9)) >= mdev->ov_stop_sector;
+
+	if (mdev->ov_left == 0 || stop_sector_reached) {
 		ov_oos_print(mdev);
 		drbd_resync_finished(mdev);
 	}
@@ -1692,8 +1749,8 @@ int drbd_worker(struct drbd_thread *thi)
 						NS(conn, C_NETWORK_FAILURE));
 		}
 	}
-	D_ASSERT(test_bit(DEVICE_DYING, &mdev->flags));
-	D_ASSERT(test_bit(CONFIG_PENDING, &mdev->flags));
+	D_ASSERT(drbd_test_flag(mdev, DEVICE_DYING));
+	D_ASSERT(drbd_test_flag(mdev, CONFIG_PENDING));
 
 	spin_lock_irq(&mdev->data.work.q_lock);
 	i = 0;
@@ -1726,8 +1783,8 @@ int drbd_worker(struct drbd_thread *thi)
 
 	dev_info(DEV, "worker terminated\n");
 
-	clear_bit(DEVICE_DYING, &mdev->flags);
-	clear_bit(CONFIG_PENDING, &mdev->flags);
+	drbd_clear_flag(mdev, DEVICE_DYING);
+	drbd_clear_flag(mdev, CONFIG_PENDING);
 	wake_up(&mdev->state_wait);
 
 	return 0;

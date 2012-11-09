@@ -373,14 +373,16 @@ static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 		return old_pages;
 
 	/* Trying kmalloc first, falling back to vmalloc.
-	 * GFP_KERNEL is ok, as this is done when a lower level disk is
-	 * "attached" to the drbd.  Context is receiver thread or cqueue
-	 * thread.  As we have no disk yet, we are not in the IO path,
-	 * not even the IO path of the peer. */
+	 * GFP_NOIO, as this is called while drbd IO is "suspended",
+	 * and during resize or attach on diskless Primary,
+	 * we must not block on IO to ourselves.
+	 * Context is receiver thread or cqueue thread/dmsetup.  */
 	bytes = sizeof(struct page *)*want;
-	new_pages = kzalloc(bytes, GFP_KERNEL);
+	new_pages = kzalloc(bytes, GFP_NOIO);
 	if (!new_pages) {
-		new_pages = vzalloc(bytes);
+		new_pages = __vmalloc(bytes,
+				GFP_NOIO | __GFP_HIGHMEM | __GFP_ZERO,
+				PAGE_KERNEL);
 		if (!new_pages)
 			return NULL;
 		vmalloced = 1;
@@ -390,7 +392,7 @@ static struct page **bm_realloc_pages(struct drbd_bitmap *b, unsigned long want)
 		for (i = 0; i < have; i++)
 			new_pages[i] = old_pages[i];
 		for (; i < want; i++) {
-			page = alloc_page(GFP_HIGHUSER);
+			page = alloc_page(GFP_NOIO | __GFP_HIGHMEM);
 			if (!page) {
 				bm_free_pages(new_pages + have, i - have);
 				bm_vk_free(new_pages, vmalloced);
@@ -1083,7 +1085,7 @@ static int bm_rw(struct drbd_conf *mdev, int rw, unsigned flags, unsigned lazy_w
 	 * "in_flight reached zero, all done" event.
 	 */
 	if (!atomic_dec_and_test(&ctx->in_flight))
-		wait_until_done_or_disk_failure(mdev, mdev->ldev, &ctx->done);
+		wait_until_done_or_force_detached(mdev, mdev->ldev, &ctx->done);
 	else
 		kref_put(&ctx->kref, &bm_aio_ctx_destroy);
 
@@ -1098,7 +1100,7 @@ static int bm_rw(struct drbd_conf *mdev, int rw, unsigned flags, unsigned lazy_w
 	}
 
 	if (atomic_read(&ctx->in_flight))
-		err = -EIO; /* Disk failed during IO... */
+		err = -EIO; /* Disk timeout/force-detach during IO... */
 
 	now = jiffies;
 	if (rw == WRITE) {
@@ -1217,11 +1219,11 @@ int drbd_bm_write_page(struct drbd_conf *mdev, unsigned int idx) __must_hold(loc
 	}
 
 	bm_page_io_async(ctx, idx, WRITE_SYNC);
-	wait_until_done_or_disk_failure(mdev, mdev->ldev, &ctx->done);
+	wait_until_done_or_force_detached(mdev, mdev->ldev, &ctx->done);
 
 	if (ctx->error)
 		drbd_chk_io_error(mdev, 1, DRBD_META_IO_ERROR);
-		/* that should force detach, so the in memory bitmap will be
+		/* that causes us to detach, so the in memory bitmap will be
 		 * gone in a moment as well. */
 
 	mdev->bm_writ_cnt++;

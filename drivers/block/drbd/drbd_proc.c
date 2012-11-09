@@ -167,18 +167,24 @@ static void drbd_syncer_progress(struct drbd_conf *mdev, struct seq_file *seq)
 		 * we convert to sectors in the display below. */
 		unsigned long bm_bits = drbd_bm_bits(mdev);
 		unsigned long bit_pos;
+		unsigned long long stop_sector = 0;
 		if (mdev->state.conn == C_VERIFY_S ||
-		    mdev->state.conn == C_VERIFY_T)
+		    mdev->state.conn == C_VERIFY_T) {
 			bit_pos = bm_bits - mdev->ov_left;
-		else
+			if (mdev->agreed_pro_version >= 97)
+				stop_sector = mdev->ov_stop_sector;
+		} else
 			bit_pos = mdev->bm_resync_fo;
 		/* Total sectors may be slightly off for oddly
 		 * sized devices. So what. */
 		seq_printf(seq,
-			"\t%3d%% sector pos: %llu/%llu\n",
+			"\t%3d%% sector pos: %llu/%llu",
 			(int)(bit_pos / (bm_bits/100+1)),
 			(unsigned long long)bit_pos * BM_SECT_PER_BIT,
 			(unsigned long long)bm_bits * BM_SECT_PER_BIT);
+		if (stop_sector != 0 && stop_sector != ULLONG_MAX)
+			seq_printf(seq, " stop sector: %llu", stop_sector);
+		seq_printf(seq, "\n");
 	}
 }
 
@@ -264,7 +270,7 @@ static int drbd_seq_show(struct seq_file *seq, void *v)
 			   mdev->state.peer_isp ? 'p' : '-',
 			   mdev->state.user_isp ? 'u' : '-',
 			   mdev->congestion_reason ?: '-',
-			   test_bit(AL_SUSPENDED, &mdev->flags) ? 's' : '-',
+			   drbd_test_flag(mdev, AL_SUSPENDED) ? 's' : '-',
 			   mdev->send_cnt/2,
 			   mdev->recv_cnt/2,
 			   mdev->writ_cnt/2,
