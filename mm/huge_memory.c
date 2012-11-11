@@ -1077,6 +1077,7 @@ int do_huge_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		goto clear_pmdnuma;
 	}
 
+	task_numa_fault(current_nid, last_cpu, HPAGE_PMD_NR);
 	return 0;
 
 clear_pmdnuma:
@@ -1089,7 +1090,8 @@ clear_pmdnuma:
 
 out_unlock:
 	spin_unlock(&mm->page_table_lock);
-
+	if (current_nid != -1)
+		task_numa_fault(current_nid, last_cpu, HPAGE_PMD_NR);
 	return 0;
 }
 

@@ -3523,6 +3523,9 @@ int do_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	if (migrated)
 		page_nid = target_nid;
 out:
+	/* Always account where the page currently is, physically: */
+	task_numa_fault(page_nid, last_cpu, 1);
+
 	return 0;
 }
 
@@ -3604,6 +3607,9 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		migrated = migrate_misplaced_page_put(page, target_nid); /* Drops the reference */
 		if (migrated)
 			page_nid = target_nid;
+
+		/* Always account where the page currently is, physically: */
+		task_numa_fault(page_nid, last_cpu, 1);
 
 		pte = pte_offset_map_lock(mm, pmdp, addr, &ptl);
 	}
