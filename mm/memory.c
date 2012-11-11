@@ -68,6 +68,10 @@
 
 #include "internal.h"
 
+#ifdef LAST_CPU_NOT_IN_PAGE_FLAGS
+#warning Unfortunate NUMA config, growing page-frame for last_cpu.
+#endif
+
 #ifndef CONFIG_NEED_MULTIPLE_NODES
 /* use the per-pgdat data instead for discontigmem - mbligh */
 unsigned long max_mapnr;
