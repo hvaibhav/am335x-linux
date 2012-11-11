@@ -509,7 +509,7 @@ err_srcs:
 			thread_name, total_tests, failed_tests, ret);
 
 	/* terminate all transfers on specified channels */
-	chan->device->device_control(chan, DMA_TERMINATE_ALL, 0);
+	dmaengine_terminate_all(chan);
 	if (iterations > 0)
 		while (!kthread_should_stop()) {
 			DECLARE_WAIT_QUEUE_HEAD_ONSTACK(wait_dmatest_exit);
@@ -534,7 +534,7 @@ static void dmatest_cleanup_channel(struct dmatest_chan *dtc)
 	}
 
 	/* terminate all transfers on specified channels */
-	dtc->chan->device->device_control(dtc->chan, DMA_TERMINATE_ALL, 0);
+	dmaengine_terminate_all(dtc->chan);
 
 	kfree(dtc);
 }
