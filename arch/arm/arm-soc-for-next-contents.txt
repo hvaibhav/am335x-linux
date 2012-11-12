@@ -57,7 +57,7 @@ socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
 
 next/drivers:
 vexpress/drivers	git://git.linaro.org/people/pawelmoll/linux vexpress/drivers
-
+ux500/pins		http://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git tags/ux500-pins-for-arm-soc
 
 depends/clk:		common clock tree
 depends/asoc		renesas bits of the asoc tree
