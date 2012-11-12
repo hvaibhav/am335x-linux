@@ -67,5 +67,7 @@ renesas/boards2		depends on renesas/soc, renesas/soc2, renesas/boards and depend
 next/soc2
 vexpress/soc		git://git.linaro.org/people/pawelmoll/linux vexpress-soc
 				depends on depends/clk
+renesas/soc3		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git soc2
+				depends on renesas/boards2
 
 
