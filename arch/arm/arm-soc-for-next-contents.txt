@@ -39,6 +39,7 @@ integrator/irq		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integ
 + patch "ARM: highbank: add ifdef guards to core.h"
 + patch <201211062208.47390.arnd@arndb.de>
 lpc32xx/soc		git://git.antcom.de/linux-2.6.git lpc32xx/core
+renesas/soc2		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git soc
 
 next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
