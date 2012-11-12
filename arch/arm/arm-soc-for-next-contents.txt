@@ -38,6 +38,7 @@ calxeda/ecx-2000	git://sources.calxeda.com/kernel/linux.git tags/calxeda-ecx-200
 integrator/irq		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator.git tags/integrator-irq
 + patch "ARM: highbank: add ifdef guards to core.h"
 + patch <201211062208.47390.arnd@arndb.de>
+lpc32xx/soc		git://git.antcom.de/linux-2.6.git lpc32xx/core
 
 next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
