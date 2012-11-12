@@ -4,7 +4,8 @@ External dependencies:
 depends/tty             gregkh's tty tree @54ec52b6dd3b0ba4bc4eb97e7e1b2534705b326c
 depends/omap-cleanup-headers-usb        git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-usb
 depends/omap-cleanup-headers-menelaus   git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-menelaus
-
+depends/clk:		common clock tree
+depends/asoc		renesas bits of the asoc tree
 
 next/fixes-non-critical:
 vexpress/fixes		git://git.linaro.org/people/pawelmoll/linux.git vexpress-fixes
@@ -60,8 +61,6 @@ next/drivers:
 vexpress/drivers	git://git.linaro.org/people/pawelmoll/linux vexpress/drivers
 ux500/pins		http://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git tags/ux500-pins-for-arm-soc
 
-depends/clk:		common clock tree
-depends/asoc		renesas bits of the asoc tree
 
 next/boards2:
 renesas/boards2		depends on renesas/soc, renesas/soc2, renesas/boards and depends/asoc
