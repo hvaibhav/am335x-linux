@@ -24,6 +24,7 @@ omap/cleanup-headers-3  git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/lin
 			depends on depends/tty and depends/omap-cleanup*
 omap/cleanup-prcm	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-prcm-part1-take2-signed
 cleanups/dma		<1352360783-17523-1-git-send-email-m.szyprowski@samsung.com>
+at91/header		git://github.com/at91linux/linux-at91.git tags/for-3.8-at91_header_clean
 
 
 next/multiplatform:
