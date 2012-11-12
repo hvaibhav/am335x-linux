@@ -59,6 +59,10 @@ vexpress/drivers	git://git.linaro.org/people/pawelmoll/linux vexpress/drivers
 
 
 depends/clk:		common clock tree
+depends/asoc		renesas bits of the asoc tree
+
+next/boards2:
+renesas/boards2		depends on renesas/soc, renesas/soc2, renesas/boards and depends/asoc
 
 next/soc2
 vexpress/soc		git://git.linaro.org/people/pawelmoll/linux vexpress-soc
