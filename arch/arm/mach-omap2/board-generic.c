@@ -21,6 +21,7 @@
 
 #include "common.h"
 #include "common-board-devices.h"
+#include "dss-common.h"
 
 #if !(defined(CONFIG_ARCH_OMAP2) || defined(CONFIG_ARCH_OMAP3))
 #define intc_of_init	NULL
@@ -40,6 +41,15 @@ static void __init omap_generic_init(void)
 	omap_sdrc_init(NULL, NULL);
 
 	of_platform_populate(NULL, omap_dt_match_table, NULL, NULL);
+
+	/*
+	 * HACK: call display setup code for selected boards to enable omapdss.
+	 * This will be removed when omapdss supports DT.
+	 */
+	if (of_machine_is_compatible("ti,omap4-panda"))
+		omap4_panda_display_init_of();
+	else if (of_machine_is_compatible("ti,omap4-sdp"))
+		omap_4430sdp_display_init_of();
 }
 
 #ifdef CONFIG_SOC_OMAP2420
@@ -112,7 +122,7 @@ DT_MACHINE_START(OMAP3_GP_DT, "Generic OMAP3-GP (Flattened Device Tree)")
 	.init_machine	= omap_generic_init,
 	.timer		= &omap3_secure_timer,
 	.dt_compat	= omap3_gp_boards_compat,
-	.restart	= omap_prcm_restart,
+	.restart	= omap3xxx_restart,
 MACHINE_END
 #endif
 
