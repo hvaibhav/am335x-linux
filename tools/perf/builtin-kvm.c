@@ -313,9 +313,9 @@ struct vcpu_event_record {
 
 static void init_kvm_event_record(struct perf_kvm *kvm)
 {
-	int i;
+	unsigned int i;
 
-	for (i = 0; i < (int)EVENTS_CACHE_SIZE; i++)
+	for (i = 0; i < EVENTS_CACHE_SIZE; i++)
 		INIT_LIST_HEAD(&kvm->kvm_events_cache[i]);
 }
 
@@ -369,9 +369,10 @@ static struct kvm_event *find_create_kvm_event(struct perf_kvm *kvm,
 	BUG_ON(key->key == INVALID_KEY);
 
 	head = &kvm->kvm_events_cache[kvm_events_hash_fn(key->key)];
-	list_for_each_entry(event, head, hash_entry)
+	list_for_each_entry(event, head, hash_entry) {
 		if (event->key.key == key->key && event->key.info == key->info)
 			return event;
+	}
 
 	event = kvm_alloc_init_event(key);
 	if (!event)
@@ -416,7 +417,10 @@ static double kvm_event_rel_stddev(int vcpu_id, struct kvm_event *event)
 static bool update_kvm_event(struct kvm_event *event, int vcpu_id,
 			     u64 time_diff)
 {
-	kvm_update_event_stats(&event->total, time_diff);
+	if (vcpu_id == -1) {
+		kvm_update_event_stats(&event->total, time_diff);
+		return true;
+	}
 
 	if (!kvm_event_expand(event, vcpu_id))
 		return false;
@@ -432,6 +436,12 @@ static bool handle_end_event(struct perf_kvm *kvm,
 {
 	struct kvm_event *event;
 	u64 time_begin, time_diff;
+	int vcpu;
+
+	if (kvm->trace_vcpu == -1)
+		vcpu = -1;
+	else
+		vcpu = vcpu_record->vcpu_id;
 
 	event = vcpu_record->last_event;
 	time_begin = vcpu_record->start_time;
@@ -461,7 +471,7 @@ static bool handle_end_event(struct perf_kvm *kvm,
 	BUG_ON(timestamp < time_begin);
 
 	time_diff = timestamp - time_begin;
-	return update_kvm_event(event, vcpu_record->vcpu_id, time_diff);
+	return update_kvm_event(event, vcpu, time_diff);
 }
 
 static
@@ -496,6 +506,11 @@ static bool handle_kvm_event(struct perf_kvm *kvm,
 
 	vcpu_record = per_vcpu_record(thread, evsel, sample);
 	if (!vcpu_record)
+		return true;
+
+	/* only process events for vcpus user cares about */
+	if ((kvm->trace_vcpu != -1) &&
+	    (kvm->trace_vcpu != vcpu_record->vcpu_id))
 		return true;
 
 	if (kvm->events_ops->is_begin_event(evsel, sample, &key))
@@ -596,13 +611,15 @@ static void sort_result(struct perf_kvm *kvm)
 	int vcpu = kvm->trace_vcpu;
 	struct kvm_event *event;
 
-	for (i = 0; i < EVENTS_CACHE_SIZE; i++)
-		list_for_each_entry(event, &kvm->kvm_events_cache[i], hash_entry)
+	for (i = 0; i < EVENTS_CACHE_SIZE; i++) {
+		list_for_each_entry(event, &kvm->kvm_events_cache[i], hash_entry) {
 			if (event_is_valid(event, vcpu)) {
 				update_total_count(kvm, event);
 				insert_to_result(&kvm->result, event,
 						 kvm->compare, vcpu);
 			}
+		}
+	}
 }
 
 /* returns left most element of result, and erase it */
@@ -659,8 +676,8 @@ static void print_result(struct perf_kvm *kvm)
 		pr_info("\n");
 	}
 
-	pr_info("\nTotal Samples:%lld, Total events handled time:%.2fus.\n\n",
-		(unsigned long long)kvm->total_count, kvm->total_time / 1e3);
+	pr_info("\nTotal Samples:%" PRIu64 ", Total events handled time:%.2fus.\n\n",
+		kvm->total_count, kvm->total_time / 1e3);
 }
 
 static int process_sample_event(struct perf_tool *tool,

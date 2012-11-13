@@ -26,6 +26,7 @@
 #include "util/color.h"
 #include "util/evlist.h"
 #include "util/evsel.h"
+#include "util/machine.h"
 #include "util/session.h"
 #include "util/symbol.h"
 #include "util/thread.h"
@@ -871,7 +872,7 @@ static void perf_top__mmap_read_idx(struct perf_top *top, int idx)
 						   &sample, machine);
 		} else if (event->header.type < PERF_RECORD_MAX) {
 			hists__inc_nr_events(&evsel->hists, event->header.type);
-			perf_event__process(&top->tool, event, &sample, machine);
+			machine__process_event(machine, event);
 		} else
 			++session->hists.stats.nr_unknown_events;
 	}
@@ -975,6 +976,10 @@ try_again:
 			} else if (err == EMFILE) {
 				ui__error("Too many events are opened.\n"
 					    "Try again after reducing the number of events\n");
+				goto out_err;
+			} else if ((err == EOPNOTSUPP) && (attr->precise_ip)) {
+				ui__error("\'precise\' request may not be supported. "
+					  "Try removing 'p' modifier\n");
 				goto out_err;
 			}
 

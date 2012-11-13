@@ -24,6 +24,7 @@ const char perf_more_info_string[] =
 
 int use_browser = -1;
 static int use_pager = -1;
+const char *input_name;
 
 struct cmd_struct {
 	const char *cmd;
@@ -439,6 +440,8 @@ void pthread__unblock_sigwinch(void)
 int main(int argc, const char **argv)
 {
 	const char *cmd;
+
+	page_size = sysconf(_SC_PAGE_SIZE);
 
 	cmd = perf_extract_argv0_path(argv[0]);
 	if (!cmd)

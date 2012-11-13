@@ -140,8 +140,12 @@ enum {
 	PERF_HPP__OVERHEAD_GUEST_US,
 	PERF_HPP__SAMPLES,
 	PERF_HPP__PERIOD,
+	PERF_HPP__PERIOD_BASELINE,
 	PERF_HPP__DELTA,
+	PERF_HPP__RATIO,
+	PERF_HPP__WEIGHTED_DIFF,
 	PERF_HPP__DISPL,
+	PERF_HPP__FORMULA,
 
 	PERF_HPP__MAX_INDEX
 };
@@ -161,6 +165,7 @@ int hist_entry__tui_annotate(struct hist_entry *he, int evidx,
 int perf_evlist__tui_browse_hists(struct perf_evlist *evlist, const char *help,
 				  void(*timer)(void *arg), void *arg,
 				  int refresh);
+int script_browse(const char *script_opt);
 #else
 static inline
 int perf_evlist__tui_browse_hists(struct perf_evlist *evlist __maybe_unused,
@@ -182,6 +187,12 @@ static inline int hist_entry__tui_annotate(struct hist_entry *self
 {
 	return 0;
 }
+
+static inline int script_browse(const char *script_opt)
+{
+	return 0;
+}
+
 #define K_LEFT -1
 #define K_RIGHT -2
 #endif
@@ -204,4 +215,8 @@ int perf_evlist__gtk_browse_hists(struct perf_evlist *evlist __maybe_unused,
 
 unsigned int hists__sort_list_width(struct hists *self);
 
+double perf_diff__compute_delta(struct hist_entry *he);
+double perf_diff__compute_ratio(struct hist_entry *he);
+s64 perf_diff__compute_wdiff(struct hist_entry *he);
+int perf_diff__formula(char *buf, size_t size, struct hist_entry *he);
 #endif	/* __PERF_HIST_H */
