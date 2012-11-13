@@ -73,5 +73,6 @@ renesas/soc3		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git so
 				depends on renesas/boards2
 +patch <1352333341-9249-1-git-send-email-robherring2@gmail.com>
 			depends on calxeda/ecx-2000 and devel/debug_ll_init
+renesas/soc4		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git soc4
 
 
