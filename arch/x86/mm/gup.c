@@ -150,7 +150,13 @@ static int gup_pmd_range(pud_t pud, unsigned long addr, unsigned long end,
 
 	pmdp = pmd_offset(&pud, addr);
 	do {
-		pmd_t pmd = *pmdp;
+		/*
+		 * With THP and hugetlbfs the pmd can change from
+		 * under us and it can be cleared as well by the TLB
+		 * shootdown, so read it with ACCESS_ONCE to do all
+		 * computations on the same sampling.
+		 */
+		pmd_t pmd = ACCESS_ONCE(*pmdp);
 
 		next = pmd_addr_end(addr, end);
 		/*
@@ -220,7 +226,13 @@ static int gup_pud_range(pgd_t pgd, unsigned long addr, unsigned long end,
 
 	pudp = pud_offset(&pgd, addr);
 	do {
-		pud_t pud = *pudp;
+		/*
+		 * With hugetlbfs giga pages the pud can change from
+		 * under us and it can be cleared as well by the TLB
+		 * shootdown, so read it with ACCESS_ONCE to do all
+		 * computations on the same sampling.
+		 */
+		pud_t pud = ACCESS_ONCE(*pudp);
 
 		next = pud_addr_end(addr, end);
 		if (pud_none(pud))
@@ -280,7 +292,12 @@ int __get_user_pages_fast(unsigned long start, int nr_pages, int write,
 	local_irq_save(flags);
 	pgdp = pgd_offset(mm, addr);
 	do {
-		pgd_t pgd = *pgdp;
+		/*
+		 * The pgd could be cleared by the TLB shootdown from
+		 * under us so read it with ACCESS_ONCE to do all
+		 * computations on the same sampling.
+		 */
+		pgd_t pgd = ACCESS_ONCE(*pgdp);
 
 		next = pgd_addr_end(addr, end);
 		if (pgd_none(pgd))
