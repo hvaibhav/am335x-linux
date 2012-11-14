@@ -71,6 +71,6 @@ SCHED_FEAT(LB_MIN, false)
 /* Do the working set probing faults: */
 SCHED_FEAT(NUMA,             true)
 SCHED_FEAT(NUMA_FAULTS_UP,   true)
-SCHED_FEAT(NUMA_FAULTS_DOWN, false)
+SCHED_FEAT(NUMA_FAULTS_DOWN, true)
 SCHED_FEAT(NUMA_SETTLE,      true)
 #endif

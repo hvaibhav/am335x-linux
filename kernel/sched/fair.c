@@ -917,12 +917,12 @@ void task_numa_fault(int node, int last_cpu, int pages)
  */
 void task_numa_work(struct callback_head *work)
 {
+	long pages_total, pages_left, pages_changed;
 	unsigned long migrate, next_scan, now = jiffies;
+	unsigned long start0, start, end;
 	struct task_struct *p = current;
 	struct mm_struct *mm = p->mm;
 	struct vm_area_struct *vma;
-	unsigned long start, end;
-	long pages;
 
 	WARN_ON_ONCE(p != container_of(work, struct task_struct, numa_work));
 
@@ -951,35 +951,42 @@ void task_numa_work(struct callback_head *work)
 
 	current->numa_scan_period += jiffies_to_msecs(2);
 
-	start = mm->numa_scan_offset;
-	pages = sysctl_sched_numa_scan_size;
-	pages <<= 20 - PAGE_SHIFT; /* MB in pages */
-	if (!pages)
+	start0 = start = end = mm->numa_scan_offset;
+	pages_total = sysctl_sched_numa_scan_size;
+	pages_total <<= 20 - PAGE_SHIFT; /* MB in pages */
+	if (!pages_total)
 		return;
+
+	pages_left	= pages_total;
 
 	down_write(&mm->mmap_sem);
 	vma = find_vma(mm, start);
 	if (!vma) {
 		ACCESS_ONCE(mm->numa_scan_seq)++;
-		start = 0;
-		vma = mm->mmap;
+		end = 0;
+		vma = find_vma(mm, end);
 	}
 	for (; vma; vma = vma->vm_next) {
 		if (!vma_migratable(vma))
 			continue;
 
 		do {
-			start = max(start, vma->vm_start);
-			end = ALIGN(start + (pages << PAGE_SHIFT), HPAGE_SIZE);
+			start = max(end, vma->vm_start);
+			end = ALIGN(start + (pages_left << PAGE_SHIFT), HPAGE_SIZE);
 			end = min(end, vma->vm_end);
-			pages -= change_prot_numa(vma, start, end);
-			start = end;
-			if (pages <= 0)
+			pages_changed = change_prot_numa(vma, start, end);
+
+			WARN_ON_ONCE(pages_changed > pages_total);
+			BUG_ON(pages_changed < 0);
+
+			pages_left -= pages_changed;
+			if (pages_left <= 0)
 				goto out;
 		} while (end != vma->vm_end);
 	}
 out:
-	mm->numa_scan_offset = start;
+	mm->numa_scan_offset = end;
+
 	up_write(&mm->mmap_sem);
 }
 
@@ -3306,6 +3313,13 @@ static int select_idle_sibling(struct task_struct *p, int target)
 	int i;
 
 	/*
+	 * For NUMA tasks constant, reliable placement is more important
+	 * than flipping tasks between siblings:
+	 */
+	if (task_numa_shared(p) >= 0)
+		return target;
+
+	/*
 	 * If the task is going to be woken-up on this cpu and if it is
 	 * already idle, then it is the right target.
 	 */
@@ -4581,6 +4595,10 @@ static bool can_do_numa_run(struct lb_env *env, struct sd_lb_stats *sds)
 	 * If we got capacity allow stacking up on shared tasks.
 	 */
 	if ((sds->this_shared_running < sds->this_group_capacity) && sds->numa_shared_running) {
+		/* There's no point in trying to move if all are here already: */
+		if (sds->numa_shared_running == sds->this_shared_running)
+			return false;
+
 		env->flags |= LBF_NUMA_SHARED;
 		return true;
 	}
