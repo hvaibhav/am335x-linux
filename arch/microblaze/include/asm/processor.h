@@ -27,6 +27,8 @@ extern const struct seq_operations cpuinfo_op;
 #define task_pt_regs(tsk) \
 		(((struct pt_regs *)(THREAD_SIZE + task_stack_page(tsk))) - 1)
 
+#define current_pt_regs() task_pt_regs(current)
+
 /* Do necessary setup to start up a newly executed thread. */
 void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long usp);
 
