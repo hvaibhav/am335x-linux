@@ -865,8 +865,10 @@ static void task_numa_placement(struct task_struct *p)
 		}
 	}
 
-	if (max_node != p->numa_max_node)
+	if (max_node != p->numa_max_node) {
 		sched_setnuma(p, max_node, task_numa_shared(p));
+		goto out_backoff;
+	}
 
 	p->numa_migrate_seq++;
 	if (sched_feat(NUMA_SETTLE) &&
@@ -882,7 +884,11 @@ static void task_numa_placement(struct task_struct *p)
 	if (shared != task_numa_shared(p)) {
 		sched_setnuma(p, p->numa_max_node, shared);
 		p->numa_migrate_seq = 0;
+		goto out_backoff;
 	}
+	return;
+out_backoff:
+	p->numa_scan_period = min(p->numa_scan_period * 2, sysctl_sched_numa_scan_period_max);
 }
 
 /*

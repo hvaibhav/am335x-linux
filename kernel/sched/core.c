@@ -6029,6 +6029,12 @@ void sched_setnuma(struct task_struct *p, int node, int shared)
 	if (on_rq)
 		enqueue_task(rq, p, 0);
 	task_rq_unlock(rq, p, &flags);
+
+	/*
+	 * Reset the scanning period. If the task converges
+	 * on this node then we'll back off again:
+	 */
+	p->numa_scan_period = sysctl_sched_numa_scan_period_min;
 }
 
 #endif /* CONFIG_NUMA_BALANCING */
