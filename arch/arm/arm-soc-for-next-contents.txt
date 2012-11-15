@@ -62,11 +62,13 @@ ux500/dt		git://git.linaro.org/people/ljones/linux-3.0-ux500.git ste-dt-for-next
 omap/dt			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/dt-signed
                                 depends on omap/headers4
 
-
 next/pm:
 omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/pm-signed
-omap/clock		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/clock-signed
 omap/pm2		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/pm-part2-v3-signed
+
+next/clock:
+omap/clock		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/clock-signed
+				depends on omap/pm
 
 next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
