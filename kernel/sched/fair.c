@@ -852,12 +852,26 @@ static void task_numa_placement(struct task_struct *p)
 
 	p->numa_scan_seq = seq;
 
+	/*
+	 * Update the fault average with the result of the latest
+	 * scan:
+	 */
 	for (node = 0; node < nr_node_ids; node++) {
 		faults = 0;
 		for (priv = 0; priv < 2; priv++) {
-			faults += p->numa_faults[2*node + priv];
-			total[priv] += p->numa_faults[2*node + priv];
-			p->numa_faults[2*node + priv] /= 2;
+			unsigned int new_faults;
+			unsigned int idx;
+
+			idx = 2*node + priv;
+			new_faults = p->numa_faults_curr[idx];
+			p->numa_faults_curr[idx] = 0;
+
+			/* Keep a simple running average: */
+			p->numa_faults[idx] += new_faults;
+			p->numa_faults[idx] /= 2;
+
+			faults += p->numa_faults[idx];
+			total[priv] += p->numa_faults[idx];
 		}
 		if (faults > max_faults) {
 			max_faults = faults;
