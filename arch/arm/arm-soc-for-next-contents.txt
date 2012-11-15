@@ -61,6 +61,7 @@ socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
 next/drivers:
 vexpress/drivers	git://git.linaro.org/people/pawelmoll/linux vexpress/drivers
 ux500/pins		http://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git tags/ux500-pins-for-arm-soc
++ patch <1352976439-24133-1-git-send-email-linus.walleij@stericsson.com>
 
 
 next/boards2:
