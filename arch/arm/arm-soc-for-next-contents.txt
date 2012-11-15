@@ -11,6 +11,7 @@ next/fixes-non-critical:
 vexpress/fixes		git://git.linaro.org/people/pawelmoll/linux.git vexpress-fixes
 davinci/fixes		git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-for-v3.8/fixes
 +patch <201211081405.23202.arnd@arndb.de>
+omap/fixes		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/fixes-non-critical-v4-signed
 
 next/headers:
 omap/headers		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-signed
@@ -32,6 +33,8 @@ omap/cleanup-fixes	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-om
 				depends on omap/headers4
 omap/cleanup-prcm-part2	  git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-prcm-part2-signed
 				depends on omap/headers4
+omap/cleanup-fixes-2	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-fixes-part2-v2-signed
+				depends on omap/cleanup-fixes
 
 next/multiplatform:
 vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
@@ -52,12 +55,18 @@ renesas/soc2		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git so
 next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
 renesas/defconfig	git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git defconfig
+omap/board		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/board-v2-signed
 
 next/dt:
 ux500/dt		git://git.linaro.org/people/ljones/linux-3.0-ux500.git ste-dt-for-next
 omap/dt			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/dt-signed
                                 depends on omap/headers4
 
+
+next/pm:
+omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/pm-signed
+omap/clock		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/clock-signed
+omap/pm2		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/pm-part2-v3-signed
 
 next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
@@ -69,7 +78,10 @@ next/drivers:
 vexpress/drivers	git://git.linaro.org/people/pawelmoll/linux vexpress/drivers
 ux500/pins		http://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git tags/ux500-pins-for-arm-soc
 + patch <1352976439-24133-1-git-send-email-linus.walleij@stericsson.com>
-
+omap/gpmc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/gpmc-signed
+				depends on omap/headers4
+omap/timer		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/timer-signed
+				depends on omap/dt
 
 next/boards2:
 renesas/boards2		depends on renesas/soc, renesas/soc2, renesas/boards and depends/asoc
