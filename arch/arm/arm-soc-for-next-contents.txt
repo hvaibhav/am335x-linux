@@ -29,7 +29,9 @@ vt8500/cleanup		git://server.prisktech.co.nz/git/linuxwmt.git/ tags/cleanup-for-
 zynq/cleanup		git://git.xilinx.com/linux-xlnx.git arm-next
 cleanups/dma		<1352360783-17523-1-git-send-email-m.szyprowski@samsung.com>
 omap/cleanup-fixes	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-fixes-signed
-				depends on various branches in next/headers
+				depends on omap/headers4
+omap/cleanup-prcm-part2	  git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-prcm-part2-signed
+				depends on omap/headers4
 
 next/multiplatform:
 vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
@@ -53,6 +55,9 @@ renesas/defconfig	git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.gi
 
 next/dt:
 ux500/dt		git://git.linaro.org/people/ljones/linux-3.0-ux500.git ste-dt-for-next
+omap/dt			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/dt-signed
+                                depends on omap/headers4
+
 
 next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
