@@ -68,6 +68,7 @@ imx/dt			git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-dt
 zynq/dt			git://git.xilinx.com/linux-xlnx.git arm-next
 				depends on zynq/cleanup
 mxs/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git tags/mxs-dt-3.8
+imx/dt2			git://git.linaro.org/people/shawnguo/linux-2.6.git tags/imx-dt-3.8
 
 next/pm:
 omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/pm-signed
