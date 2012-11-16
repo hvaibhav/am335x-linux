@@ -63,6 +63,7 @@ next/dt:
 ux500/dt		git://git.linaro.org/people/ljones/linux-3.0-ux500.git ste-dt-for-next
 omap/dt			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/dt-signed
                                 depends on omap/headers4 and omap/cleanup-prcm
+next/dt			git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-dt
 
 next/pm:
 omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/pm-signed
