@@ -840,6 +840,14 @@ static void task_numa_migrate(struct task_struct *p, int next_cpu)
 	p->numa_migrate_seq = 0;
 }
 
+static int task_ideal_cpu(struct task_struct *p)
+{
+	if (!sched_feat(IDEAL_CPU))
+		return -1;
+
+	return p->ideal_cpu;
+}
+
 /*
  * Called for every full scan - here we consider switching to a new
  * shared buddy, if the one we found during this scan is good enough:
@@ -1028,7 +1036,7 @@ out_hit:
 	 * but don't stop the discovery of process level sharing
 	 * either:
 	 */
-	if (this_task->mm == last_task->mm)
+	if (sched_feat(IDEAL_CPU_THREAD_BIAS) && this_task->mm == last_task->mm)
 		pages *= 2;
 
 	this_task->shared_buddy_faults_curr += pages;
@@ -1189,6 +1197,7 @@ void task_tick_numa(struct rq *rq, struct task_struct *curr)
 }
 #else /* !CONFIG_NUMA_BALANCING: */
 #ifdef CONFIG_SMP
+static inline int task_ideal_cpu(struct task_struct *p)				{ return -1; }
 static inline void account_numa_enqueue(struct rq *rq, struct task_struct *p)	{ }
 #endif
 static inline void account_numa_dequeue(struct rq *rq, struct task_struct *p)	{ }
@@ -4064,6 +4073,7 @@ struct lb_env {
 static void move_task(struct task_struct *p, struct lb_env *env)
 {
 	deactivate_task(env->src_rq, p, 0);
+
 	set_task_cpu(p, env->dst_cpu);
 	activate_task(env->dst_rq, p, 0);
 	check_preempt_curr(env->dst_rq, p, 0);
@@ -4242,15 +4252,17 @@ static bool can_migrate_numa_task(struct task_struct *p, struct lb_env *env)
 	 *
 	 * LBF_NUMA_RUN    -- numa only, only allow improvement
 	 * LBF_NUMA_SHARED -- shared only
+	 * LBF_NUMA_IDEAL  -- ideal only
 	 *
 	 * LBF_KEEP_SHARED -- do not touch shared tasks
 	 */
 
 	/* a numa run can only move numa tasks about to improve things */
 	if (env->flags & LBF_NUMA_RUN) {
-		if (task_numa_shared(p) < 0)
+		if (task_numa_shared(p) < 0 && task_ideal_cpu(p) < 0)
 			return false;
-		/* can only pull shared tasks */
+
+		/* If we are only allowed to pull shared tasks: */
 		if ((env->flags & LBF_NUMA_SHARED) && !task_numa_shared(p))
 			return false;
 	} else {
@@ -4306,6 +4318,23 @@ static int can_migrate_task(struct task_struct *p, struct lb_env *env)
 
 	if (!can_migrate_running_task(p, env))
 		return false;
+
+#ifdef CONFIG_NUMA_BALANCING
+	/* If we are only allowed to pull ideal tasks: */
+	if ((task_ideal_cpu(p) >= 0) && (p->shared_buddy_faults > 1000)) {
+		int ideal_node;
+		int dst_node;
+
+		BUG_ON(env->dst_cpu < 0);
+
+		ideal_node = cpu_to_node(p->ideal_cpu);
+		dst_node = cpu_to_node(env->dst_cpu);
+
+		if (ideal_node == dst_node)
+			return true;
+		return false;
+	}
+#endif
 
 	if (env->sd->flags & SD_NUMA)
 		return can_migrate_numa_task(p, env);
