@@ -55,6 +55,7 @@ renesas/soc2		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git so
 imx/soc			git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-soc
 				depends on imx/multiplatform
 davinci/soc		git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-for-v3.8/soc
++patch <1353347170-10257-1-git-send-email-csd@broadcom.com> "[PATCH V6] Add support for generic BCM SoC chipsets"
 
 next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
