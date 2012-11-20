@@ -60,6 +60,8 @@ next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
 renesas/defconfig	git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git defconfig
 omap/board		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/board-v2-signed
+davinci/board		git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-for-v3.8/board
+				depends on davinci/soc
 
 next/dt:
 ux500/dt		git://git.linaro.org/people/ljones/linux-3.0-ux500.git ste-dt-for-next
