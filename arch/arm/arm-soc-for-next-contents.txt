@@ -70,6 +70,9 @@ zynq/dt			git://git.xilinx.com/linux-xlnx.git arm-next
 				depends on zynq/cleanup
 mxs/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git tags/mxs-dt-3.8
 imx/dt2			git://git.linaro.org/people/shawnguo/linux-2.6.git tags/imx-dt-3.8
+davinci/dt		git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-for-v3.8/dt
+				depends on davinci/soc
+				+ local patch to move dtb targets
 
 next/pm:
 omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/pm-signed
