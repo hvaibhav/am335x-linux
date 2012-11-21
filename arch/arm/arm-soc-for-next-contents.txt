@@ -12,6 +12,7 @@ vexpress/fixes		git://git.linaro.org/people/pawelmoll/linux.git vexpress-fixes
 davinci/fixes		git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-for-v3.8/fixes
 +patch <201211081405.23202.arnd@arndb.de>
 omap/fixes		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/fixes-non-critical-v4-signed
+pxa/fixes		git://github.com/hzhuang1/linux.git armsoc/fix
 
 next/headers:
 omap/headers		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-signed
