@@ -128,6 +128,7 @@ omap/timer		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags
 
 next/boards2:
 renesas/boards2		depends on renesas/soc, renesas/soc2, renesas/boards and depends/asoc
+renesas/boards3		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards3
 
 next/soc2
 vexpress/soc		git://git.linaro.org/people/pawelmoll/linux vexpress-soc
