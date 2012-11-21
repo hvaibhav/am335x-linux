@@ -78,6 +78,7 @@ calxeda/debug_ll	git://sources.calxeda.com/kernel/linux.git tags/highbank-debugl
 calxeda/cpuidle		git://sources.calxeda.com/kernel/linux.git tags/highbank-cpuidle
 clps711x/soc2		Patch series from email <1353160644-22446-1-git-send-email-shc_work@mail.ru>
 samsung/pinctrl		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/pinctrl-samsung
+sunxi/soc2		git://github.com/mripard/linux.git tags/tags/sun4i-support-for-3.8
 
 next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
