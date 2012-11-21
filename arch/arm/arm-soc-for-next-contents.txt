@@ -44,13 +44,6 @@ tegra/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra
 bcm2835/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-rpi.git bcm2835-for-3.8-cleanup
 samsung/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung-2
 
-next/multiplatform:
-vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
-devel/debug_ll_init     patch <1350927774-14020-1-git-send-email-swarren@wwwdotorg.org>
-nomadik/plat-removal	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.git tags/kill-plat-sparse-irq
-ux500/mtu-clk		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git tags/mtu-clk-for-arm-soc
-tegra/single-zimage	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-single-zimage
-
 next/soc:
 ux500/core		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
 clps711x/soc           patches from Alexander Shiyan <shc_work@mail.ru>
@@ -109,6 +102,14 @@ tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git 
 lpc32xx/dt		git://git.antcom.de/linux-2.6.git tags/lpc32xx-dts-for-3.7
 samsung/hdmi		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/hdmi-samsung
 samsung/dt		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/dt-samsung
+
+next/multiplatform:
+vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
+devel/debug_ll_init     patch <1350927774-14020-1-git-send-email-swarren@wwwdotorg.org>
+nomadik/plat-removal	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.git tags/kill-plat-sparse-irq
+ux500/mtu-clk		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git tags/mtu-clk-for-arm-soc
+tegra/single-zimage	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-single-zimage
+zynq/multiplatform	git://git.monstr.eu/linux-2.6-microblaze.git zynq/multiplatform
 
 next/pm:
 omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/pm-signed

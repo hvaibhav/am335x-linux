@@ -496,6 +496,7 @@ config DEBUG_LL_INCLUDE
 	default "debug/vexpress.S" if DEBUG_VEXPRESS_UART0_DETECT || \
 		DEBUG_VEXPRESS_UART0_CA9 || DEBUG_VEXPRESS_UART0_RS1
 	default "debug/tegra.S" if DEBUG_TEGRA_UART
+	default "debug/zynq.S" if DEBUG_ZYNQ_UART0 || DEBUG_ZYNQ_UART1
 	default "mach/debug-macro.S"
 
 config EARLY_PRINTK
