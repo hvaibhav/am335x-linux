@@ -52,6 +52,7 @@ tegra/single-zimage	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-
 
 next/soc:
 ux500/core		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
+clps711x/soc           patches from Alexander Shiyan <shc_work@mail.ru>
 renesas/soc		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas soc
 calxeda/ecx-2000	git://sources.calxeda.com/kernel/linux.git tags/calxeda-ecx-2000
 integrator/irq		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator.git tags/integrator-irq
@@ -63,8 +64,6 @@ imx/soc			git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-soc
 				depends on imx/multiplatform
 davinci/soc		git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-for-v3.8/soc
 +patch <1353347170-10257-1-git-send-email-csd@broadcom.com> "[PATCH V6] Add support for generic BCM SoC chipsets"
-clps711x/soc2		from patches
-				depends on depends/pinctrl-devel
 sunxi/soc		git://github.com/mripard/linux.git tags/tags/sunxi-support-for-3.8
 tegra/soc		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-soc
 tegra/cpuidle		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-cpuidle
