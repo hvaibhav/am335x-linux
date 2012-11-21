@@ -136,7 +136,7 @@ next/boards2:
 renesas/boards2		depends on renesas/soc, renesas/soc2, renesas/boards and depends/asoc
 renesas/boards3		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards3
 
-next/soc2
+next/soc2:
 vexpress/soc		git://git.linaro.org/people/pawelmoll/linux vexpress-soc
 				depends on depends/clk
 renesas/soc3		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git soc2
@@ -144,5 +144,5 @@ renesas/soc3		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git so
 +patch <1352333341-9249-1-git-send-email-robherring2@gmail.com>
 			depends on calxeda/ecx-2000 and devel/debug_ll_init
 renesas/soc4		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git soc4
-
+samsung/devel		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung
 
