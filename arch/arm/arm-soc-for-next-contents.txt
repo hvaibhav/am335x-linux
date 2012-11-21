@@ -130,6 +130,7 @@ omap/gpmc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/
 				depends on omap/headers4
 omap/timer		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/timer-signed
 				depends on omap/dt
+samsung/gpio		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/gpio-samsung
 
 next/boards2:
 renesas/boards2		depends on renesas/soc, renesas/soc2, renesas/boards and depends/asoc
