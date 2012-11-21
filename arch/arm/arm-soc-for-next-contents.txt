@@ -35,6 +35,10 @@ omap/cleanup-prcm-part2	  git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/l
 				depends on omap/headers4
 omap/cleanup-fixes-2	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-fixes-part2-v2-signed
 				depends on omap/cleanup-fixes
+at91/cleanup		git://github.com/at91linux/linux-at91.git tags/at91-for-next-cleanup
+tegra/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-cleanup
+bcm2835/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-rpi.git bcm2835-for-3.8-cleanup
+
 
 next/multiplatform:
 vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
