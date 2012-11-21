@@ -37,6 +37,9 @@ config CLKSRC_NOMADIK_MTU_SCHED_CLOCK
 	help
 	  Use the Multi Timer Unit as the sched_clock.
 
+config SUNXI_TIMER
+	bool
+
 config CLKSRC_DBX500_PRCMU
 	bool "Clocksource PRCMU Timer"
 	depends on UX500_SOC_DB8500
