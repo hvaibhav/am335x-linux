@@ -108,6 +108,7 @@ at91/dt			git://github.com/at91linux/linux-at91.git tags/at91-for-next-dt
 tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-dt
 lpc32xx/dt		git://git.antcom.de/linux-2.6.git tags/lpc32xx-dts-for-3.7
 samsung/hdmi		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/hdmi-samsung
+samsung/dt		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/dt-samsung
 
 next/pm:
 omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/pm-signed
