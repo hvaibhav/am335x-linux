@@ -48,6 +48,7 @@ vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-
 devel/debug_ll_init     patch <1350927774-14020-1-git-send-email-swarren@wwwdotorg.org>
 nomadik/plat-removal	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.git tags/kill-plat-sparse-irq
 ux500/mtu-clk		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git tags/mtu-clk-for-arm-soc
+tegra/single-zimage	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-single-zimage
 
 next/soc:
 ux500/core		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
