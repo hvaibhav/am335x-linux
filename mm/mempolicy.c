@@ -118,20 +118,12 @@ static struct mempolicy default_policy_local = {
 	.flags		= MPOL_F_LOCAL,
 };
 
-/*
- * .v.nodes is set by numa_policy_init():
- */
-static struct mempolicy default_policy_shared = {
-	.refcnt			= ATOMIC_INIT(1), /* never free it */
-	.mode			= MPOL_INTERLEAVE,
-	.flags			= 0,
-};
-
 static struct mempolicy *default_policy(void)
 {
+#ifdef CONFIG_NUMA_BALANCING
 	if (task_numa_shared(current) == 1)
-		return &default_policy_shared;
-
+		return &current->numa_policy;
+#endif
 	return &default_policy_local;
 }
 
@@ -2576,8 +2568,6 @@ void __init numa_policy_init(void)
 			.v = { .preferred_node = nid, },
 		};
 	}
-
-	default_policy_shared.v.nodes = node_online_map;
 
 	/*
 	 * Set interleaving policy for system init. Interleaving is only

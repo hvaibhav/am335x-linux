@@ -72,6 +72,7 @@
 #include <linux/slab.h>
 #include <linux/init_task.h>
 #include <linux/binfmts.h>
+#include <uapi/linux/mempolicy.h>
 
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
@@ -1563,6 +1564,12 @@ static void __sched_fork(struct task_struct *p)
 	p->shared_buddy_faults = 0;
 	p->ideal_cpu = -1;
 	p->ideal_cpu_curr = -1;
+	atomic_set(&p->numa_policy.refcnt, 1);
+	p->numa_policy.mode = MPOL_INTERLEAVE;
+	p->numa_policy.flags = 0;
+	p->numa_policy.v.preferred_node = 0;
+	p->numa_policy.v.nodes = node_online_map;
+
 #endif /* CONFIG_NUMA_BALANCING */
 }
 

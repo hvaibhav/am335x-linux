@@ -1517,6 +1517,7 @@ struct task_struct {
 	struct task_struct *shared_buddy, *shared_buddy_curr;
 	unsigned long shared_buddy_faults, shared_buddy_faults_curr;
 	int ideal_cpu, ideal_cpu_curr, ideal_cpu_candidate;
+	struct mempolicy numa_policy;
 
 #endif /* CONFIG_NUMA_BALANCING */
 
