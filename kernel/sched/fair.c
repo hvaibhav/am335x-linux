@@ -1111,7 +1111,20 @@ static void task_numa_placement(struct task_struct *p)
 	 * we might want to consider a different equation below to reduce
 	 * the impact of a little private memory accesses.
 	 */
-	shared = (total[0] >= total[1] / 2);
+	shared = p->numa_shared;
+
+	if (shared < 0) {
+		shared = (total[0] >= total[1]);
+	} else if (shared == 0) {
+		/* If it was private before, make it harder to become shared: */
+		if (total[0] >= total[1]*2)
+			shared = 1;
+	} else if (shared == 1 ) {
+		 /* If it was shared before, make it harder to become private: */
+		if (total[0]*2 <= total[1])
+			shared = 0;
+	}
+
 	if (shared)
 		p->ideal_cpu = sched_update_ideal_cpu_shared(p);
 	else
