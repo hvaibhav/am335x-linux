@@ -1034,6 +1034,7 @@ int do_huge_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	page = pmd_page(pmd);
 	get_page(page);
 	spin_unlock(&mm->page_table_lock);
+	count_vm_numa_event(NUMA_HINT_FAULTS);
 
 	target_nid = mpol_misplaced(page, vma, haddr);
 	if (target_nid == -1)
