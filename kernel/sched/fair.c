@@ -848,6 +848,181 @@ static int task_ideal_cpu(struct task_struct *p)
 	return p->ideal_cpu;
 }
 
+
+static int sched_update_ideal_cpu_shared(struct task_struct *p)
+{
+	int full_buddies;
+	int max_buddies;
+	int target_cpu;
+	int ideal_cpu;
+	int this_cpu;
+	int this_node;
+	int best_node;
+	int buddies;
+	int node;
+	int cpu;
+
+	if (!sched_feat(PUSH_SHARED_BUDDIES))
+		return -1;
+
+	ideal_cpu = -1;
+	best_node = -1;
+	max_buddies = 0;
+	this_cpu = task_cpu(p);
+	this_node = cpu_to_node(this_cpu);
+
+	for_each_online_node(node) {
+		full_buddies = cpumask_weight(cpumask_of_node(node));
+
+		buddies = 0;
+		target_cpu = -1;
+
+		for_each_cpu(cpu, cpumask_of_node(node)) {
+			struct task_struct *curr;
+			struct rq *rq;
+
+			WARN_ON_ONCE(cpu_to_node(cpu) != node);
+
+			rq = cpu_rq(cpu);
+
+			/*
+			 * Don't take the rq lock for scalability,
+			 * we only rely on rq->curr statistically:
+			 */
+			curr = ACCESS_ONCE(rq->curr);
+
+			if (curr == p) {
+				buddies += 1;
+				continue;
+			}
+
+			/* Pick up idle tasks immediately: */
+			if (curr == rq->idle && !rq->curr_buddy)
+				target_cpu = cpu;
+
+			/* Leave alone non-NUMA tasks: */
+			if (task_numa_shared(curr) < 0)
+				continue;
+
+			/* Private task is an easy target: */
+			if (task_numa_shared(curr) == 0) {
+				if (!rq->curr_buddy)
+					target_cpu = cpu;
+				continue;
+			}
+			if (curr->mm != p->mm) {
+				/* Leave alone different groups on their ideal node: */
+				if (cpu_to_node(curr->ideal_cpu) == node)
+					continue;
+				if (!rq->curr_buddy)
+					target_cpu = cpu;
+				continue;
+			}
+
+			buddies++;
+		}
+		WARN_ON_ONCE(buddies > full_buddies);
+
+		/* Don't go to a node that is already at full capacity: */
+		if (buddies == full_buddies)
+			continue;
+
+		if (!buddies)
+			continue;
+
+		if (buddies > max_buddies && target_cpu != -1) {
+			max_buddies = buddies;
+			best_node = node;
+			WARN_ON_ONCE(target_cpu == -1);
+			ideal_cpu = target_cpu;
+		}
+	}
+
+	WARN_ON_ONCE(best_node == -1 && ideal_cpu != -1);
+	WARN_ON_ONCE(best_node != -1 && ideal_cpu == -1);
+
+	this_node = cpu_to_node(this_cpu);
+
+	/* If we'd stay within this node then stay put: */
+	if (ideal_cpu == -1 || cpu_to_node(ideal_cpu) == this_node)
+		ideal_cpu = this_cpu;
+
+	return ideal_cpu;
+}
+
+static int sched_update_ideal_cpu_private(struct task_struct *p)
+{
+	int full_idles;
+	int this_idles;
+	int max_idles;
+	int target_cpu;
+	int ideal_cpu;
+	int best_node;
+	int this_node;
+	int this_cpu;
+	int idles;
+	int node;
+	int cpu;
+
+	if (!sched_feat(PUSH_PRIVATE_BUDDIES))
+		return -1;
+
+	ideal_cpu = -1;
+	best_node = -1;
+	max_idles = 0;
+	this_idles = 0;
+	this_cpu = task_cpu(p);
+	this_node = cpu_to_node(this_cpu);
+
+	for_each_online_node(node) {
+		full_idles = cpumask_weight(cpumask_of_node(node));
+
+		idles = 0;
+		target_cpu = -1;
+
+		for_each_cpu(cpu, cpumask_of_node(node)) {
+			struct rq *rq;
+
+			WARN_ON_ONCE(cpu_to_node(cpu) != node);
+
+			rq = cpu_rq(cpu);
+			if (rq->curr == rq->idle) {
+				if (!rq->curr_buddy)
+					target_cpu = cpu;
+				idles++;
+			}
+		}
+		WARN_ON_ONCE(idles > full_idles);
+
+		if (node == this_node)
+			this_idles = idles;
+
+		if (!idles)
+			continue;
+
+		if (idles > max_idles && target_cpu != -1) {
+			max_idles = idles;
+			best_node = node;
+			WARN_ON_ONCE(target_cpu == -1);
+			ideal_cpu = target_cpu;
+		}
+	}
+
+	WARN_ON_ONCE(best_node == -1 && ideal_cpu != -1);
+	WARN_ON_ONCE(best_node != -1 && ideal_cpu == -1);
+
+	/* If the target is not idle enough, skip: */
+	if (max_idles <= this_idles+1)
+		ideal_cpu = this_cpu;
+		
+	/* If we'd stay within this node then stay put: */
+	if (ideal_cpu == -1 || cpu_to_node(ideal_cpu) == this_node)
+		ideal_cpu = this_cpu;
+
+	return ideal_cpu;
+}
+
+
 /*
  * Called for every full scan - here we consider switching to a new
  * shared buddy, if the one we found during this scan is good enough:
@@ -862,7 +1037,6 @@ static void shared_fault_full_scan_done(struct task_struct *p)
 		WARN_ON_ONCE(!p->shared_buddy_curr);
 		p->shared_buddy			= p->shared_buddy_curr;
 		p->shared_buddy_faults		= p->shared_buddy_faults_curr;
-		p->ideal_cpu			= p->ideal_cpu_curr;
 
 		goto clear_buddy;
 	}
@@ -891,13 +1065,12 @@ static void task_numa_placement(struct task_struct *p)
 	unsigned long total[2] = { 0, 0 };
 	unsigned long faults, max_faults = 0;
 	int node, priv, shared, max_node = -1;
+	int this_node;
 
 	if (p->numa_scan_seq == seq)
 		return;
 
 	p->numa_scan_seq = seq;
-
-	shared_fault_full_scan_done(p);
 
 	/*
 	 * Update the fault average with the result of the latest
@@ -926,10 +1099,7 @@ static void task_numa_placement(struct task_struct *p)
 		}
 	}
 
-	if (max_node != p->numa_max_node) {
-		sched_setnuma(p, max_node, task_numa_shared(p));
-		goto out_backoff;
-	}
+	shared_fault_full_scan_done(p);
 
 	p->numa_migrate_seq++;
 	if (sched_feat(NUMA_SETTLE) &&
@@ -942,14 +1112,55 @@ static void task_numa_placement(struct task_struct *p)
 	 * the impact of a little private memory accesses.
 	 */
 	shared = (total[0] >= total[1] / 2);
-	if (shared != task_numa_shared(p)) {
-		sched_setnuma(p, p->numa_max_node, shared);
-		p->numa_migrate_seq = 0;
-		goto out_backoff;
+	if (shared)
+		p->ideal_cpu = sched_update_ideal_cpu_shared(p);
+	else
+		p->ideal_cpu = sched_update_ideal_cpu_private(p);
+
+	if (p->ideal_cpu >= 0) {
+		/* Filter migrations a bit - the same target twice in a row is picked: */
+		if (p->ideal_cpu == p->ideal_cpu_candidate) {
+			max_node = cpu_to_node(p->ideal_cpu);
+		} else {
+			p->ideal_cpu_candidate = p->ideal_cpu;
+			max_node = -1;
+		}
+	} else {
+		if (max_node < 0)
+			max_node = p->numa_max_node;
 	}
-	return;
-out_backoff:
-	p->numa_scan_period = min(p->numa_scan_period * 2, sysctl_sched_numa_scan_period_max);
+
+	if (shared != task_numa_shared(p) || (max_node != -1 && max_node != p->numa_max_node)) {
+
+		p->numa_migrate_seq = 0;
+		/*
+		 * Fix up node migration fault statistics artifact, as we
+		 * migrate to another node we'll soon bring over our private
+		 * working set - generating 'shared' faults as that happens.
+		 * To counter-balance this effect, move this node's private
+		 * stats to the new node.
+		 */
+		if (max_node != -1 && p->numa_max_node != -1 && max_node != p->numa_max_node) {
+			int idx_oldnode = p->numa_max_node*2 + 1;
+			int idx_newnode = max_node*2 + 1;
+
+			p->numa_faults[idx_newnode] += p->numa_faults[idx_oldnode];
+			p->numa_faults[idx_oldnode] = 0;
+		}
+		sched_setnuma(p, max_node, shared);
+	} else {
+		/* node unchanged, back off: */
+		p->numa_scan_period = min(p->numa_scan_period * 2, sysctl_sched_numa_scan_period_max);
+	}
+
+	this_node = cpu_to_node(task_cpu(p));
+
+	if (max_node >= 0 && p->ideal_cpu >= 0 && max_node != this_node) {
+		struct rq *rq = cpu_rq(p->ideal_cpu);
+
+		rq->curr_buddy = p;
+		sched_rebalance_to(p->ideal_cpu);
+	}
 }
 
 /*
@@ -1050,6 +1261,8 @@ void task_numa_fault(int node, int last_cpu, int pages)
 	struct task_struct *p = current;
 	int priv = (task_cpu(p) == last_cpu);
 	int idx = 2*node + priv;
+
+	WARN_ON_ONCE(last_cpu < 0 || node < 0);
 
 	if (unlikely(!p->numa_faults)) {
 		int entries = 2*nr_node_ids;
@@ -3544,6 +3757,11 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 
 	if (p->nr_cpus_allowed == 1)
 		return prev_cpu;
+
+#ifdef CONFIG_NUMA_BALANCING
+	if (sched_feat(WAKE_ON_IDEAL_CPU) && p->ideal_cpu >= 0)
+		return p->ideal_cpu;
+#endif
 
 	if (sd_flag & SD_BALANCE_WAKE) {
 		if (cpumask_test_cpu(cpu, tsk_cpus_allowed(p)))

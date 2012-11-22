@@ -2589,6 +2589,22 @@ unlock:
 	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
 }
 
+/*
+ * sched_rebalance_to()
+ *
+ * Active load-balance to a target CPU.
+ */
+void sched_rebalance_to(int dest_cpu)
+{
+	struct task_struct *p = current;
+	struct migration_arg arg = { p, dest_cpu };
+
+	if (!cpumask_test_cpu(dest_cpu, tsk_cpus_allowed(p)))
+		return;
+
+	stop_one_cpu(raw_smp_processor_id(), migration_cpu_stop, &arg);
+}
+
 #endif
 
 DEFINE_PER_CPU(struct kernel_stat, kstat);
@@ -4746,6 +4762,9 @@ static int __migrate_task(struct task_struct *p, int src_cpu, int dest_cpu)
 done:
 	ret = 1;
 fail:
+#ifdef CONFIG_NUMA_BALANCING
+	rq_dest->curr_buddy = NULL;
+#endif
 	double_rq_unlock(rq_src, rq_dest);
 	raw_spin_unlock(&p->pi_lock);
 	return ret;
