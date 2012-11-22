@@ -914,8 +914,8 @@ static void task_numa_placement(struct task_struct *p)
 			p->numa_faults_curr[idx] = 0;
 
 			/* Keep a simple running average: */
-			p->numa_faults[idx] += new_faults;
-			p->numa_faults[idx] /= 2;
+			p->numa_faults[idx] = p->numa_faults[idx]*7 + new_faults;
+			p->numa_faults[idx] /= 8;
 
 			faults += p->numa_faults[idx];
 			total[priv] += p->numa_faults[idx];
