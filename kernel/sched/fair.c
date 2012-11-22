@@ -922,6 +922,10 @@ static int sched_update_ideal_cpu_shared(struct task_struct *p)
 			buddies++;
 		}
 		WARN_ON_ONCE(buddies > full_buddies);
+		if (buddies)
+			node_set(node, p->numa_policy.v.nodes);
+		else
+			node_clear(node, p->numa_policy.v.nodes);
 
 		/* Don't go to a node that is already at full capacity: */
 		if (buddies == full_buddies)
