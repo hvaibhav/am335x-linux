@@ -6,7 +6,7 @@ depends/omap-cleanup-headers-usb        git://git.kernel.org/pub/scm/linux/kerne
 depends/omap-cleanup-headers-menelaus   git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-menelaus
 depends/clk:		common clock tree
 depends/asoc		renesas bits of the asoc tree
-depends/gpio-devel	gpio/devel branch @2cad6a8a4c31175578943f087e1dbef9f52e6ec3
+depends/gpio-devel	gpio/devel branch @tag  gpio-for-grant-v3.8 (b53bc2819a71099ecfc3d61ba0796b3dcc6be321)
 
 next/fixes-non-critical:
 vexpress/fixes		git://git.linaro.org/people/pawelmoll/linux.git vexpress-fixes
