@@ -721,13 +721,42 @@ config ARCH_USES_NUMA_PROT_NONE
 	depends on NUMA_BALANCING
 
 config NUMA_BALANCING
-	bool "Memory placement aware NUMA scheduler"
+	bool "NUMA-optimizing scheduler"
 	default n
 	depends on ARCH_SUPPORTS_NUMA_BALANCING
 	depends on !ARCH_WANT_NUMA_VARIABLE_LOCALITY
 	depends on SMP && NUMA && MIGRATION
 	help
-	  This option adds support for automatic NUMA aware memory/task placement.
+	  This option enables NUMA-aware, transparent, automatic
+	  placement optimizations of memory, tasks and task groups.
+
+	  The optimizations work by (transparently) runtime sampling the
+	  workload sharing relationship between threads and processes
+	  of long-run workloads, and scheduling them based on these
+	  measured inter-task relationships (or the lack thereof).
+
+	  ("Long-run" means several seconds of CPU runtime at least.)
+
+	  Tasks that predominantly perform their own processing, without
+	  interacting with other tasks much will be independently balanced
+	  to a CPU and their working set memory will migrate to that CPU/node.
+
+	  Tasks that share a lot of data with each other will be attempted to
+	  be scheduled on as few nodes as possible, with their memory
+	  following them there and being distributed between those nodes.
+
+	  This optimization can improve the performance of long-run CPU-bound
+	  workloads by 10% or more. The sampling and migration has a small
+	  but nonzero cost, so if your NUMA workload is already perfectly
+	  placed (for example by use of explicit CPU and memory bindings,
+	  or because the stock scheduler does a good job already) then you
+	  probably don't need this feature.
+
+	  [ On non-NUMA systems this feature will not be active. You can query
+	    whether your system is a NUMA system via looking at the output of
+	    "numactl --hardware". ]
+
+	  Say N if unsure.
 
 menuconfig CGROUPS
 	boolean "Control Group support"
