@@ -31,6 +31,9 @@
 		gsc1 = &gsc_1;
 		gsc2 = &gsc_2;
 		gsc3 = &gsc_3;
+		i2s0 = &i2s_0;
+		i2s1 = &i2s_1;
+		i2s2 = &i2s_2;
 	};
 
 	gic:interrupt-controller@10481000 {
@@ -216,6 +219,32 @@
 		interrupts = <0 78 0>;
 		#address-cells = <1>;
 		#size-cells = <0>;
+	};
+
+	i2s_0: i2s@03830000 {
+		compatible = "samsung,samsung-i2s";
+		reg = <0x03830000 0x100>;
+		tx-dma-channel-secondary = <&pdma0 8>; /* preliminary */
+		tx-dma-channel = <&pdma0 10>; /* preliminary */
+		rx-dma-channel = <&pdma0 9>; /* preliminary */
+		samsung,supports-6ch;
+		samsung,supports-rstclr;
+		samsung,supports-secdai;
+		samsung,idma-addr = <0x03000000>;
+	};
+
+	i2s_1: i2s@12D60000 {
+		compatible = "samsung,samsung-i2s";
+		reg = <0x12D60000 0x100>;
+		tx-dma-channel = <&pdma1 12>; /* preliminary */
+		rx-dma-channel = <&pdma1 11>; /* preliminary */
+	};
+
+	i2s_2: i2s@12D70000 {
+		compatible = "samsung,samsung-i2s";
+		reg = <0x12D70000 0x100>;
+		tx-dma-channel = <&pdma0 12>; /* preliminary */
+		rx-dma-channel = <&pdma0 11>; /* preliminary */
 	};
 
 	amba {
