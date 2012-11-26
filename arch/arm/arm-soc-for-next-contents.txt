@@ -7,6 +7,7 @@ depends/omap-cleanup-headers-menelaus   git://git.kernel.org/pub/scm/linux/kerne
 depends/clk:		common clock tree
 depends/asoc		renesas bits of the asoc tree
 depends/gpio-devel	gpio/devel branch @tag  gpio-for-grant-v3.8 (b53bc2819a71099ecfc3d61ba0796b3dcc6be321)
+depends/pinctrl-devel	pinctrl/devel branch @06763c741b0a1
 
 next/fixes-non-critical:
 vexpress/fixes		git://git.linaro.org/people/pawelmoll/linux.git vexpress-fixes
@@ -110,6 +111,7 @@ lpc32xx/dt		git://git.antcom.de/linux-2.6.git tags/lpc32xx-dts-for-3.7
 samsung/hdmi		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/hdmi-samsung
 samsung/dt		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/dt-samsung
 samsung/dt2		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/dt-samsung-2
+orion/dt		git://git.infradead.org/users/jcooper/linux.git tags/orion_dt_for_3.8
 
 next/multiplatform:
 vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
