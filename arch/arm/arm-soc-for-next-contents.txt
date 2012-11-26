@@ -8,6 +8,7 @@ depends/clk:		common clock tree
 depends/asoc		renesas bits of the asoc tree
 depends/gpio-devel	gpio/devel branch @tag  gpio-for-grant-v3.8 (b53bc2819a71099ecfc3d61ba0796b3dcc6be321)
 depends/pinctrl-devel	pinctrl/devel branch @06763c741b0a1
+depends/pinctrl-devel2  pinctrl/devel branch @4ddb1c2
 
 next/fixes-non-critical:
 vexpress/fixes		git://git.linaro.org/people/pawelmoll/linux.git vexpress-fixes
@@ -159,3 +160,6 @@ renesas/soc3		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git so
 renesas/soc4		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git soc4
 samsung/devel		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung
 
+next/dt2:
+spear/dt2:		git://git.linaro.org/people/vireshk/linux.git spear-for-3.8
+				depends on depends/pinctrl2
