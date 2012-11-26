@@ -23,9 +23,9 @@
 #include <linux/power/smartreflex.h>
 #include <linux/platform_data/omap_ocp2scp.h>
 #include <linux/i2c-omap.h>
+#include <linux/omap-dma.h>
 
-#include <plat-omap/dma-omap.h>
-
+#include <linux/platform_data/omap_ocp2scp.h>
 #include <linux/platform_data/spi-omap2-mcspi.h>
 #include <linux/platform_data/asoc-ti-mcbsp.h>
 #include <plat/dmtimer.h>
