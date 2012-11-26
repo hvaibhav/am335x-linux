@@ -14,6 +14,7 @@ davinci/fixes		git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-
 +patch <201211081405.23202.arnd@arndb.de>
 omap/fixes		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/fixes-non-critical-v4-signed
 pxa/fixes		git://github.com/hzhuang1/linux.git armsoc/fix
+				refetched @ d90cb69
 
 next/headers:
 omap/headers		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-signed
