@@ -386,6 +386,8 @@ static u32 notrace dmtimer_read_sched_clock(void)
 	return 0;
 }
 
+#if defined(CONFIG_ARCH_OMAP2) || defined(CONFIG_ARCH_OMAP3) || \
+	defined(CONFIG_ARCH_OMAP4) || defined(CONFIG_SOC_OMAP5)
 static struct of_device_id omap_counter_match[] __initdata = {
 	{ .compatible = "ti,omap-counter32k", },
 	{ }
@@ -451,6 +453,7 @@ static int __init omap2_sync32k_clocksource_init(void)
 
 	return ret;
 }
+#endif
 
 static void __init omap2_gptimer_clocksource_init(int gptimer_id,
 						const char *fck_source)
