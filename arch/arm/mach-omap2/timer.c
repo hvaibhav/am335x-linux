@@ -476,7 +476,7 @@ static void __init omap2_gptimer_clocksource_init(int gptimer_id,
 			gptimer_id, clksrc.rate);
 }
 
-#ifdef CONFIG_SOC_HAS_REALTIME_COUNTER
+#ifdef CONFIG_SOC_OMAP5
 /*
  * The realtime counter also called master counter, is a free-running
  * counter, which is related to real time. It produces the count used
@@ -549,10 +549,7 @@ static void __init realtime_counter_init(void)
 
 	iounmap(base);
 }
-#else
-static inline void __init realtime_counter_init(void)
-{}
-#endif
+#endif /* CONFIG_SOC_OMAP5 */
 
 #define OMAP_SYS_GP_TIMER_INIT(name, clkev_nr, clkev_src, clkev_prop,	\
 			       clksrc_nr, clksrc_src)			\

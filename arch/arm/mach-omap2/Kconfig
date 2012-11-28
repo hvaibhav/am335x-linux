@@ -24,9 +24,6 @@ config ARCH_OMAP2PLUS_TYPICAL
 config SOC_HAS_OMAP2_SDRC
 	bool "OMAP2 SDRAM Controller support"
 
-config SOC_HAS_REALTIME_COUNTER
-	bool "Real time free running counter"
-
 config ARCH_OMAP2
 	bool "TI OMAP2"
 	depends on ARCH_OMAP2PLUS
@@ -79,7 +76,6 @@ config SOC_OMAP5
 	select ARM_GIC
 	select CPU_V7
 	select HAVE_SMP
-	select SOC_HAS_REALTIME_COUNTER
 	select COMMON_CLK
 
 comment "OMAP Core Type"
