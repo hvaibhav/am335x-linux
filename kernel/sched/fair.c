@@ -1611,6 +1611,9 @@ static int sched_update_ideal_cpu_shared(struct task_struct *p, int *flip_tasks)
 	min_node_load = LONG_MAX;
 	min_node = -1;
 
+	if (sched_feat(NUMA_POLICY_MANYBUDDIES))
+		nodes_clear(p->numa_policy.v.nodes);
+
 	/*
 	 * Map out our maximum buddies layout:
 	 */
@@ -1677,15 +1680,27 @@ static int sched_update_ideal_cpu_shared(struct task_struct *p, int *flip_tasks)
 			min_node = node;
 		}
 
-		if (buddies)
-			node_set(node, p->numa_policy.v.nodes);
-		else
-			node_clear(node, p->numa_policy.v.nodes);
+		if (sched_feat(NUMA_POLICY_ADAPTIVE)) {
+			if (buddies)
+				node_set(node, p->numa_policy.v.nodes);
+			else
+				node_clear(node, p->numa_policy.v.nodes);
+		}
+
+		if (!buddies) {
+			if (sched_feat(NUMA_POLICY_MANYBUDDIES))
+				node_clear(node, p->numa_policy.v.nodes);
+			continue;
+		}
+
+		/* A majority of buddies attracts memory: */
+		if (sched_feat(NUMA_POLICY_MANYBUDDIES)) {
+			if (buddies >= 3)
+				node_set(node, p->numa_policy.v.nodes);
+		}
 
 		/* Don't go to a node that is near its capacity limit: */
 		if (node_load + SCHED_LOAD_SCALE > node_capacity)
-			continue;
-		if (!buddies)
 			continue;
 
 		if (buddies > max_buddies && target_cpu != -1) {
@@ -1696,6 +1711,13 @@ static int sched_update_ideal_cpu_shared(struct task_struct *p, int *flip_tasks)
 		}
 	}
 
+	/* Cluster memory around the buddies maximum: */
+	if (sched_feat(NUMA_POLICY_MAXBUDDIES)) {
+		if (ideal_node != -1) {
+			nodes_clear(p->numa_policy.v.nodes);
+			node_set(ideal_node, p->numa_policy.v.nodes);
+		}
+	}
 	if (WARN_ON_ONCE(ideal_node == -1 && ideal_cpu != -1))
 		return this_cpu;
 	if (WARN_ON_ONCE(ideal_node != -1 && ideal_cpu == -1))
@@ -2079,6 +2101,15 @@ static void task_numa_placement_tick(struct task_struct *p)
 			p->numa_faults[idx_oldnode] = 0;
 		}
 		sched_setnuma(p, ideal_node, shared);
+
+		/* Allocate only the maximum node: */
+		if (sched_feat(NUMA_POLICY_MAXNODE)) {
+			nodes_clear(p->numa_policy.v.nodes);
+			node_set(ideal_node, p->numa_policy.v.nodes);
+		}
+		/* Allocate system-wide: */
+		if (sched_feat(NUMA_POLICY_SYSWIDE))
+			p->numa_policy.v.nodes = node_online_map;
 		/*
 		 * We changed a node, start scanning more frequently again
 		 * to map out the working set:
@@ -2322,7 +2353,7 @@ void task_numa_scan_work(struct callback_head *work)
 		}
 
 		/* Skip small VMAs. They are not likely to be of relevance */
-		if (((vma->vm_end - vma->vm_start) >> PAGE_SHIFT) < HPAGE_PMD_NR) {
+		if (vma->vm_end - vma->vm_start < HPAGE_SIZE) {
 			end = vma->vm_end;
 			continue;
 		}

@@ -132,9 +132,9 @@ void update_rq_clock(struct rq *rq)
  */
 
 #define SCHED_FEAT(name, enabled)	\
-	(1UL << __SCHED_FEAT_##name) * enabled |
+	(1ULL << __SCHED_FEAT_##name) * enabled |
 
-const_debug unsigned int sysctl_sched_features =
+const_debug u64 sysctl_sched_features =
 #include "features.h"
 	0;
 
@@ -2833,6 +2833,8 @@ pick_next_task(struct rq *rq)
 	}
 
 	BUG(); /* the idle class will always have a runnable task */
+
+	return NULL; /* if BUG() is a NOP then return NULL to crash the scheduler */
 }
 
 /*
