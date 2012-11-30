@@ -19,6 +19,7 @@ pxa/fixes		git://github.com/hzhuang1/linux.git armsoc/fix
 				refetched @ d90cb69
 +patch <1353855220-5238-1-git-send-email-shc_work@mail.ru>
 ixp4xx/fixes		git://git.infradead.org/users/jcooper/linux ixp4xx_fixes_for_3.7
+renesas/maintainers	git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git maintainers
 
 
 next/headers:
