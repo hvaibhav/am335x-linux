@@ -103,6 +103,7 @@ samsung/boards		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsun
 imx/board		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-board
 imx/defconfig		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-defconfig
 orion/boards		git://git.infradead.org/users/jcooper/linux.git tags/orion_boards_for_3.8
+samsung/boards-2	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/board-samsung-2
 
 next/dt:
 ux500/dt		git://git.linaro.org/people/ljones/linux-3.0-ux500.git ste-dt-for-next
