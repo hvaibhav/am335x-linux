@@ -87,6 +87,7 @@ sunxi/soc2		git://github.com/mripard/linux.git tags/tags/sun4i-support-for-3.8
 imx/soc2		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-soc-1
 samsung/exynos5440	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/soc-exynos5440
 + patch  "ARM: EXYNOS: Avoid early use of of_machine_is_compatible()"
+samsung/cam		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cam-samsung
 
 next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
