@@ -1934,6 +1934,50 @@ clear_buddy:
 }
 
 /*
+ * Update the p->convergence_strength info, which is a value between 1 and 1024.
+ *
+ * A strength value of 1024 means that the workload has fully
+ * converged, all faults after the last scan period came from a
+ * single node.
+ *
+ * A value of 1024/nr_nodes means a totally spread out working set.
+ *
+ * 'max_faults' is the number of faults observed on the highest-faulting node.
+ * 'sum_faults' are all faults from the last scan, averaged over ~8 periods.
+ *
+ * The goal of the scheduler is to maximize convergence system-wide.
+ * Once a task has converged, it carries with it a non-trivial amount
+ * of working set. If such a task is migrated to another node later
+ * on then its working set will migrate there as well, which is a
+ * non-trivial cost.
+ *
+ * So the ultimate goal of NUMA scheduling is to let as many tasks
+ * converge as possible, and to run them as close to their memory
+ * as possible.
+ *
+ * ( Note: we could also sample migration activities to directly measure
+ *   how much convergence influx there is. )
+ */
+static void
+shared_fault_calc_convergence(struct task_struct *p, int max_node,
+			      unsigned long max_faults, unsigned long sum_faults)
+{
+	/*
+	 * If sum_faults is 0 then leave the convergence alone:
+	 */
+	if (sum_faults) {
+		p->convergence_strength = 1024L * max_faults / sum_faults;
+
+		if (p->convergence_strength >= 921) {
+			WARN_ON_ONCE(max_node == -1);
+			p->convergence_node = max_node;
+		} else {
+			p->convergence_node = -1;
+		}
+	}
+}
+
+/*
  * Called every couple of hundred milliseconds in the task's
  * execution life-time, this function decides whether to
  * change placement parameters:
@@ -1973,6 +2017,8 @@ static void task_numa_placement_tick(struct task_struct *p)
 			ideal_node = node;
 		}
 	}
+
+	shared_fault_calc_convergence(p, ideal_node, max_faults, total[0] + total[1]);
 
 	shared_fault_full_scan_done(p);
 

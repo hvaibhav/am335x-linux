@@ -1509,6 +1509,8 @@ struct task_struct {
 	unsigned long numa_scan_ts_secs;
 	unsigned int numa_scan_period;
 	u64 node_stamp;			/* migration stamp  */
+	unsigned long convergence_strength;
+	int convergence_node;
 	unsigned long *numa_faults;
 	unsigned long *numa_faults_curr;
 	struct callback_head numa_scan_work;
