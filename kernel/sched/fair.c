@@ -4750,6 +4750,35 @@ done:
 	return target;
 }
 
+static bool numa_allow_migration(struct task_struct *p, int prev_cpu, int new_cpu)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	if (sched_feat(NUMA_CONVERGE_MIGRATIONS)) {
+		/* Help in the direction of expected convergence: */
+		if (p->convergence_node >= 0 && (cpu_to_node(new_cpu) != p->convergence_node))
+			return false;
+
+		return true;
+	}
+
+	if (sched_feat(NUMA_BALANCE_ALL)) {
+ 		if (task_numa_shared(p) >= 0)
+			return false;
+
+		return true;
+	}
+
+	if (sched_feat(NUMA_BALANCE_INTERNODE)) {
+		if (task_numa_shared(p) >= 0) {
+ 			if (cpu_to_node(prev_cpu) != cpu_to_node(new_cpu))
+				return false;
+		}
+	}
+#endif
+	return true;
+}
+
+
 /*
  * sched_balance_self: balance the current task (running on cpu) in domains
  * that have the 'flag' flag set. In practice, this is SD_BALANCE_FORK and
@@ -4766,7 +4795,8 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 {
 	struct sched_domain *tmp, *affine_sd = NULL, *sd = NULL;
 	int cpu = smp_processor_id();
-	int prev_cpu = task_cpu(p);
+	int prev0_cpu = task_cpu(p);
+	int prev_cpu = prev0_cpu;
 	int new_cpu = cpu;
 	int want_affine = 0;
 	int sync = wake_flags & WF_SYNC;
@@ -4775,10 +4805,6 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 		return prev_cpu;
 
 #ifdef CONFIG_NUMA_BALANCING
-	/* We do NUMA balancing elsewhere: */
-	if (sched_feat(NUMA_BALANCE_ALL) && task_numa_shared(p) >= 0)
-		return prev_cpu;
-
 	if (sched_feat(WAKE_ON_IDEAL_CPU) && p->ideal_cpu >= 0)
 		return p->ideal_cpu;
 #endif
@@ -4857,8 +4883,8 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 unlock:
 	rcu_read_unlock();
 
-	if (sched_feat(NUMA_BALANCE_INTERNODE) && task_numa_shared(p) >= 0 && (cpu_to_node(prev_cpu) != cpu_to_node(new_cpu)))
-		return prev_cpu;
+	if (!numa_allow_migration(p, prev0_cpu, new_cpu))
+		return prev0_cpu;
 
 	return new_cpu;
 }
@@ -5401,8 +5427,11 @@ static bool can_migrate_running_task(struct task_struct *p, struct lb_env *env)
 static int can_migrate_task(struct task_struct *p, struct lb_env *env)
 {
 	/* We do NUMA balancing elsewhere: */
-	if (sched_feat(NUMA_BALANCE_ALL) && task_numa_shared(p) > 0 && env->failed <= env->sd->cache_nice_tries)
-		return false;
+
+	if (env->failed <= env->sd->cache_nice_tries) {
+		if (!numa_allow_migration(p, env->src_rq->cpu, env->dst_cpu))
+			return false;
+	}
 
 	if (!can_migrate_pinned_task(p, env))
 		return false;
@@ -5461,10 +5490,7 @@ static int move_one_task(struct lb_env *env)
 		if (!can_migrate_task(p, env))
 			continue;
 
-		if (sched_feat(NUMA_BALANCE_ALL) && task_numa_shared(p) >= 0)
-			continue;
-
-		if (sched_feat(NUMA_BALANCE_INTERNODE) && task_numa_shared(p) >= 0 && (cpu_to_node(env->src_rq->cpu) != cpu_to_node(env->dst_cpu)))
+		if (!numa_allow_migration(p, env->src_rq->cpu, env->dst_cpu))
 			continue;
 
 		move_task(p, env);
@@ -5527,10 +5553,7 @@ static int move_tasks(struct lb_env *env)
 		if (!can_migrate_task(p, env))
 			goto next;
 
-		if (sched_feat(NUMA_BALANCE_ALL) && task_numa_shared(p) >= 0)
-			continue;
-
-		if (sched_feat(NUMA_BALANCE_INTERNODE) && task_numa_shared(p) >= 0 && (cpu_to_node(env->src_rq->cpu) != cpu_to_node(env->dst_cpu)))
+		if (!numa_allow_migration(p, env->src_rq->cpu, env->dst_cpu))
 			goto next;
 
 		move_task(p, env);
@@ -6520,8 +6543,10 @@ static int load_balance(int this_cpu, struct rq *this_rq,
 		.iteration          = 0,
 	};
 
+#ifdef CONFIG_NUMA_BALANCING
 	if (sched_feat(NUMA_BALANCE_ALL))
 		return 1;
+#endif
 
 	cpumask_copy(cpus, cpu_active_mask);
 	max_lb_iterations = cpumask_weight(env.dst_grpmask);
