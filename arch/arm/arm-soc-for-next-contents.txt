@@ -175,3 +175,6 @@ samsung/devel		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung
 next/dt2:
 spear/dt2:		git://git.linaro.org/people/vireshk/linux.git spear-for-3.8
 				depends on depends/pinctrl2
+
+late/mvebu:
+mvebu/devel		git://git.infradead.org/users/jcooper/linux.git tags/mvebu_everything_for_3.8
