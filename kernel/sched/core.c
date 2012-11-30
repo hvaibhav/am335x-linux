@@ -4774,9 +4774,6 @@ static int __migrate_task(struct task_struct *p, int src_cpu, int dest_cpu)
 done:
 	ret = 1;
 fail:
-#ifdef CONFIG_NUMA_BALANCING
-	rq_dest->curr_buddy = NULL;
-#endif
 	double_rq_unlock(rq_src, rq_dest);
 	raw_spin_unlock(&p->pi_lock);
 	return ret;

@@ -1090,6 +1090,7 @@ config UIDGID_STRICT_TYPE_CHECKS
 
 config SCHED_AUTOGROUP
 	bool "Automatic process group scheduling"
+	depends on !NUMA_BALANCING
 	select EVENTFD
 	select CGROUPS
 	select CGROUP_SCHED
