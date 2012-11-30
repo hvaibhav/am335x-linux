@@ -2020,7 +2020,6 @@ task_sched_runtime(struct task_struct *task);
 /* sched_exec is called by processes performing an exec */
 #ifdef CONFIG_SMP
 extern void sched_exec(void);
-extern void sched_rebalance_to(int dest_cpu);
 #else
 #define sched_exec()   {}
 #endif

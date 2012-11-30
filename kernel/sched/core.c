@@ -963,8 +963,8 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 }
 
 struct migration_arg {
-	struct task_struct *task;
-	int dest_cpu;
+	struct task_struct	*task;
+	int			dest_cpu;
 };
 
 static int migration_cpu_stop(void *data);
@@ -2594,22 +2594,6 @@ void sched_exec(void)
 	}
 unlock:
 	raw_spin_unlock_irqrestore(&p->pi_lock, flags);
-}
-
-/*
- * sched_rebalance_to()
- *
- * Active load-balance to a target CPU.
- */
-void sched_rebalance_to(int dest_cpu)
-{
-	struct task_struct *p = current;
-	struct migration_arg arg = { p, dest_cpu };
-
-	if (!cpumask_test_cpu(dest_cpu, tsk_cpus_allowed(p)))
-		return;
-
-	stop_one_cpu(raw_smp_processor_id(), migration_cpu_stop, &arg);
 }
 
 #endif
@@ -4775,6 +4759,54 @@ fail:
 	double_rq_unlock(rq_src, rq_dest);
 	raw_spin_unlock(&p->pi_lock);
 	return ret;
+}
+
+/*
+ * sched_rebalance_to()
+ *
+ * Active load-balance to a target CPU.
+ */
+void sched_rebalance_to(int dst_cpu, int flip_tasks)
+{
+	struct task_struct *p_src = current;
+	struct task_struct *p_dst;
+	int src_cpu = raw_smp_processor_id();
+	struct migration_arg arg = { p_src, dst_cpu };
+	struct rq *dst_rq;
+
+	if (!cpumask_test_cpu(dst_cpu, tsk_cpus_allowed(p_src)))
+		return;
+
+	if (flip_tasks) {
+		dst_rq = cpu_rq(dst_cpu);
+
+		local_irq_disable();
+		raw_spin_lock(&dst_rq->lock);
+
+		p_dst = dst_rq->curr;
+		get_task_struct(p_dst);
+
+		raw_spin_unlock(&dst_rq->lock);
+		local_irq_enable();
+	}
+
+	stop_one_cpu(src_cpu, migration_cpu_stop, &arg);
+	/*
+	 * Task-flipping.
+	 *
+	 * We are now on the new CPU - check whether we can migrate
+	 * the task we just preempted, to where we came from:
+	 */
+	if (flip_tasks) {
+		local_irq_disable();
+		if (raw_smp_processor_id() == dst_cpu) {
+ 			/* Note that the arguments flip: */
+			__migrate_task(p_dst, dst_cpu, src_cpu);
+		}
+		local_irq_enable();
+
+		put_task_struct(p_dst);
+	}
 }
 
 /*

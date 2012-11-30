@@ -1176,7 +1176,7 @@ static void task_numa_placement(struct task_struct *p)
 		struct rq *rq = cpu_rq(p->ideal_cpu);
 
 		rq->curr_buddy = p;
-		sched_rebalance_to(p->ideal_cpu);
+		sched_rebalance_to(p->ideal_cpu, 0);
 	}
 }
 
