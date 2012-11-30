@@ -438,9 +438,6 @@ struct rq {
 	struct list_head cfs_tasks;
 
 #ifdef CONFIG_NUMA_BALANCING
-	unsigned long numa_weight;
-	unsigned long nr_numa_running;
-	unsigned long nr_ideal_running;
 	struct task_struct *curr_buddy;
 #endif
 	unsigned long nr_shared_running;	/* 0 on non-NUMA */

@@ -1556,7 +1556,6 @@ static void __sched_fork(struct task_struct *p)
 	p->numa_shared = -1;
 	p->node_stamp = 0ULL;
 	p->numa_scan_seq = p->mm ? p->mm->numa_scan_seq : 0;
-	p->numa_migrate_seq = 2;
 	p->numa_faults = NULL;
 	p->numa_scan_period = sysctl_sched_numa_scan_delay;
 
