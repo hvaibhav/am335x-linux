@@ -89,6 +89,7 @@ samsung/exynos5440	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-sam
 + patch  "ARM: EXYNOS: Avoid early use of of_machine_is_compatible()"
 samsung/cam		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cam-samsung
 samsung/pinctrl-2	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/pinctrl-samsung-2
+samsung/devel-soc	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-3
 
 next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
