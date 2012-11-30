@@ -51,6 +51,8 @@ bcm2835/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-rpi
 samsung/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung-2
 orion/cleanup		git://git.infradead.org/users/jcooper/linux.git tags/orion_cleanup_for_3.8
 integrator/cleanup	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator.git tags/integrator-for-arm-soc
+omap/cleanup-timer	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-timer-signed
++patch "ARM: omap: fix typo on timer cleanup"
 
 next/soc:
 ux500/core		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
