@@ -374,8 +374,15 @@ static struct ctl_table kern_table[] = {
 		.proc_handler	= proc_dointvec,
 	},
 	{
-		.procname	= "sched_numa_scan_size_mb",
-		.data		= &sysctl_sched_numa_scan_size,
+		.procname	= "sched_numa_scan_size_min_mb",
+		.data		= &sysctl_sched_numa_scan_size_min,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec,
+	},
+	{
+		.procname	= "sched_numa_scan_size_max_mb",
+		.data		= &sysctl_sched_numa_scan_size_max,
 		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec,

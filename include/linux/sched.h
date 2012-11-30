@@ -2057,7 +2057,8 @@ extern enum sched_tunable_scaling sysctl_sched_tunable_scaling;
 extern unsigned int sysctl_sched_numa_scan_delay;
 extern unsigned int sysctl_sched_numa_scan_period_min;
 extern unsigned int sysctl_sched_numa_scan_period_max;
-extern unsigned int sysctl_sched_numa_scan_size;
+extern unsigned int sysctl_sched_numa_scan_size_min;
+extern unsigned int sysctl_sched_numa_scan_size_max;
 extern unsigned int sysctl_sched_numa_settle_count;
 
 #ifdef CONFIG_SCHED_DEBUG

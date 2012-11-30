@@ -805,15 +805,17 @@ static unsigned long task_h_load(struct task_struct *p);
 /*
  * Scan @scan_size MB every @scan_period after an initial @scan_delay.
  */
-unsigned int sysctl_sched_numa_scan_delay = 1000;	/* ms */
-unsigned int sysctl_sched_numa_scan_period_min = 100;	/* ms */
-unsigned int sysctl_sched_numa_scan_period_max = 100*16;/* ms */
-unsigned int sysctl_sched_numa_scan_size = 256;		/* MB */
+unsigned int sysctl_sched_numa_scan_delay	__read_mostly = 1000;	/* ms */
+unsigned int sysctl_sched_numa_scan_period_min	__read_mostly = 100;	/* ms */
+unsigned int sysctl_sched_numa_scan_period_max	__read_mostly = 100*16;	/* ms */
+
+unsigned int sysctl_sched_numa_scan_size_min	__read_mostly =  32;	/* MB */
+unsigned int sysctl_sched_numa_scan_size_max	__read_mostly = 512;	/* MB */
 
 /*
  * Wait for the 2-sample stuff to settle before migrating again
  */
-unsigned int sysctl_sched_numa_settle_count = 2;
+unsigned int sysctl_sched_numa_settle_count	__read_mostly = 2;
 
 static int task_ideal_cpu(struct task_struct *p)
 {
@@ -2077,9 +2079,15 @@ static void task_numa_placement_tick(struct task_struct *p)
 			p->numa_faults[idx_oldnode] = 0;
 		}
 		sched_setnuma(p, ideal_node, shared);
+		/*
+		 * We changed a node, start scanning more frequently again
+		 * to map out the working set:
+		 */
+		p->numa_scan_period = sysctl_sched_numa_scan_period_min;
 	} else {
 		/* node unchanged, back off: */
-		p->numa_scan_period = min(p->numa_scan_period * 2, sysctl_sched_numa_scan_period_max);
+		p->numa_scan_period = min(p->numa_scan_period*2,
+						sysctl_sched_numa_scan_period_max);
 	}
 
 	this_cpu = task_cpu(p);
@@ -2238,6 +2246,7 @@ void task_numa_scan_work(struct callback_head *work)
 	struct task_struct *p = current;
 	struct mm_struct *mm = p->mm;
 	struct vm_area_struct *vma;
+	long pages_min, pages_max;
 
 	WARN_ON_ONCE(p != container_of(work, struct task_struct, numa_scan_work));
 
@@ -2260,10 +2269,40 @@ void task_numa_scan_work(struct callback_head *work)
 	current->numa_scan_period += jiffies_to_msecs(2);
 
 	start0 = start = end = mm->numa_scan_offset;
-	pages_total = sysctl_sched_numa_scan_size;
-	pages_total <<= 20 - PAGE_SHIFT; /* MB in pages */
-	if (!pages_total)
+
+	pages_max = sysctl_sched_numa_scan_size_max;
+	pages_max <<= 20 - PAGE_SHIFT; /* MB in pages */
+	if (!pages_max)
 		return;
+
+	pages_min = sysctl_sched_numa_scan_size_min;
+	pages_min <<= 20 - PAGE_SHIFT; /* MB in pages */
+	if (!pages_min)
+		return;
+
+	if (WARN_ON_ONCE(p->convergence_strength < 0 || p->convergence_strength > 1024))
+		return;
+	if (WARN_ON_ONCE(pages_min > pages_max))
+		return;
+
+	/*
+	 * Convergence strength is a number in the range of
+	 * 0 ... 1024.
+	 *
+	 * As tasks converge, scale down our scanning to the minimum
+	 * of the allowed range. Shortly after they get unsettled
+	 * (because the workload changes or the system is loaded
+	 * differently), scanning revs up again.
+	 *
+	 * The important thing is that when the system is in an
+	 * equilibrium, we do the minimum amount of scanning.
+	 */
+
+	pages_total = pages_min;
+	pages_total += (pages_max - pages_min)*(1024-p->convergence_strength)/1024;
+
+	pages_total = max(pages_min, pages_total);
+	pages_total = min(pages_max, pages_total);
 
 	sum_pages_scanned = 0;
 	pages_left = pages_total;
