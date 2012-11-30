@@ -178,3 +178,4 @@ spear/dt2:		git://git.linaro.org/people/vireshk/linux.git spear-for-3.8
 
 late/mvebu:
 mvebu/devel		git://git.infradead.org/users/jcooper/linux.git tags/mvebu_everything_for_3.8
+mvebu/cache		git://git.infradead.org/users/jcooper/linux.git tags/mvebu_cache_l2x0_for_3.8
