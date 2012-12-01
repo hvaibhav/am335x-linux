@@ -150,6 +150,8 @@ omap/clock		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags
 next/pm2:
 omap/prcm		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/devel-prcm-signed
 				depends on omap/pm, omap/clock, next/cleanup and next/dt
+omap/late-cleanup	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/tags/omap-for-v3.8/cleanup-multiplatform-no-clock-signed
+				depends on omap/pm, omap/clock and a bunch of cleanup branches
 
 next/smp:
 socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>

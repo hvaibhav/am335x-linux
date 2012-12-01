@@ -24,7 +24,7 @@
 #include <linux/i2c-omap.h>
 #include <linux/platform_data/omap_ocp2scp.h>
 
-#include <plat-omap/dma-omap.h>
+#include <linux/omap-dma.h>
 
 #include <linux/platform_data/omap_ocp2scp.h>
 #include <linux/platform_data/spi-omap2-mcspi.h>
