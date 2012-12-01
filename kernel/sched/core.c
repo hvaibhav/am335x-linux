@@ -39,6 +39,7 @@
 #include <linux/kernel_stat.h>
 #include <linux/debug_locks.h>
 #include <linux/perf_event.h>
+#include <linux/task_work.h>
 #include <linux/security.h>
 #include <linux/notifier.h>
 #include <linux/profile.h>
@@ -1558,7 +1559,6 @@ static void __sched_fork(struct task_struct *p)
 	p->numa_migrate_seq = 2;
 	p->numa_faults = NULL;
 	p->numa_scan_period = sysctl_sched_numa_scan_delay;
-	p->numa_work.next = &p->numa_work;
 
 	p->shared_buddy = NULL;
 	p->shared_buddy_faults = 0;
@@ -1570,6 +1570,25 @@ static void __sched_fork(struct task_struct *p)
 	p->numa_policy.v.preferred_node = 0;
 	p->numa_policy.v.nodes = node_online_map;
 
+	init_task_work(&p->numa_scan_work, task_numa_scan_work);
+	p->numa_scan_work.next = &p->numa_scan_work;
+
+	init_task_work(&p->numa_placement_work, task_numa_placement_work);
+	p->numa_placement_work.next = &p->numa_placement_work;
+
+	if (p->mm) {
+		int entries = 2*nr_node_ids;
+		int size = sizeof(*p->numa_faults) * entries;
+
+		/*
+		 * For efficiency reasons we allocate ->numa_faults[]
+		 * and ->numa_faults_curr[] at once and split the
+		 * buffer we get. They are separate otherwise.
+		 */
+		p->numa_faults = kzalloc(2*size, GFP_KERNEL);
+		if (p->numa_faults)
+			p->numa_faults_curr = p->numa_faults + entries;
+	}
 #endif /* CONFIG_NUMA_BALANCING */
 }
 
@@ -1579,9 +1598,11 @@ static void __sched_fork(struct task_struct *p)
 void sched_fork(struct task_struct *p)
 {
 	unsigned long flags;
-	int cpu = get_cpu();
+	int cpu;
 
 	__sched_fork(p);
+
+	cpu = get_cpu();
 	/*
 	 * We mark the process as running here. This guarantees that
 	 * nobody will actually run it, and a signal or other external

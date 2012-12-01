@@ -1512,7 +1512,8 @@ struct task_struct {
 	unsigned long numa_weight;
 	unsigned long *numa_faults;
 	unsigned long *numa_faults_curr;
-	struct callback_head numa_work;
+	struct callback_head numa_scan_work;
+	struct callback_head numa_placement_work;
 
 	struct task_struct *shared_buddy, *shared_buddy_curr;
 	unsigned long shared_buddy_faults, shared_buddy_faults_curr;

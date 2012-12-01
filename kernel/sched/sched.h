@@ -1261,6 +1261,11 @@ static inline u64 irq_time_read(int cpu)
 #endif /* CONFIG_64BIT */
 #endif /* CONFIG_IRQ_TIME_ACCOUNTING */
 
+#ifdef CONFIG_NUMA_BALANCING
+extern void task_numa_scan_work(struct callback_head *work);
+extern void task_numa_placement_work(struct callback_head *work);
+#endif
+
 #ifdef CONFIG_SMP
 extern void sched_rebalance_to(int dest_cpu, int flip_tasks);
 #else

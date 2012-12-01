@@ -1063,18 +1063,17 @@ clear_buddy:
 	p->ideal_cpu_curr		= -1;
 }
 
-static void task_numa_placement(struct task_struct *p)
+/*
+ * Called every couple of hundred milliseconds in the task's
+ * execution life-time, this function decides whether to
+ * change placement parameters:
+ */
+static void task_numa_placement_tick(struct task_struct *p)
 {
-	int seq = ACCESS_ONCE(p->mm->numa_scan_seq);
 	unsigned long total[2] = { 0, 0 };
 	unsigned long faults, max_faults = 0;
 	int node, priv, shared, max_node = -1;
 	int this_node;
-
-	if (p->numa_scan_seq == seq)
-		return;
-
-	p->numa_scan_seq = seq;
 
 	/*
 	 * Update the fault average with the result of the latest
@@ -1279,44 +1278,25 @@ void task_numa_fault(int node, int last_cpu, int pages)
 	int priv = (task_cpu(p) == last_cpu);
 	int idx = 2*node + priv;
 
-	WARN_ON_ONCE(last_cpu < 0 || node < 0);
-
-	if (unlikely(!p->numa_faults)) {
-		int entries = 2*nr_node_ids;
-		int size = sizeof(*p->numa_faults) * entries;
-
-		p->numa_faults = kzalloc(2*size, GFP_KERNEL);
-		if (!p->numa_faults)
-			return;
-		/*
-		 * For efficiency reasons we allocate ->numa_faults[]
-		 * and ->numa_faults_curr[] at once and split the
-		 * buffer we get. They are separate otherwise.
-		 */
-		p->numa_faults_curr = p->numa_faults + entries;
-	}
+	WARN_ON_ONCE(last_cpu == -1 || node == -1);
+	BUG_ON(!p->numa_faults);
 
 	p->numa_faults_curr[idx] += pages;
 	shared_fault_tick(p, node, last_cpu, pages);
-	task_numa_placement(p);
 }
 
 /*
  * The expensive part of numa migration is done from task_work context.
  * Triggered from task_tick_numa().
  */
-void task_numa_work(struct callback_head *work)
+void task_numa_placement_work(struct callback_head *work)
 {
-	long pages_total, pages_left, pages_changed;
-	unsigned long migrate, next_scan, now = jiffies;
-	unsigned long start0, start, end;
 	struct task_struct *p = current;
-	struct mm_struct *mm = p->mm;
-	struct vm_area_struct *vma;
 
-	WARN_ON_ONCE(p != container_of(work, struct task_struct, numa_work));
+	WARN_ON_ONCE(p != container_of(work, struct task_struct, numa_placement_work));
 
 	work->next = work; /* protect against double add */
+
 	/*
 	 * Who cares about NUMA placement when they're dying.
 	 *
@@ -1325,6 +1305,29 @@ void task_numa_work(struct callback_head *work)
 	 * without p->mm even though we still had it when we enqueued this
 	 * work.
 	 */
+	if (p->flags & PF_EXITING)
+		return;
+
+	task_numa_placement_tick(p);
+}
+
+/*
+ * The expensive part of numa migration is done from task_work context.
+ * Triggered from task_tick_numa().
+ */
+void task_numa_scan_work(struct callback_head *work)
+{
+	long pages_total, pages_left, pages_changed;
+	unsigned long migrate, next_scan, now = jiffies;
+	unsigned long start0, start, end;
+	struct task_struct *p = current;
+	struct mm_struct *mm = p->mm;
+	struct vm_area_struct *vma;
+
+	WARN_ON_ONCE(p != container_of(work, struct task_struct, numa_scan_work));
+
+	work->next = work; /* protect against double add */
+
 	if (p->flags & PF_EXITING)
 		return;
 
@@ -1383,15 +1386,12 @@ out:
 /*
  * Drive the periodic memory faults..
  */
-void task_tick_numa(struct rq *rq, struct task_struct *curr)
+static void task_tick_numa_scan(struct rq *rq, struct task_struct *curr)
 {
-	struct callback_head *work = &curr->numa_work;
+	struct callback_head *work = &curr->numa_scan_work;
 	u64 period, now;
 
-	/*
-	 * We don't care about NUMA placement if we don't have memory.
-	 */
-	if (!curr->mm || (curr->flags & PF_EXITING) || work->next != work)
+	if (work->next != work)
 		return;
 
 	/*
@@ -1403,28 +1403,67 @@ void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	now = curr->se.sum_exec_runtime;
 	period = (u64)curr->numa_scan_period * NSEC_PER_MSEC;
 
-	if (now - curr->node_stamp > period) {
-		curr->node_stamp += period;
-		curr->numa_scan_period = sysctl_sched_numa_scan_period_min;
+	if (now - curr->node_stamp <= period)
+		return;
 
-		/*
-		 * We are comparing runtime to wall clock time here, which
-		 * puts a maximum scan frequency limit on the task work.
-		 *
-		 * This, together with the limits in task_numa_work() filters
-		 * us from over-sampling if there are many threads: if all
-		 * threads happen to come in at the same time we don't create a
-		 * spike in overhead.
-		 *
-		 * We also avoid multiple threads scanning at once in parallel to
-		 * each other.
-		 */
-		if (!time_before(jiffies, curr->mm->numa_next_scan)) {
-			init_task_work(work, task_numa_work); /* TODO: move this into sched_fork() */
-			task_work_add(curr, work, true);
-		}
-	}
+	curr->node_stamp += period;
+	curr->numa_scan_period = sysctl_sched_numa_scan_period_min;
+
+	/*
+	 * We are comparing runtime to wall clock time here, which
+	 * puts a maximum scan frequency limit on the task work.
+	 *
+	 * This, together with the limits in task_numa_work() filters
+	 * us from over-sampling if there are many threads: if all
+	 * threads happen to come in at the same time we don't create a
+	 * spike in overhead.
+	 *
+	 * We also avoid multiple threads scanning at once in parallel to
+	 * each other.
+	 */
+	if (time_before(jiffies, curr->mm->numa_next_scan))
+		return;
+
+	task_work_add(curr, work, true);
 }
+
+/*
+ * Drive the placement logic:
+ */
+static void task_tick_numa_placement(struct rq *rq, struct task_struct *curr)
+{
+	struct callback_head *work = &curr->numa_placement_work;
+	int seq;
+
+	if (work->next != work)
+		return;
+
+	/*
+	 * Check whether we should run task_numa_placement(),
+	 * and if yes, activate the worklet:
+	 */
+	seq = ACCESS_ONCE(curr->mm->numa_scan_seq);
+
+	if (curr->numa_scan_seq == seq)
+		return;
+
+	curr->numa_scan_seq = seq;
+	task_work_add(curr, work, true);
+}
+
+static void task_tick_numa(struct rq *rq, struct task_struct *curr)
+{
+	/*
+	 * We don't care about NUMA placement if we don't have memory
+	 * or are exiting:
+	 */
+	if (!curr->mm || (curr->flags & PF_EXITING))
+		return;
+
+	task_tick_numa_scan(rq, curr);
+	task_tick_numa_placement(rq, curr);
+}
+
 #else /* !CONFIG_NUMA_BALANCING: */
 #ifdef CONFIG_SMP
 static inline int task_ideal_cpu(struct task_struct *p)				{ return -1; }
