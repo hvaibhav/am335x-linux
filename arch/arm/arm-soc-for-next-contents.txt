@@ -31,6 +31,7 @@ at91/header		git://github.com/at91linux/linux-at91.git tags/for-3.8-at91_header_
 			+ re-pull from git://github.com/at91linux/linux-at91.git tags/at91-header
 omap/cleanup-headers-4  git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-headers-prepare-multiplatform-v3-signed
 +patch <1352970366-7154-1-git-send-email-haojian.zhuang@gmail.com>
+omap/cleanup-headers-iommu git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-headers-iommu-signed
 
 
 next/cleanup:
