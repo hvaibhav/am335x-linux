@@ -2059,6 +2059,7 @@ extern unsigned int sysctl_sched_numa_scan_period_min;
 extern unsigned int sysctl_sched_numa_scan_period_max;
 extern unsigned int sysctl_sched_numa_scan_size_min;
 extern unsigned int sysctl_sched_numa_scan_size_max;
+extern unsigned int sysctl_sched_numa_rss_threshold;
 extern unsigned int sysctl_sched_numa_settle_count;
 
 #ifdef CONFIG_SCHED_DEBUG

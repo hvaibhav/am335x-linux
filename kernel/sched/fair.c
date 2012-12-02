@@ -812,6 +812,8 @@ unsigned int sysctl_sched_numa_scan_period_max	__read_mostly = 100*16;	/* ms */
 unsigned int sysctl_sched_numa_scan_size_min	__read_mostly =  32;	/* MB */
 unsigned int sysctl_sched_numa_scan_size_max	__read_mostly = 512;	/* MB */
 
+unsigned int sysctl_sched_numa_rss_threshold	__read_mostly = 128;	/* MB */
+
 /*
  * Wait for the 2-sample stuff to settle before migrating again
  */
@@ -2486,17 +2488,57 @@ static void task_tick_numa_placement(struct rq *rq, struct task_struct *curr)
 	task_work_add(curr, work, true);
 }
 
-static void task_tick_numa(struct rq *rq, struct task_struct *curr)
+/*
+ * Is this task worth NUMA-scanning and NUMA-balancing?
+ */
+static bool task_numa_candidate(struct task_struct *p)
 {
+	unsigned long rss_high;
+	unsigned long rss_limit;
+
+	/* kthreads don't have any user-space memory to scan: */
+	if (!p->mm || !p->numa_faults)
+		return false;
+
 	/*
-	 * We don't care about NUMA placement if we don't have memory
-	 * or are exiting:
+	 * Exiting tasks won't touch any user-space memory in the future,
+	 * and this also avoids a race with work_exit():
 	 */
-	if (!curr->mm || (curr->flags & PF_EXITING) || !curr->numa_faults)
-		return;
+	if (p->flags & PF_EXITING)
+		return false;
 
 	/* Don't disturb hard-bound tasks: */
-	if (sched_feat(NUMA_EXCLUDE_AFFINE) && (curr->nr_cpus_allowed != num_online_cpus())) {
+	if (sched_feat(NUMA_EXCLUDE_AFFINE)) {
+		if (p->nr_cpus_allowed != num_online_cpus())
+			return false;
+	}
+
+	/*
+	 * NUMA-balancing, combined with NUMA memory migration,
+	 * is a long-term process that takes time to establish
+	 * and converge, on the time scale of of several seconds
+	 * or more.
+	 *
+	 * Small tasks are usually short-lived and don't have much
+	 * of a NUMA placement cost to begin with, so don't
+	 * NUMA-balance them:
+	 */
+	rss_limit = sysctl_sched_numa_rss_threshold;
+	rss_limit <<= 20 - PAGE_SHIFT; /* MB to pages */
+
+	rss_high = get_mm_rss(p->mm);
+	rss_high = max(p->mm->hiwater_rss, rss_high);
+
+	if (rss_high < rss_limit)
+		return false;
+
+	return true;
+}
+
+static void task_tick_numa(struct rq *rq, struct task_struct *curr)
+{
+	/* Cheap checks first: */
+	if (!task_numa_candidate(curr)) {
 		if (curr->numa_shared >= 0)
 			curr->numa_shared = -1;
 		return;
