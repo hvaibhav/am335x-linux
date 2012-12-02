@@ -2495,6 +2495,13 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	if (!curr->mm || (curr->flags & PF_EXITING) || !curr->numa_faults)
 		return;
 
+	/* Don't disturb hard-bound tasks: */
+	if (sched_feat(NUMA_EXCLUDE_AFFINE) && (curr->nr_cpus_allowed != num_online_cpus())) {
+		if (curr->numa_shared >= 0)
+			curr->numa_shared = -1;
+		return;
+	}
+
 	task_tick_numa_scan(rq, curr);
 	task_tick_numa_placement(rq, curr);
 }

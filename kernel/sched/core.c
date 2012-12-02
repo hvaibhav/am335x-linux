@@ -4664,6 +4664,12 @@ void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
 
 	cpumask_copy(&p->cpus_allowed, new_mask);
 	p->nr_cpus_allowed = cpumask_weight(new_mask);
+
+#ifdef CONFIG_NUMA_BALANCING
+	/* Don't disturb hard-bound tasks: */
+	if (sched_feat(NUMA_EXCLUDE_AFFINE) && (p->nr_cpus_allowed != num_online_cpus()))
+		p->numa_shared = -1;
+#endif
 }
 
 /*

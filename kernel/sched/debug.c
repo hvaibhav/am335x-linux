@@ -448,6 +448,7 @@ void proc_sched_show_task(struct task_struct *p, struct seq_file *m)
 
 	nr_switches = p->nvcsw + p->nivcsw;
 
+	P(nr_cpus_allowed);
 #ifdef CONFIG_SCHEDSTATS
 	PN(se.statistics.wait_start);
 	PN(se.statistics.sleep_start);
