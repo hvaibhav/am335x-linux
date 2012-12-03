@@ -1566,7 +1566,7 @@ static void __sched_fork(struct task_struct *p)
 	p->ideal_cpu_curr = -1;
 	atomic_set(&p->numa_policy.refcnt, 1);
 	p->numa_policy.mode = MPOL_INTERLEAVE;
-	p->numa_policy.flags = 0;
+	p->numa_policy.flags = MPOL_F_MOF;
 	p->numa_policy.v.preferred_node = 0;
 	p->numa_policy.v.nodes = node_online_map;
 
