@@ -1540,6 +1540,7 @@ out:
 	return isolated;
 }
 
+# ifdef CONFIG_TRANSPARENT_HUGEPAGE
 int migrate_misplaced_transhuge_page_put(struct mm_struct *mm,
 				struct vm_area_struct *vma,
 				pmd_t *pmd, pmd_t entry,
@@ -1653,6 +1654,8 @@ out_dropref:
 out_keep_locked:
 	return 0;
 }
+# endif /* CONFIG_TRANSPARENT_HUGEPAGE */
+
 #endif /* CONFIG_NUMA_BALANCING */
 
 #endif /* CONFIG_NUMA */
