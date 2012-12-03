@@ -31,7 +31,7 @@
 
 #define __linktime_error(message) __attribute__((__error__(message)))
 
-#define __UNIQUE_ID(prefix) __PASTE(prefix, __PASTE(__, __COUNTER__))
+#define __UNIQUE_ID(prefix) __PASTE(__PASTE(__UNIQUE_ID_, prefix), __COUNTER__)
 
 #if __GNUC_MINOR__ >= 5
 /*

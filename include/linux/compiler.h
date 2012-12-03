@@ -170,7 +170,7 @@ void ftrace_likely_update(struct ftrace_branch_data *f, int val, int expect);
 
 /* Not-quite-unique ID. */
 #ifndef __UNIQUE_ID
-# define __UNIQUE_ID(prefix) __PASTE(__PASTE(prefix, __), __LINE__)
+# define __UNIQUE_ID(prefix) __PASTE(__PASTE(__UNIQUE_ID_, prefix), __LINE__)
 #endif
 
 #endif /* __KERNEL__ */
