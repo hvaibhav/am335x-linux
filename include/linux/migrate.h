@@ -7,6 +7,16 @@
 
 typedef struct page *new_page_t(struct page *, unsigned long private, int **);
 
+enum migrate_reason {
+	MR_COMPACTION,
+	MR_MEMORY_FAILURE,
+	MR_MEMORY_HOTPLUG,
+	MR_SYSCALL,		/* also applies to cpusets */
+	MR_MEMPOLICY_MBIND,
+	MR_NUMA_MISPLACED,
+	MR_CMA
+};
+
 #ifdef CONFIG_MIGRATION
 
 extern void putback_lru_pages(struct list_head *l);
@@ -14,7 +24,7 @@ extern int migrate_page(struct address_space *,
 			struct page *, struct page *, enum migrate_mode);
 extern int migrate_pages(struct list_head *l, new_page_t x,
 			unsigned long private, bool offlining,
-			enum migrate_mode mode);
+			enum migrate_mode mode, int reason);
 extern int migrate_huge_page(struct page *, new_page_t x,
 			unsigned long private, bool offlining,
 			enum migrate_mode mode);
@@ -35,7 +45,7 @@ extern int migrate_huge_page_move_mapping(struct address_space *mapping,
 static inline void putback_lru_pages(struct list_head *l) {}
 static inline int migrate_pages(struct list_head *l, new_page_t x,
 		unsigned long private, bool offlining,
-		enum migrate_mode mode) { return -ENOSYS; }
+		enum migrate_mode mode, int reason) { return -ENOSYS; }
 static inline int migrate_huge_page(struct page *page, new_page_t x,
 		unsigned long private, bool offlining,
 		enum migrate_mode mode) { return -ENOSYS; }
@@ -64,4 +74,33 @@ static inline int migrate_huge_page_move_mapping(struct address_space *mapping,
 #define fail_migrate_page NULL
 
 #endif /* CONFIG_MIGRATION */
+
+#ifdef CONFIG_NUMA_BALANCING
+extern bool migrate_balanced_pgdat(struct pglist_data *pgdat, int nr_migrate_pages);
+extern int migrate_misplaced_page_put(struct page *page, int node);
+extern int migrate_misplaced_transhuge_page_put(struct mm_struct *mm,
+			struct vm_area_struct *vma,
+			pmd_t *pmd, pmd_t entry,
+			unsigned long address,
+			struct page *page, int node);
+
+#else
+static inline bool migrate_balanced_pgdat(struct pglist_data *pgdat, int nr_migrate_pages)
+{
+	return true;
+}
+static inline int migrate_misplaced_page_put(struct page *page, int node)
+{
+	return -EAGAIN; /* can't migrate now */
+}
+static inline int migrate_misplaced_transhuge_page_put(struct mm_struct *mm,
+			struct vm_area_struct *vma,
+			pmd_t *pmd, pmd_t entry,
+			unsigned long address,
+			struct page *page, int node)
+{
+	return -EAGAIN;
+}
+#endif /* CONFIG_NUMA_BALANCING */
+
 #endif /* _LINUX_MIGRATE_H */
