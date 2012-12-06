@@ -146,7 +146,8 @@ extern struct task_group root_task_group;
 #ifdef CONFIG_NUMA_BALANCING
 # define INIT_TASK_NUMA(tsk)						\
 	.numa_shared = -1,						\
-	.numa_shared_enqueue = -1
+	.numa_shared_enqueue = -1,					\
+	.wake_cpu = -1,
 #else
 # define INIT_TASK_NUMA(tsk)
 #endif

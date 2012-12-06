@@ -4963,6 +4963,12 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 	int new_cpu = cpu;
 	int want_affine = 0;
 	int sync = wake_flags & WF_SYNC;
+	int wake_cpu = p->wake_cpu;
+
+	if (wake_cpu != -1 && cpumask_test_cpu(wake_cpu, tsk_cpus_allowed(p))) {
+		p->wake_cpu = -1;
+		return wake_cpu;
+	}
 
 	if (p->nr_cpus_allowed == 1)
 		return prev_cpu;
@@ -5044,10 +5050,12 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 		/* while loop will break here if sd == NULL */
 	}
 unlock:
-	rcu_read_unlock();
+	if (!numa_allow_migration(p, prev0_cpu, new_cpu)) {
+		if (cpumask_test_cpu(prev0_cpu, tsk_cpus_allowed(p)))
+			new_cpu = prev0_cpu;
+	}
 
-	if (!numa_allow_migration(p, prev0_cpu, new_cpu))
-		return prev0_cpu;
+	rcu_read_unlock();
 
 	return new_cpu;
 }

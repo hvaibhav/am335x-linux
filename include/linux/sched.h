@@ -1502,6 +1502,7 @@ struct task_struct {
 	short il_next;
 	short pref_node_fork;
 #endif
+	int wake_cpu;
 #ifdef CONFIG_NUMA_BALANCING
 	int numa_shared;
 	int numa_shared_enqueue;
