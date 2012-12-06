@@ -854,9 +854,20 @@ unsigned int sysctl_sched_numa_scan_size_max	__read_mostly = 512;	/* MB */
 unsigned int sysctl_sched_numa_rss_threshold	__read_mostly = 128;	/* MB */
 
 /*
- * Wait for the 2-sample stuff to settle before migrating again
+ * Wait for the 3-sample stuff to settle before migrating again
  */
-unsigned int sysctl_sched_numa_settle_count	__read_mostly = 2;
+unsigned int sysctl_sched_numa_settle_count	__read_mostly = 0;
+
+/*
+ * Weight of decay of the fault stats:
+ */
+unsigned int sysctl_sched_numa_fault_weight	__read_mostly = 3;
+
+static void task_numa_migrate(struct task_struct *p, int next_cpu)
+{
+	if (cpu_to_node(next_cpu) != cpu_to_node(task_cpu(p)))
+		p->numa_migrate_seq = 0;
+}
 
 static int task_ideal_cpu(struct task_struct *p)
 {
@@ -2051,7 +2062,9 @@ static void task_numa_placement_tick(struct task_struct *p)
 {
 	unsigned long total[2] = { 0, 0 };
 	unsigned long faults, max_faults = 0;
-	int node, priv, shared, ideal_node = -1;
+	unsigned long total_priv, total_shared;
+	int node, priv, new_shared, prev_shared, ideal_node = -1;
+	int settle_limit;
 	int flip_tasks;
 	int this_node;
 	int this_cpu;
@@ -2065,14 +2078,17 @@ static void task_numa_placement_tick(struct task_struct *p)
 		for (priv = 0; priv < 2; priv++) {
 			unsigned int new_faults;
 			unsigned int idx;
+			unsigned int weight;
 
 			idx = 2*node + priv;
 			new_faults = p->numa_faults_curr[idx];
 			p->numa_faults_curr[idx] = 0;
 
-			/* Keep a simple running average: */
-			p->numa_faults[idx] = p->numa_faults[idx]*15 + new_faults;
-			p->numa_faults[idx] /= 16;
+			/* Keep a simple exponential moving average: */
+			weight = sysctl_sched_numa_fault_weight;
+
+			p->numa_faults[idx] = p->numa_faults[idx]*(weight-1) + new_faults;
+			p->numa_faults[idx] /= weight;
 
 			faults += p->numa_faults[idx];
 			total[priv] += p->numa_faults[idx];
@@ -2092,23 +2108,38 @@ static void task_numa_placement_tick(struct task_struct *p)
 	 * we might want to consider a different equation below to reduce
 	 * the impact of a little private memory accesses.
 	 */
-	shared = p->numa_shared;
+	prev_shared = p->numa_shared;
+	new_shared = prev_shared;
 
-	if (shared < 0) {
-		shared = (total[0] >= total[1]);
-	} else if (shared == 0) {
-		/* If it was private before, make it harder to become shared: */
-		if (total[0] >= total[1]*2)
-			shared = 1;
-	} else if (shared == 1 ) {
+	settle_limit = sysctl_sched_numa_settle_count;
+
+	/*
+	 * Note: shared is spread across multiple tasks and in the future
+	 * we might want to consider a different equation below to reduce
+	 * the impact of a little private memory accesses.
+	 */
+	total_priv = total[1] / 2;
+	total_shared = total[0];
+
+	if (prev_shared < 0) {
+		/* Start out as private: */
+		new_shared = 0;
+	} else if (prev_shared == 0 && p->numa_migrate_seq >= settle_limit) {
+		/*
+		 * Hysteresis: if it was private before, make it harder to
+		 * become shared:
+		 */
+		if (total_shared*2 >= total_priv*3)
+			new_shared = 1;
+	} else if (prev_shared == 1 && p->numa_migrate_seq >= settle_limit) {
 		 /* If it was shared before, make it harder to become private: */
-		if (total[0]*2 <= total[1])
-			shared = 0;
+		if (total_shared*3 <= total_priv*2)
+			new_shared = 0;
 	}
 
 	flip_tasks = 0;
 
-	if (shared)
+	if (new_shared)
 		p->ideal_cpu = sched_update_ideal_cpu_shared(p, &flip_tasks);
 	else
 		p->ideal_cpu = sched_update_ideal_cpu_private(p);
@@ -2126,7 +2157,9 @@ static void task_numa_placement_tick(struct task_struct *p)
 			ideal_node = p->numa_max_node;
 	}
 
-	if (shared != task_numa_shared(p) || (ideal_node != -1 && ideal_node != p->numa_max_node)) {
+	if (new_shared != prev_shared || (ideal_node != -1 && ideal_node != p->numa_max_node)) {
+
+		p->numa_migrate_seq = 0;
 		/*
 		 * Fix up node migration fault statistics artifact, as we
 		 * migrate to another node we'll soon bring over our private
@@ -2141,7 +2174,7 @@ static void task_numa_placement_tick(struct task_struct *p)
 			p->numa_faults[idx_newnode] += p->numa_faults[idx_oldnode];
 			p->numa_faults[idx_oldnode] = 0;
 		}
-		sched_setnuma(p, ideal_node, shared);
+		sched_setnuma(p, ideal_node, new_shared);
 
 		/* Allocate only the maximum node: */
 		if (sched_feat(NUMA_POLICY_MAXNODE)) {
@@ -2321,6 +2354,10 @@ void task_numa_placement_work(struct callback_head *work)
 	 * work.
 	 */
 	if (p->flags & PF_EXITING)
+		return;
+
+	p->numa_migrate_seq++;
+	if (sched_feat(NUMA_SETTLE) && p->numa_migrate_seq < sysctl_sched_numa_settle_count)
 		return;
 
 	task_numa_placement_tick(p);
@@ -5116,6 +5153,7 @@ static void
 migrate_task_rq_fair(struct task_struct *p, int next_cpu)
 {
 	migrate_task_rq_entity(p, next_cpu);
+	task_numa_migrate(p, next_cpu);
 }
 #endif /* CONFIG_SMP */
 

@@ -1509,6 +1509,7 @@ struct task_struct {
 	int numa_max_node;
 	int numa_scan_seq;
 	unsigned long numa_scan_ts_secs;
+	int numa_migrate_seq;
 	unsigned int numa_scan_period;
 	u64 node_stamp;			/* migration stamp  */
 	unsigned long convergence_strength;
@@ -2064,6 +2065,7 @@ extern unsigned int sysctl_sched_numa_scan_size_min;
 extern unsigned int sysctl_sched_numa_scan_size_max;
 extern unsigned int sysctl_sched_numa_rss_threshold;
 extern unsigned int sysctl_sched_numa_settle_count;
+extern unsigned int sysctl_sched_numa_fault_weight;
 
 #ifdef CONFIG_SCHED_DEBUG
 extern unsigned int sysctl_sched_migration_cost;
