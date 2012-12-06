@@ -6091,13 +6091,10 @@ static struct sched_domain_topology_level *sched_domain_topology = default_topol
 /*
  * Change a task's NUMA state - called from the placement tick.
  */
-void sched_setnuma(struct task_struct *p, int node, int shared)
+void __sched_setnuma(struct rq *rq, struct task_struct *p, int node, int shared)
 {
-	unsigned long flags;
 	int on_rq, running;
-	struct rq *rq;
 
-	rq = task_rq_lock(p, &flags);
 	on_rq = p->on_rq;
 	running = task_current(rq, p);
 
@@ -6113,6 +6110,20 @@ void sched_setnuma(struct task_struct *p, int node, int shared)
 		p->sched_class->set_curr_task(rq);
 	if (on_rq)
 		enqueue_task(rq, p, 0);
+}
+
+/*
+ * Change a task's NUMA state - called from the placement tick.
+ */
+void sched_setnuma(struct task_struct *p, int node, int shared)
+{
+	unsigned long flags;
+	struct rq *rq;
+
+	rq = task_rq_lock(p, &flags);
+
+	__sched_setnuma(rq, p, node, shared);
+
 	task_rq_unlock(rq, p, &flags);
 
 	/*

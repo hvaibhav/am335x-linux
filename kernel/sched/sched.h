@@ -513,6 +513,7 @@ DECLARE_PER_CPU(struct rq, runqueues);
 #define raw_rq()		(&__raw_get_cpu_var(runqueues))
 
 #ifdef CONFIG_NUMA_BALANCING
+extern void __sched_setnuma(struct rq *rq, struct task_struct *p, int node, int shared);
 extern void sched_setnuma(struct task_struct *p, int node, int shared);
 static inline void task_numa_free(struct task_struct *p)
 {

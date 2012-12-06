@@ -2540,7 +2540,7 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	/* Cheap checks first: */
 	if (!task_numa_candidate(curr)) {
 		if (curr->numa_shared >= 0)
-			curr->numa_shared = -1;
+			__sched_setnuma(rq, curr, -1, -1);
 		return;
 	}
 
