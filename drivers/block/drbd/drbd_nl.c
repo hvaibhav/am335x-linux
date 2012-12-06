@@ -1230,6 +1230,11 @@ int drbd_adm_disk_opts(struct sk_buff *skb, struct genl_info *info)
 	else
 		mdev->ldev->md.flags |= MDF_AL_DISABLED;
 
+	if (new_disk_conf->md_flushes)
+		clear_bit(MD_NO_FUA, &mdev->flags);
+	else
+		set_bit(MD_NO_FUA, &mdev->flags);
+
 	drbd_bump_write_ordering(mdev->tconn, WO_bdev_flush);
 
 	drbd_md_sync(mdev);
@@ -3292,11 +3297,12 @@ void drbd_bcast_event(struct drbd_conf *mdev, const struct sib_info *sib)
 	unsigned seq;
 	int err = -ENOMEM;
 
-	if (sib->sib_reason == SIB_SYNC_PROGRESS &&
-	    time_after(jiffies, mdev->rs_last_bcast + HZ))
-		mdev->rs_last_bcast = jiffies;
-	else
-		return;
+	if (sib->sib_reason == SIB_SYNC_PROGRESS) {
+		if (time_after(jiffies, mdev->rs_last_bcast + HZ))
+			mdev->rs_last_bcast = jiffies;
+		else
+			return;
+	}
 
 	seq = atomic_inc_return(&drbd_genl_seq);
 	msg = genlmsg_new(NLMSG_GOODSIZE, GFP_NOIO);
