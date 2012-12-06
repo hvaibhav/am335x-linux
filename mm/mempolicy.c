@@ -121,8 +121,10 @@ static struct mempolicy default_policy_local = {
 static struct mempolicy *default_policy(void)
 {
 #ifdef CONFIG_NUMA_BALANCING
-	if (task_numa_shared(current) == 1)
-		return &current->numa_policy;
+	struct mempolicy *pol = &current->numa_policy;
+
+	if (task_numa_shared(current) == 1 && nodes_weight(pol->v.nodes) >= 2)
+		return pol;
 #endif
 	return &default_policy_local;
 }
@@ -135,6 +137,11 @@ static struct mempolicy *get_task_policy(struct task_struct *p)
 	int node;
 
 	if (!pol) {
+#ifdef CONFIG_NUMA_BALANCING
+		pol = default_policy();
+		if (pol != &default_policy_local)
+			return pol;
+#endif
 		node = numa_node_id();
 		if (node != -1)
 			pol = &preferred_node_policy[node];
@@ -2332,16 +2339,21 @@ static void sp_free(struct sp_node *n)
  * Policy determination "mimics" alloc_page_vma().
  * Called from fault path where we know the vma and faulting address.
  */
-int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long addr)
+int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long addr, int shift)
 {
 	struct mempolicy *pol;
 	struct zone *zone;
 	int page_nid = page_to_nid(page);
 	int target_node = page_nid;
+#ifdef CONFIG_NUMA_BALANCING
+	int cpupid_last_access = -1;
+	int cpu_last_access = -1;
+#endif
 
 	BUG_ON(!vma);
 
 	pol = get_vma_policy(current, vma, addr);
+
 	if (!(pol->flags & MPOL_F_MOF))
 		goto out_keep_page;
 	if (task_numa_shared(current) < 0)
@@ -2349,22 +2361,13 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 	
 	switch (pol->mode) {
 	case MPOL_INTERLEAVE:
-	{
-		int shift;
 
 		BUG_ON(addr >= vma->vm_end);
 		BUG_ON(addr < vma->vm_start);
 
-#ifdef CONFIG_HUGETLB_PAGE
-		if (transparent_hugepage_enabled(vma) || vma->vm_flags & VM_HUGETLB)
-			shift = HPAGE_SHIFT;
-		else
-#endif
-			shift = PAGE_SHIFT;
-
 		target_node = interleave_nid(pol, vma, addr, shift);
-		break;
-	}
+
+		goto out_keep_page;
 
 	case MPOL_PREFERRED:
 		if (pol->flags & MPOL_F_LOCAL)
@@ -2394,14 +2397,17 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 		BUG();
 	}
 
+#ifdef CONFIG_NUMA_BALANCING
 	/* Migrate the page towards the node whose CPU is referencing it */
 	if (pol->flags & MPOL_F_MORON) {
-		int cpu_last_access;
+		int this_cpupid;
 		int this_cpu;
 		int this_node;
 
 		this_cpu = raw_smp_processor_id();
 		this_node = numa_node_id();
+
+		this_cpupid = cpu_pid_to_cpupid(this_cpu, current->pid);
 
 		/*
 		 * Multi-stage node selection is used in conjunction
@@ -2424,12 +2430,20 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 		 * it less likely we act on an unlikely task<->page
 		 * relation.
 		 */
-		cpu_last_access = page_xchg_last_cpu(page, this_cpu);
+		cpupid_last_access = page_xchg_last_cpupid(page, this_cpupid);
 
-		/* Migrate towards us: */
-		if (cpu_last_access == this_cpu)
+		/* Freshly allocated pages not accessed by anyone else yet: */
+		if (cpupid_last_access == cpu_pid_to_cpupid(-1, -1)) {
+			cpu_last_access = this_cpu;
 			target_node = this_node;
+		} else {
+			cpu_last_access = cpupid_to_cpu(cpupid_last_access);
+			/* Migrate towards us in the default policy: */
+			if (cpu_last_access == this_cpu)
+				target_node = this_node;
+		}
 	}
+#endif
 out_keep_page:
 	mpol_cond_put(pol);
 

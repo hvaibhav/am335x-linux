@@ -1546,6 +1546,7 @@ static void __sched_fork(struct task_struct *p)
 #ifdef CONFIG_PREEMPT_NOTIFIERS
 	INIT_HLIST_HEAD(&p->preempt_notifiers);
 #endif
+	p->wake_cpu = -1;
 
 #ifdef CONFIG_NUMA_BALANCING
 	if (p->mm && atomic_read(&p->mm->mm_users) == 1) {
@@ -1554,10 +1555,14 @@ static void __sched_fork(struct task_struct *p)
 	}
 
 	p->numa_shared = -1;
+	p->numa_weight = 0;
+	p->numa_shared_enqueue = -1;
+	p->numa_max_node = -1;
 	p->node_stamp = 0ULL;
 	p->convergence_strength		= 0;
 	p->convergence_node		= -1;
 	p->numa_scan_seq = p->mm ? p->mm->numa_scan_seq : 0;
+	p->numa_migrate_seq = 2;
 	p->numa_faults = NULL;
 	p->numa_scan_period = sysctl_sched_numa_scan_delay;
 
@@ -4779,6 +4784,8 @@ static int __migrate_task(struct task_struct *p, int src_cpu, int dest_cpu)
 		set_task_cpu(p, dest_cpu);
 		enqueue_task(rq_dest, p, 0);
 		check_preempt_curr(rq_dest, p, 0);
+	} else {
+		p->wake_cpu = dest_cpu;
 	}
 done:
 	ret = 1;
@@ -6091,13 +6098,10 @@ static struct sched_domain_topology_level *sched_domain_topology = default_topol
 /*
  * Change a task's NUMA state - called from the placement tick.
  */
-void sched_setnuma(struct task_struct *p, int node, int shared)
+void __sched_setnuma(struct rq *rq, struct task_struct *p, int node, int shared)
 {
-	unsigned long flags;
 	int on_rq, running;
-	struct rq *rq;
 
-	rq = task_rq_lock(p, &flags);
 	on_rq = p->on_rq;
 	running = task_current(rq, p);
 
@@ -6106,6 +6110,9 @@ void sched_setnuma(struct task_struct *p, int node, int shared)
 	if (running)
 		p->sched_class->put_prev_task(rq, p);
 
+	WARN_ON_ONCE(p->numa_shared_enqueue != -1);
+	WARN_ON_ONCE(p->numa_weight);
+
 	p->numa_shared = shared;
 	p->numa_max_node = node;
 
@@ -6113,6 +6120,20 @@ void sched_setnuma(struct task_struct *p, int node, int shared)
 		p->sched_class->set_curr_task(rq);
 	if (on_rq)
 		enqueue_task(rq, p, 0);
+}
+
+/*
+ * Change a task's NUMA state - called from the placement tick.
+ */
+void sched_setnuma(struct task_struct *p, int node, int shared)
+{
+	unsigned long flags;
+	struct rq *rq;
+
+	rq = task_rq_lock(p, &flags);
+
+	__sched_setnuma(rq, p, node, shared);
+
 	task_rq_unlock(rq, p, &flags);
 
 	/*

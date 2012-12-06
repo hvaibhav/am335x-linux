@@ -70,8 +70,8 @@
 
 #include "internal.h"
 
-#ifdef LAST_CPU_NOT_IN_PAGE_FLAGS
-#warning Unfortunate NUMA config, growing page-frame for last_cpu.
+#ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
+# warning Large NUMA config, growing page-frame for last_cpu+pid.
 #endif
 
 #ifndef CONFIG_NEED_MULTIPLE_NODES
@@ -3455,6 +3455,7 @@ static int do_nonlinear_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	return __do_fault(mm, vma, address, pmd, pgoff, flags, orig_pte);
 }
 
+#ifdef CONFIG_NUMA_BALANCING
 static int numa_migration_target(struct page *page, struct vm_area_struct *vma,
 			       unsigned long addr, int page_nid)
 {
@@ -3462,57 +3463,50 @@ static int numa_migration_target(struct page *page, struct vm_area_struct *vma,
 	if (page_nid == numa_node_id())
 		count_vm_numa_event(NUMA_HINT_FAULTS_LOCAL);
 
-	return mpol_misplaced(page, vma, addr);
+	return mpol_misplaced(page, vma, addr, PAGE_SHIFT);
 }
 
-int do_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
-		   unsigned long addr, pte_t pte, pte_t *ptep, pmd_t *pmd)
+static int __do_numa_page(int target_nid, struct mm_struct *mm, struct vm_area_struct *vma,
+			unsigned long addr, pte_t *ptep, pmd_t *pmd,
+			unsigned int flags, pte_t pte, spinlock_t *ptl)
 {
 	struct page *page = NULL;
 	bool migrated = false;
-	spinlock_t *ptl;
-	int target_nid;
-	int last_cpu;
+	int last_cpupid;
 	int page_nid;
 
-	/*
-	* The "pte" at this point cannot be used safely without
-	* validation through pte_unmap_same(). It's of NUMA type but
-	* the pfn may be screwed if the read is non atomic.
-	*
-	* ptep_modify_prot_start is not called as this is clearing
-	* the _PAGE_NUMA bit and it is not really expected that there
-	* would be concurrent hardware modifications to the PTE.
-	*/
-	ptl = pte_lockptr(mm, pmd);
-	spin_lock(ptl);
-	if (unlikely(!pte_same(*ptep, pte))) {
-		pte_unmap_unlock(ptep, ptl);
-		return 0;
-	}
-
+	/* Mark it non-NUMA first: */
 	pte = pte_mknonnuma(pte);
 	set_pte_at(mm, addr, ptep, pte);
 	update_mmu_cache(vma, addr, ptep);
 
 	page = vm_normal_page(vma, addr, pte);
-	if (!page) {
-		pte_unmap_unlock(ptep, ptl);
+	if (!page)
 		return 0;
-	}
 
 	page_nid = page_to_nid(page);
 	WARN_ON_ONCE(page_nid == -1);
 
-	/* Get it before mpol_misplaced() flips it: */
-	last_cpu = page_last_cpu(page);
-	WARN_ON_ONCE(last_cpu == -1);
+	/*
+	 * Propagate the last_cpupid access info, even though
+	 * the target_nid has already been established for
+	 * this NID range:
+	 */
+	{
+		int this_cpupid;
+		int this_cpu;
+		int this_node;
 
-	target_nid = numa_migration_target(page, vma, addr, page_nid);
-	if (target_nid == -1) {
-		pte_unmap_unlock(ptep, ptl);
-		goto out;
+		this_cpu = raw_smp_processor_id();
+		this_node = numa_node_id();
+
+		this_cpupid = cpu_pid_to_cpupid(this_cpu, current->pid);
+
+		last_cpupid = page_xchg_last_cpupid(page, this_cpupid);
 	}
+
+	if (target_nid == -1 || target_nid == page_nid)
+		goto out;
 
 	/* Get a reference for migration: */
 	get_page(page);
@@ -3522,16 +3516,90 @@ int do_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	migrated = migrate_misplaced_page_put(page, target_nid); /* Drops the reference */
 	if (migrated)
 		page_nid = target_nid;
+
+	spin_lock(ptl);
 out:
 	/* Always account where the page currently is, physically: */
-	task_numa_fault(page_nid, last_cpu, 1);
+	task_numa_fault(addr, page_nid, last_cpupid, 1, migrated);
+
+	return 0;
+}
+
+/*
+ * Also fault over nearby ptes from within the same pmd and vma,
+ * in order to minimize the overhead from page fault exceptions:
+ */
+static int do_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
+			unsigned long addr0, pte_t *ptep0, pmd_t *pmd,
+			unsigned int flags, pte_t entry0)
+{
+	unsigned long addr0_pmd;
+	unsigned long addr_start;
+	unsigned long addr;
+	struct page *page0;
+	spinlock_t *ptl;
+	pte_t *ptep_start;
+	pte_t *ptep;
+	pte_t entry;
+	int target_nid;
+
+	WARN_ON_ONCE(addr0 < vma->vm_start || addr0 >= vma->vm_end);
+
+	addr0_pmd = addr0 & PMD_MASK;
+	addr_start = max(addr0_pmd, vma->vm_start);
+
+	ptep_start = pte_offset_map(pmd, addr_start);
+	ptl = pte_lockptr(mm, pmd);
+	spin_lock(ptl);
+
+	ptep = ptep_start+1;
+
+	/*
+	 * The first page of the range represents the NUMA
+	 * placement of the range. This way we get consistent
+	 * placement even if the faults themselves might hit
+	 * this area at different offsets:
+	 */
+	target_nid = -1;
+	entry = ACCESS_ONCE(*ptep_start);
+	if (pte_present(entry)) {
+		page0 = vm_normal_page(vma, addr_start, entry);
+		if (page0) {
+			target_nid = mpol_misplaced(page0, vma, addr_start, PMD_SHIFT);
+			if (target_nid == -1)
+				target_nid = page_to_nid(page0);
+		}
+		if (WARN_ON_ONCE(target_nid == -1))
+			target_nid = numa_node_id();
+	}
+
+	for (addr = addr_start+PAGE_SIZE; addr < vma->vm_end; addr += PAGE_SIZE, ptep++) {
+
+		if ((addr & PMD_MASK) != addr0_pmd)
+			break;
+
+		entry = ACCESS_ONCE(*ptep);
+
+		if (!pte_present(entry))
+			continue;
+		if (!pte_numa(entry))
+			continue;
+
+		__do_numa_page(target_nid, mm, vma, addr, ptep, pmd, flags, entry, ptl);
+	}
+
+	entry = ACCESS_ONCE(*ptep_start);
+	if (pte_present(entry) && pte_numa(entry))
+		__do_numa_page(target_nid, mm, vma, addr_start, ptep_start, pmd, flags, entry, ptl);
+
+	pte_unmap_unlock(ptep_start, ptl);
 
 	return 0;
 }
 
 /* NUMA hinting page fault entry point for regular pmds */
-int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
-		     unsigned long addr, pmd_t *pmdp)
+static int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
+			    unsigned long addr, pmd_t *pmdp)
 {
 	pmd_t pmd;
 	pte_t *pte, *orig_pte;
@@ -3558,11 +3626,12 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	VM_BUG_ON(offset >= PMD_SIZE);
 	orig_pte = pte = pte_offset_map_lock(mm, pmdp, _addr, &ptl);
 	pte += offset >> PAGE_SHIFT;
+
 	for (addr = _addr + offset; addr < _addr + PMD_SIZE; pte++, addr += PAGE_SIZE) {
 		struct page *page;
 		int page_nid;
 		int target_nid;
-		int last_cpu;
+		int last_cpupid;
 		bool migrated;
 		pte_t pteval;
 
@@ -3581,6 +3650,9 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		if (pte_numa(pteval)) {
 			pteval = pte_mknonnuma(pteval);
 			set_pte_at(mm, addr, pte, pteval);
+		} else {
+			/* Should not happen */
+			WARN_ON_ONCE(1);
 		}
 		page = vm_normal_page(vma, addr, pteval);
 		if (unlikely(!page))
@@ -3592,12 +3664,16 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		page_nid = page_to_nid(page);
 		WARN_ON_ONCE(page_nid == -1);
 
-		last_cpu = page_last_cpu(page);
-		WARN_ON_ONCE(last_cpu == -1);
+		last_cpupid = page_last__cpupid(page);
 
 		target_nid = numa_migration_target(page, vma, addr, page_nid);
-		if (target_nid == -1)
+		if (target_nid == -1) {
+			/* Always account where the page currently is, physically: */
+			task_numa_fault(addr, page_nid, last_cpupid, 1, 0);
+
 			continue;
+		}
+		WARN_ON_ONCE(target_nid == page_nid);
 
 		/* Get a reference for the migration: */
 		get_page(page);
@@ -3609,7 +3685,7 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 			page_nid = target_nid;
 
 		/* Always account where the page currently is, physically: */
-		task_numa_fault(page_nid, last_cpu, 1);
+		task_numa_fault(addr, page_nid, last_cpupid, 1, migrated);
 
 		pte = pte_offset_map_lock(mm, pmdp, addr, &ptl);
 	}
@@ -3617,6 +3693,19 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 
 	return 0;
 }
+#else
+static inline int do_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
+			unsigned long addr0, pte_t *ptep0, pmd_t *pmd,
+			unsigned int flags, pte_t entry0)
+{
+	return 0;
+}
+static inline int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
+		     unsigned long addr, pmd_t *pmdp)
+{
+	return 0;
+}
+#endif
 
 /*
  * These routines also need to handle stuff like marking pages dirty
@@ -3657,7 +3746,7 @@ int handle_pte_fault(struct mm_struct *mm,
 	}
 
 	if (pte_numa(entry))
-		return do_numa_page(mm, vma, address, entry, pte, pmd);
+		return do_numa_page(mm, vma, address, pte, pmd, flags, entry);
 
 	ptl = pte_lockptr(mm, pmd);
 	spin_lock(ptl);

@@ -138,19 +138,21 @@ static inline unsigned long change_pmd_range(struct vm_area_struct *vma, pud_t *
 		pages += change_pte_range(vma, pmd, addr, next, newprot,
 				 dirty_accountable, prot_numa, &all_same_node);
 
+#ifdef CONFIG_NUMA_BALANCING
 		/*
 		 * If we are changing protections for NUMA hinting faults then
 		 * set pmd_numa if the examined pages were all on the same
 		 * node. This allows a regular PMD to be handled as one fault
 		 * and effectively batches the taking of the PTL
 		 */
-		if (prot_numa && all_same_node) {
+		if (prot_numa && all_same_node && 0) {
 			struct mm_struct *mm = vma->vm_mm;
 
 			spin_lock(&mm->page_table_lock);
 			set_pmd_at(mm, addr & PMD_MASK, pmd, pmd_mknuma(*pmd));
 			spin_unlock(&mm->page_table_lock);
 		}
+#endif
 	} while (pmd++, addr = next, addr != end);
 
 	return pages;

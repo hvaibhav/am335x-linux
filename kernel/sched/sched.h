@@ -438,6 +438,9 @@ struct rq {
 	struct list_head cfs_tasks;
 
 #ifdef CONFIG_NUMA_BALANCING
+	unsigned long numa_weight;
+	unsigned long nr_numa_running;
+	unsigned long nr_ideal_running;
 	struct task_struct *curr_buddy;
 #endif
 	unsigned long nr_shared_running;	/* 0 on non-NUMA */
@@ -513,6 +516,7 @@ DECLARE_PER_CPU(struct rq, runqueues);
 #define raw_rq()		(&__raw_get_cpu_var(runqueues))
 
 #ifdef CONFIG_NUMA_BALANCING
+extern void __sched_setnuma(struct rq *rq, struct task_struct *p, int node, int shared);
 extern void sched_setnuma(struct task_struct *p, int node, int shared);
 static inline void task_numa_free(struct task_struct *p)
 {

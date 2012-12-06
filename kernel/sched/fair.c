@@ -801,6 +801,45 @@ static unsigned long task_h_load(struct task_struct *p);
 #endif
 
 #ifdef CONFIG_NUMA_BALANCING
+static void account_numa_enqueue(struct rq *rq, struct task_struct *p)
+{
+	int shared = task_numa_shared(p);
+
+	WARN_ON_ONCE(p->numa_weight);
+
+	if (shared != -1) {
+		p->numa_weight = p->se.load.weight;
+		WARN_ON_ONCE(!p->numa_weight);
+		p->numa_shared_enqueue = shared;
+
+		rq->nr_numa_running++;
+		rq->nr_shared_running += shared;
+		rq->nr_ideal_running += (cpu_to_node(task_cpu(p)) == p->numa_max_node);
+		rq->numa_weight += p->numa_weight;
+	} else {
+		if (p->numa_weight) {
+			WARN_ON_ONCE(p->numa_weight);
+			p->numa_weight = 0;
+		}
+	}
+}
+
+static void account_numa_dequeue(struct rq *rq, struct task_struct *p)
+{
+	if (p->numa_shared_enqueue != -1) {
+		rq->nr_numa_running--;
+		rq->nr_shared_running -= p->numa_shared_enqueue;
+		rq->nr_ideal_running -= (cpu_to_node(task_cpu(p)) == p->numa_max_node);
+		rq->numa_weight -= p->numa_weight;
+		p->numa_weight = 0;
+		p->numa_shared_enqueue = -1;
+	} else {
+		if (p->numa_weight) {
+			WARN_ON_ONCE(p->numa_weight);
+			p->numa_weight = 0;
+		}
+	}
+}
 
 /*
  * Scan @scan_size MB every @scan_period after an initial @scan_delay.
@@ -815,9 +854,20 @@ unsigned int sysctl_sched_numa_scan_size_max	__read_mostly = 512;	/* MB */
 unsigned int sysctl_sched_numa_rss_threshold	__read_mostly = 128;	/* MB */
 
 /*
- * Wait for the 2-sample stuff to settle before migrating again
+ * Wait for the 3-sample stuff to settle before migrating again
  */
-unsigned int sysctl_sched_numa_settle_count	__read_mostly = 2;
+unsigned int sysctl_sched_numa_settle_count	__read_mostly = 0;
+
+/*
+ * Weight of decay of the fault stats:
+ */
+unsigned int sysctl_sched_numa_fault_weight	__read_mostly = 3;
+
+static void task_numa_migrate(struct task_struct *p, int next_cpu)
+{
+	if (cpu_to_node(next_cpu) != cpu_to_node(task_cpu(p)))
+		p->numa_migrate_seq = 0;
+}
 
 static int task_ideal_cpu(struct task_struct *p)
 {
@@ -876,6 +926,7 @@ static long calc_node_load(int node, bool use_higher)
 	long cpu_load_highfreq;
 	long cpu_load_lowfreq;
 	long cpu_load_curr;
+	long cpu_load_numa;
 	long min_cpu_load;
 	long max_cpu_load;
 	long node_load;
@@ -885,18 +936,22 @@ static long calc_node_load(int node, bool use_higher)
 
 	for_each_cpu(cpu, cpumask_of_node(node)) {
 		struct rq *rq = cpu_rq(cpu);
+		long cpu_load;
 
+		cpu_load_numa		= rq->numa_weight;
 		cpu_load_curr		= rq->load.weight;
 		cpu_load_lowfreq	= rq->cpu_load[NUMA_LOAD_IDX_LOWFREQ];
 		cpu_load_highfreq	= rq->cpu_load[NUMA_LOAD_IDX_HIGHFREQ];
 
-		min_cpu_load = min(min(cpu_load_curr, cpu_load_lowfreq), cpu_load_highfreq);
-		max_cpu_load = max(max(cpu_load_curr, cpu_load_lowfreq), cpu_load_highfreq);
+		min_cpu_load = min(min(min(cpu_load_numa, cpu_load_curr), cpu_load_lowfreq), cpu_load_highfreq);
+		max_cpu_load = max(max(max(cpu_load_numa, cpu_load_curr), cpu_load_lowfreq), cpu_load_highfreq);
 
 		if (use_higher)
-			node_load += max_cpu_load;
+			cpu_load = max_cpu_load;
 		else
-			node_load += min_cpu_load;
+			cpu_load = min_cpu_load;
+
+		node_load += cpu_load;
 	}
 
 	return node_load;
@@ -1037,6 +1092,7 @@ static int find_intranode_imbalance(int this_node, int this_cpu)
 	long cpu_load_lowfreq;
 	long this_cpu_load;
 	long cpu_load_curr;
+	long cpu_load_numa;
 	long min_cpu_load;
 	long cpu_load;
 	int min_cpu;
@@ -1052,14 +1108,15 @@ static int find_intranode_imbalance(int this_node, int this_cpu)
 	for_each_cpu(cpu, cpumask_of_node(this_node)) {
 		struct rq *rq = cpu_rq(cpu);
 
+		cpu_load_numa		= rq->numa_weight;
 		cpu_load_curr		= rq->load.weight;
 		cpu_load_lowfreq	= rq->cpu_load[NUMA_LOAD_IDX_LOWFREQ];
 		cpu_load_highfreq	= rq->cpu_load[NUMA_LOAD_IDX_HIGHFREQ];
 
-		if (cpu == this_cpu) {
-			this_cpu_load = min(min(cpu_load_curr, cpu_load_lowfreq), cpu_load_highfreq);
-		}
-		cpu_load = max(max(cpu_load_curr, cpu_load_lowfreq), cpu_load_highfreq);
+		if (cpu == this_cpu)
+			this_cpu_load = min(min(min(cpu_load_numa, cpu_load_curr), cpu_load_lowfreq), cpu_load_highfreq);
+
+		cpu_load = max(max(max(cpu_load_numa, cpu_load_curr), cpu_load_lowfreq), cpu_load_highfreq);
 
 		/* Find the idlest CPU: */
 		if (cpu_load < min_cpu_load) {
@@ -1078,16 +1135,18 @@ static int find_intranode_imbalance(int this_node, int this_cpu)
 /*
  * Search a node for the smallest-group task and return
  * it plus the size of the group it is in.
+ *
+ * TODO: can be done with a single pass.
  */
-static int buddy_group_size(int node, struct task_struct *p)
+static int buddy_group_size(int node, struct task_struct *p, bool *our_group_p)
 {
 	const cpumask_t *node_cpus_mask = cpumask_of_node(node);
 	cpumask_t cpus_to_check_mask;
-	bool our_group_found;
+	bool buddies_group_found;
 	int cpu1, cpu2;
 
 	cpumask_copy(&cpus_to_check_mask, node_cpus_mask);
-	our_group_found = false;
+	buddies_group_found = false;
 
 	if (WARN_ON_ONCE(cpumask_empty(&cpus_to_check_mask)))
 		return 0;
@@ -1106,7 +1165,12 @@ static int buddy_group_size(int node, struct task_struct *p)
 
 			group_size = 1;
 			if (tasks_buddies(group_head, p))
-				our_group_found = true;
+				buddies_group_found = true;
+
+			if (group_head == p) {
+				*our_group_p = true;
+				buddies_group_found = true;
+			}
 
 			/* Non-NUMA-shared tasks are 1-task groups: */
 			if (task_numa_shared(group_head) != 1)
@@ -1119,21 +1183,22 @@ static int buddy_group_size(int node, struct task_struct *p)
 				struct task_struct *p2 = rq2->curr;
 
 				WARN_ON_ONCE(rq1 == rq2);
+				if (p2 == p)
+					*our_group_p = true;
 				if (tasks_buddies(group_head, p2)) {
 					/* 'group_head' and 'rq2->curr' are in the same group: */
 					cpumask_clear_cpu(cpu2, &cpus_to_check_mask);
 					group_size++;
 					if (tasks_buddies(p2, p))
-						our_group_found = true;
+						buddies_group_found = true;
 				}
 			}
 next:
-
 			/*
 			 * If we just found our group and checked all
 			 * node local CPUs then return the result:
 			 */
-			if (our_group_found)
+			if (buddies_group_found)
 				return group_size;
 		}
 	} while (!cpumask_empty(&cpus_to_check_mask));
@@ -1211,8 +1276,15 @@ pick_non_numa_task:
 	return min_group_cpu;
 }
 
-static int find_max_node(struct task_struct *p, int *our_group_size)
+/*
+ * Find the node with the biggest buddy group of ours, but exclude
+ * our own local group on this node and also exclude fully filled
+ * nodes:
+ */
+static int
+find_max_node(struct task_struct *p, int *our_group_size_p, int *max_group_size_p, int full_size)
 {
+	bool our_group = false;
 	int max_group_size;
 	int group_size;
 	int max_node;
@@ -1222,9 +1294,12 @@ static int find_max_node(struct task_struct *p, int *our_group_size)
 	max_node = -1;
 
 	for_each_node(node) {
-		int full_size = cpumask_weight(cpumask_of_node(node));
 
-		group_size = buddy_group_size(node, p);
+		group_size = buddy_group_size(node, p, &our_group);
+		if (our_group) {
+			our_group = false;
+			*our_group_size_p = group_size;
+		}
 		if (group_size == full_size)
 			continue;
 
@@ -1234,7 +1309,7 @@ static int find_max_node(struct task_struct *p, int *our_group_size)
 		}
 	}
 
-	*our_group_size = max_group_size;
+	*max_group_size_p = max_group_size;
 
 	return max_node;
 }
@@ -1410,19 +1485,23 @@ static int find_max_node(struct task_struct *p, int *our_group_size)
  */
 static int improve_group_balance_compress(struct task_struct *p, int this_cpu, int this_node)
 {
-	int our_group_size = -1;
+	int full_size = cpumask_weight(cpumask_of_node(this_node));
+	int max_group_size = -1;
 	int min_group_size = -1;
+	int our_group_size = -1;
 	int max_node;
 	int min_cpu;
 
 	if (!sched_feat(NUMA_GROUP_LB_COMPRESS))
 		return -1;
 
-	max_node = find_max_node(p, &our_group_size);
+	max_node = find_max_node(p, &our_group_size, &max_group_size, full_size);
 	if (max_node == -1)
 		return -1;
+	if (our_group_size == -1)
+		return -1;
 
-	if (WARN_ON_ONCE(our_group_size == -1))
+	if (our_group_size == full_size || our_group_size > max_group_size)
 		return -1;
 
 	/* We are already in the right spot: */
@@ -1467,6 +1546,7 @@ static int improve_group_balance_spread(struct task_struct *p, int this_cpu, int
 	long this_node_load = -1;
 	long delta_load_before;
 	long delta_load_after;
+	int group_count = 0;
 	int idlest_cpu = -1;
 	int cpu1, cpu2;
 
@@ -1535,6 +1615,7 @@ static int improve_group_balance_spread(struct task_struct *p, int this_cpu, int
 				min_group_size = group_size;
 			else
 				min_group_size = min(group_size, min_group_size);
+			group_count++;
 		}
 	} while (!cpumask_empty(&cpus_to_check_mask));
 
@@ -1544,11 +1625,21 @@ static int improve_group_balance_spread(struct task_struct *p, int this_cpu, int
 	 */
 	if (!found_our_group)
 		return -1;
+
 	if (!our_group_smallest)
 		return -1;
+
 	if (WARN_ON_ONCE(min_group_size == -1))
 		return -1;
 	if (WARN_ON_ONCE(our_group_size == -1))
+		return -1;
+
+	/* Since the current task is shared, this should not happen: */
+	if (WARN_ON_ONCE(group_count < 1))
+		return -1;
+
+	/* No point in moving if we are a single group: */
+	if (group_count <= 1)
 		return -1;
 
 	idlest_node = find_idlest_node(&idlest_cpu);
@@ -1572,7 +1663,7 @@ static int improve_group_balance_spread(struct task_struct *p, int this_cpu, int
 	 */
 	delta_load_before = this_node_load - idlest_node_load;
 	delta_load_after = (this_node_load-this_group_load) - (idlest_node_load+this_group_load);
-	
+
 	if (abs(delta_load_after)+SCHED_LOAD_SCALE > abs(delta_load_before))
 		return -1;
 
@@ -1756,7 +1847,7 @@ static int sched_update_ideal_cpu_shared(struct task_struct *p, int *flip_tasks)
 	this_node_capacity	= calc_node_capacity(this_node);
 
 	this_node_overloaded = false;
-	if (this_node_load > this_node_capacity + 512)
+	if (this_node_load > this_node_capacity + SCHED_LOAD_SCALE/2)
 		this_node_overloaded = true;
 
 	/* If we'd stay within this node then stay put: */
@@ -1872,7 +1963,7 @@ static int sched_update_ideal_cpu_private(struct task_struct *p)
 	this_node_capacity	= calc_node_capacity(this_node);
 
 	this_node_overloaded = false;
-	if (this_node_load > this_node_capacity + 512)
+	if (this_node_load > this_node_capacity + SCHED_LOAD_SCALE/2)
 		this_node_overloaded = true;
 
 	if (this_node == min_node)
@@ -1884,8 +1975,8 @@ static int sched_update_ideal_cpu_private(struct task_struct *p)
 
 	WARN_ON_ONCE(max_node_load < min_node_load);
 
-	/* Is the load difference at least 125% of one standard task load? */
-	if (this_node_load - min_node_load < 1536)
+	/* Is the load difference at least 150% of one standard task load? */
+	if (this_node_load - min_node_load < SCHED_LOAD_SCALE*3/2)
 		goto out_check_intranode;
 
 	/*
@@ -2012,7 +2103,9 @@ static void task_numa_placement_tick(struct task_struct *p)
 {
 	unsigned long total[2] = { 0, 0 };
 	unsigned long faults, max_faults = 0;
-	int node, priv, shared, ideal_node = -1;
+	unsigned long total_priv, total_shared;
+	int node, priv, new_shared, prev_shared, ideal_node = -1;
+	int settle_limit;
 	int flip_tasks;
 	int this_node;
 	int this_cpu;
@@ -2026,14 +2119,17 @@ static void task_numa_placement_tick(struct task_struct *p)
 		for (priv = 0; priv < 2; priv++) {
 			unsigned int new_faults;
 			unsigned int idx;
+			unsigned int weight;
 
 			idx = 2*node + priv;
 			new_faults = p->numa_faults_curr[idx];
 			p->numa_faults_curr[idx] = 0;
 
-			/* Keep a simple running average: */
-			p->numa_faults[idx] = p->numa_faults[idx]*15 + new_faults;
-			p->numa_faults[idx] /= 16;
+			/* Keep a simple exponential moving average: */
+			weight = sysctl_sched_numa_fault_weight;
+
+			p->numa_faults[idx] = p->numa_faults[idx]*(weight-1) + new_faults;
+			p->numa_faults[idx] /= weight;
 
 			faults += p->numa_faults[idx];
 			total[priv] += p->numa_faults[idx];
@@ -2053,23 +2149,38 @@ static void task_numa_placement_tick(struct task_struct *p)
 	 * we might want to consider a different equation below to reduce
 	 * the impact of a little private memory accesses.
 	 */
-	shared = p->numa_shared;
+	prev_shared = p->numa_shared;
+	new_shared = prev_shared;
 
-	if (shared < 0) {
-		shared = (total[0] >= total[1]);
-	} else if (shared == 0) {
-		/* If it was private before, make it harder to become shared: */
-		if (total[0] >= total[1]*2)
-			shared = 1;
-	} else if (shared == 1 ) {
+	settle_limit = sysctl_sched_numa_settle_count;
+
+	/*
+	 * Note: shared is spread across multiple tasks and in the future
+	 * we might want to consider a different equation below to reduce
+	 * the impact of a little private memory accesses.
+	 */
+	total_priv = total[1] / 2;
+	total_shared = total[0];
+
+	if (prev_shared < 0) {
+		/* Start out as private: */
+		new_shared = 0;
+	} else if (prev_shared == 0 && p->numa_migrate_seq >= settle_limit) {
+		/*
+		 * Hysteresis: if it was private before, make it harder to
+		 * become shared:
+		 */
+		if (total_shared*2 >= total_priv*3)
+			new_shared = 1;
+	} else if (prev_shared == 1 && p->numa_migrate_seq >= settle_limit) {
 		 /* If it was shared before, make it harder to become private: */
-		if (total[0]*2 <= total[1])
-			shared = 0;
+		if (total_shared*3 <= total_priv*2)
+			new_shared = 0;
 	}
 
 	flip_tasks = 0;
 
-	if (shared)
+	if (new_shared)
 		p->ideal_cpu = sched_update_ideal_cpu_shared(p, &flip_tasks);
 	else
 		p->ideal_cpu = sched_update_ideal_cpu_private(p);
@@ -2087,7 +2198,9 @@ static void task_numa_placement_tick(struct task_struct *p)
 			ideal_node = p->numa_max_node;
 	}
 
-	if (shared != task_numa_shared(p) || (ideal_node != -1 && ideal_node != p->numa_max_node)) {
+	if (new_shared != prev_shared || (ideal_node != -1 && ideal_node != p->numa_max_node)) {
+
+		p->numa_migrate_seq = 0;
 		/*
 		 * Fix up node migration fault statistics artifact, as we
 		 * migrate to another node we'll soon bring over our private
@@ -2102,7 +2215,7 @@ static void task_numa_placement_tick(struct task_struct *p)
 			p->numa_faults[idx_newnode] += p->numa_faults[idx_oldnode];
 			p->numa_faults[idx_oldnode] = 0;
 		}
-		sched_setnuma(p, ideal_node, shared);
+		sched_setnuma(p, ideal_node, new_shared);
 
 		/* Allocate only the maximum node: */
 		if (sched_feat(NUMA_POLICY_MAXNODE)) {
@@ -2228,11 +2341,31 @@ out_hit:
 /*
  * Got a PROT_NONE fault for a page on @node.
  */
-void task_numa_fault(int node, int last_cpu, int pages)
+void task_numa_fault(unsigned long addr, int node, int last_cpupid, int pages, bool migrated)
 {
 	struct task_struct *p = current;
-	int priv = (task_cpu(p) == last_cpu);
-	int idx = 2*node + priv;
+	int this_cpu = raw_smp_processor_id();
+	int last_cpu = cpupid_to_cpu(last_cpupid);
+	int last_pid = cpupid_to_pid(last_cpupid);
+	int this_pid = current->pid & CPUPID_PID_MASK;
+	int priv;
+	int idx;
+
+	if (last_cpupid != cpu_pid_to_cpupid(-1, -1)) {
+		/* Did we access it last time around? */
+		if (last_pid == this_pid) {
+			priv = 1;
+		} else {
+			priv = 0;
+		}
+	} else {
+		/* The default for fresh pages is private: */
+		priv = 1;
+		last_cpu = this_cpu;
+		node = cpu_to_node(this_cpu);
+	}
+
+	idx = 2*node + priv;
 
 	WARN_ON_ONCE(last_cpu == -1 || node == -1);
 	BUG_ON(!p->numa_faults);
@@ -2262,6 +2395,10 @@ void task_numa_placement_work(struct callback_head *work)
 	 * work.
 	 */
 	if (p->flags & PF_EXITING)
+		return;
+
+	p->numa_migrate_seq++;
+	if (sched_feat(NUMA_SETTLE) && p->numa_migrate_seq < sysctl_sched_numa_settle_count)
 		return;
 
 	task_numa_placement_tick(p);
@@ -2540,7 +2677,7 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 	/* Cheap checks first: */
 	if (!task_numa_candidate(curr)) {
 		if (curr->numa_shared >= 0)
-			curr->numa_shared = -1;
+			__sched_setnuma(rq, curr, -1, -1);
 		return;
 	}
 
@@ -2551,8 +2688,11 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 #else /* !CONFIG_NUMA_BALANCING: */
 #ifdef CONFIG_SMP
 static inline int task_ideal_cpu(struct task_struct *p)				{ return -1; }
+static inline void account_numa_enqueue(struct rq *rq, struct task_struct *p)	{ }
 #endif
+static inline void account_numa_dequeue(struct rq *rq, struct task_struct *p)	{ }
 static inline void task_tick_numa(struct rq *rq, struct task_struct *curr)	{ }
+static inline void task_numa_migrate(struct task_struct *p, int next_cpu)	{ }
 #endif /* CONFIG_NUMA_BALANCING */
 
 /**************************************************
@@ -2569,6 +2709,7 @@ account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	if (entity_is_task(se)) {
 		struct rq *rq = rq_of(cfs_rq);
 
+		account_numa_enqueue(rq, task_of(se));
 		list_add(&se->group_node, &rq->cfs_tasks);
 	}
 #endif /* CONFIG_SMP */
@@ -2581,9 +2722,10 @@ account_entity_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	update_load_sub(&cfs_rq->load, se->load.weight);
 	if (!parent_entity(se))
 		update_load_sub(&rq_of(cfs_rq)->load, se->load.weight);
-	if (entity_is_task(se))
+	if (entity_is_task(se)) {
 		list_del_init(&se->group_node);
-
+		account_numa_dequeue(rq_of(cfs_rq), task_of(se));
+	}
 	cfs_rq->nr_running--;
 }
 
@@ -4650,6 +4792,39 @@ static inline unsigned long effective_load(struct task_group *tg, int cpu,
 
 #endif
 
+#define LBF_ALL_PINNED	0x01
+#define LBF_NEED_BREAK	0x02
+#define LBF_SOME_PINNED	0x04
+
+struct lb_env {
+	struct sched_domain	*sd;
+
+	struct rq		*src_rq;
+	int			src_cpu;
+
+	int			dst_cpu;
+	struct rq		*dst_rq;
+
+	struct cpumask		*dst_grpmask;
+	int			new_dst_cpu;
+	enum cpu_idle_type	idle;
+	long			imbalance;
+	/* The set of CPUs under consideration for load-balancing */
+	struct cpumask		*cpus;
+
+	unsigned int		flags;
+	unsigned int		failed;
+	unsigned int		iteration;
+
+	unsigned int		loop;
+	unsigned int		loop_break;
+	unsigned int		loop_max;
+
+	struct rq *		(*find_busiest_queue)(struct lb_env *,
+						      struct sched_group *);
+};
+
+
 static int wake_affine(struct sched_domain *sd, struct task_struct *p, int sync)
 {
 	s64 this_load, load;
@@ -4869,30 +5044,35 @@ done:
 	return target;
 }
 
-static bool numa_allow_migration(struct task_struct *p, int prev_cpu, int new_cpu)
+static bool numa_allow_migration(struct task_struct *p, int prev_cpu, int new_cpu,
+				 struct lb_env *env)
 {
 #ifdef CONFIG_NUMA_BALANCING
+
 	if (sched_feat(NUMA_CONVERGE_MIGRATIONS)) {
 		/* Help in the direction of expected convergence: */
 		if (p->convergence_node >= 0 && (cpu_to_node(new_cpu) != p->convergence_node))
 			return false;
 
-		return true;
-	}
-
-	if (sched_feat(NUMA_BALANCE_ALL)) {
- 		if (task_numa_shared(p) >= 0)
-			return false;
-
-		return true;
+		if (!env || env->failed <= env->sd->cache_nice_tries) {
+			if (task_numa_shared(p) >= 0 &&
+					cpu_to_node(prev_cpu) != cpu_to_node(new_cpu))
+				return false;
+		}
 	}
 
 	if (sched_feat(NUMA_BALANCE_INTERNODE)) {
 		if (task_numa_shared(p) >= 0) {
- 			if (cpu_to_node(prev_cpu) != cpu_to_node(new_cpu))
+			if (cpu_to_node(prev_cpu) != cpu_to_node(new_cpu))
 				return false;
 		}
 	}
+
+	if (sched_feat(NUMA_BALANCE_ALL)) {
+		if (task_numa_shared(p) >= 0)
+			return false;
+	}
+
 #endif
 	return true;
 }
@@ -4919,6 +5099,12 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 	int new_cpu = cpu;
 	int want_affine = 0;
 	int sync = wake_flags & WF_SYNC;
+	int wake_cpu = p->wake_cpu;
+
+	if (wake_cpu != -1 && cpumask_test_cpu(wake_cpu, tsk_cpus_allowed(p))) {
+		p->wake_cpu = -1;
+		return wake_cpu;
+	}
 
 	if (p->nr_cpus_allowed == 1)
 		return prev_cpu;
@@ -5000,10 +5186,12 @@ select_task_rq_fair(struct task_struct *p, int sd_flag, int wake_flags)
 		/* while loop will break here if sd == NULL */
 	}
 unlock:
-	rcu_read_unlock();
+	if (!numa_allow_migration(p, prev0_cpu, new_cpu, NULL)) {
+		if (cpumask_test_cpu(prev0_cpu, tsk_cpus_allowed(p)))
+			new_cpu = prev0_cpu;
+	}
 
-	if (!numa_allow_migration(p, prev0_cpu, new_cpu))
-		return prev0_cpu;
+	rcu_read_unlock();
 
 	return new_cpu;
 }
@@ -5044,6 +5232,7 @@ static void
 migrate_task_rq_fair(struct task_struct *p, int next_cpu)
 {
 	migrate_task_rq_entity(p, next_cpu);
+	task_numa_migrate(p, next_cpu);
 }
 #endif /* CONFIG_SMP */
 
@@ -5366,7 +5555,7 @@ static bool yield_to_task_fair(struct rq *rq, struct task_struct *p, bool preemp
  *
  * The adjacency matrix of the resulting graph is given by:
  *
- *             log_2 n     
+ *             log_2 n
  *   A_i,j = \Union     (i % 2^k == 0) && i / 2^(k+1) == j / 2^(k+1)  (6)
  *             k = 0
  *
@@ -5412,41 +5601,9 @@ static bool yield_to_task_fair(struct rq *rq, struct task_struct *p, bool preemp
  *
  * [XXX write more on how we solve this.. _after_ merging pjt's patches that
  *      rewrite all of this once again.]
- */ 
+ */
 
 static unsigned long __read_mostly max_load_balance_interval = HZ/10;
-
-#define LBF_ALL_PINNED	0x01
-#define LBF_NEED_BREAK	0x02
-#define LBF_SOME_PINNED	0x04
-
-struct lb_env {
-	struct sched_domain	*sd;
-
-	struct rq		*src_rq;
-	int			src_cpu;
-
-	int			dst_cpu;
-	struct rq		*dst_rq;
-
-	struct cpumask		*dst_grpmask;
-	int			new_dst_cpu;
-	enum cpu_idle_type	idle;
-	long			imbalance;
-	/* The set of CPUs under consideration for load-balancing */
-	struct cpumask		*cpus;
-
-	unsigned int		flags;
-	unsigned int		failed;
-	unsigned int		iteration;
-
-	unsigned int		loop;
-	unsigned int		loop_break;
-	unsigned int		loop_max;
-
-	struct rq *		(*find_busiest_queue)(struct lb_env *,
-						      struct sched_group *);
-};
 
 /*
  * move_task - move a task from one runqueue to another runqueue.
@@ -5548,7 +5705,7 @@ static int can_migrate_task(struct task_struct *p, struct lb_env *env)
 	/* We do NUMA balancing elsewhere: */
 
 	if (env->failed <= env->sd->cache_nice_tries) {
-		if (!numa_allow_migration(p, env->src_rq->cpu, env->dst_cpu))
+		if (!numa_allow_migration(p, env->src_rq->cpu, env->dst_cpu, env))
 			return false;
 	}
 
@@ -5609,7 +5766,7 @@ static int move_one_task(struct lb_env *env)
 		if (!can_migrate_task(p, env))
 			continue;
 
-		if (!numa_allow_migration(p, env->src_rq->cpu, env->dst_cpu))
+		if (!numa_allow_migration(p, env->src_rq->cpu, env->dst_cpu, env))
 			continue;
 
 		move_task(p, env);
@@ -5672,7 +5829,7 @@ static int move_tasks(struct lb_env *env)
 		if (!can_migrate_task(p, env))
 			goto next;
 
-		if (!numa_allow_migration(p, env->src_rq->cpu, env->dst_cpu))
+		if (!numa_allow_migration(p, env->src_rq->cpu, env->dst_cpu, env))
 			goto next;
 
 		move_task(p, env);
@@ -6023,7 +6180,7 @@ void update_group_power(struct sched_domain *sd, int cpu)
 		/*
 		 * !SD_OVERLAP domains can assume that child groups
 		 * span the current group.
-		 */ 
+		 */
 
 		group = child->groups;
 		do {
@@ -6793,6 +6950,11 @@ more_balance:
 			goto out_pinned;
 		}
 
+		/* Is this active load-balancing NUMA-beneficial? */
+		if (!numa_allow_migration(busiest->curr, env.src_rq->cpu, env.dst_cpu, &env)) {
+			raw_spin_unlock_irqrestore(&busiest->lock, flags);
+			goto out;
+		}
 		/*
 		 * ->active_balance synchronizes accesses to
 		 * ->active_balance_work.  Once set, it's cleared

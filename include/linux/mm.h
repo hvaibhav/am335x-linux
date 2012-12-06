@@ -585,7 +585,7 @@ static inline pte_t maybe_mkwrite(pte_t pte, struct vm_area_struct *vma)
 #define SECTIONS_PGOFF		((sizeof(unsigned long)*8) - SECTIONS_WIDTH)
 #define NODES_PGOFF		(SECTIONS_PGOFF - NODES_WIDTH)
 #define ZONES_PGOFF		(NODES_PGOFF - ZONES_WIDTH)
-#define LAST_CPU_PGOFF		(ZONES_PGOFF - LAST_CPU_WIDTH)
+#define LAST_CPUPID_PGOFF	(ZONES_PGOFF - LAST_CPUPID_WIDTH)
 
 /*
  * Define the bit shifts to access each section.  For non-existent
@@ -595,7 +595,7 @@ static inline pte_t maybe_mkwrite(pte_t pte, struct vm_area_struct *vma)
 #define SECTIONS_PGSHIFT	(SECTIONS_PGOFF * (SECTIONS_WIDTH != 0))
 #define NODES_PGSHIFT		(NODES_PGOFF * (NODES_WIDTH != 0))
 #define ZONES_PGSHIFT		(ZONES_PGOFF * (ZONES_WIDTH != 0))
-#define LAST_CPU_PGSHIFT	(LAST_CPU_PGOFF * (LAST_CPU_WIDTH != 0))
+#define LAST_CPUPID_PGSHIFT	(LAST_CPUPID_PGOFF * (LAST_CPUPID_WIDTH != 0))
 
 /* NODE:ZONE or SECTION:ZONE is used to ID a zone for the buddy allocator */
 #ifdef NODE_NOT_IN_PAGE_FLAGS
@@ -617,7 +617,7 @@ static inline pte_t maybe_mkwrite(pte_t pte, struct vm_area_struct *vma)
 #define ZONES_MASK		((1UL << ZONES_WIDTH) - 1)
 #define NODES_MASK		((1UL << NODES_WIDTH) - 1)
 #define SECTIONS_MASK		((1UL << SECTIONS_WIDTH) - 1)
-#define LAST_CPU_MASK		((1UL << LAST_CPU_WIDTH) - 1)
+#define LAST_CPUPID_MASK	((1UL << LAST_CPUPID_WIDTH) - 1)
 #define ZONEID_MASK		((1UL << ZONEID_SHIFT) - 1)
 
 static inline enum zone_type page_zonenum(const struct page *page)
@@ -657,64 +657,93 @@ static inline int page_to_nid(const struct page *page)
 #endif
 
 #ifdef CONFIG_NUMA_BALANCING
-#ifdef LAST_CPU_NOT_IN_PAGE_FLAGS
-static inline int page_xchg_last_cpu(struct page *page, int cpu)
+
+static inline int cpupid_to_cpu(int cpupid)
 {
-	return xchg(&page->_last_cpu, cpu);
+	return (cpupid >> CPUPID_PID_BITS) & CPUPID_CPU_MASK;
 }
 
-static inline int page_last_cpu(struct page *page)
+static inline int cpupid_to_pid(int cpupid)
 {
-	return page->_last_cpu;
+	return cpupid & CPUPID_PID_MASK;
 }
 
-static inline void reset_page_last_cpu(struct page *page)
+static inline int cpu_pid_to_cpupid(int cpu, int pid)
 {
-	page->_last_cpu = -1;
+	return ((cpu & CPUPID_CPU_MASK) << CPUPID_CPU_BITS) | (pid & CPUPID_PID_MASK);
 }
+
+#ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
+static inline int page_xchg_last_cpupid(struct page *page, int cpupid)
+{
+	return xchg(&page->_last_cpupid, cpupid);
+}
+
+static inline int page_last__cpupid(struct page *page)
+{
+	return page->_last_cpupid;
+}
+
+static inline void reset_page_last_cpupid(struct page *page)
+{
+	page->_last_cpupid = -1;
+}
+
 #else
-static inline int page_xchg_last_cpu(struct page *page, int cpu)
+static inline int page_xchg_last_cpupid(struct page *page, int cpupid)
 {
 	unsigned long old_flags, flags;
-	int last_cpu;
+	int last_cpupid;
 
 	do {
 		old_flags = flags = page->flags;
-		last_cpu = (flags >> LAST_CPU_PGSHIFT) & LAST_CPU_MASK;
+		last_cpupid = (flags >> LAST_CPUPID_PGSHIFT) & LAST_CPUPID_MASK;
 
-		flags &= ~(LAST_CPU_MASK << LAST_CPU_PGSHIFT);
-		flags |= (cpu & LAST_CPU_MASK) << LAST_CPU_PGSHIFT;
+		flags &= ~(LAST_CPUPID_MASK << LAST_CPUPID_PGSHIFT);
+		flags |= (cpupid & LAST_CPUPID_MASK) << LAST_CPUPID_PGSHIFT;
+
 	} while (unlikely(cmpxchg(&page->flags, old_flags, flags) != old_flags));
 
-	return last_cpu;
+	return last_cpupid;
 }
 
-static inline int page_last_cpu(struct page *page)
+static inline int page_last__cpupid(struct page *page)
 {
-	return (page->flags >> LAST_CPU_PGSHIFT) & LAST_CPU_MASK;
+	return (page->flags >> LAST_CPUPID_PGSHIFT) & LAST_CPUPID_MASK;
 }
 
-static inline void reset_page_last_cpu(struct page *page)
+static inline void reset_page_last_cpupid(struct page *page)
 {
+	page_xchg_last_cpupid(page, -1);
+}
+#endif /* LAST_CPUPID_NOT_IN_PAGE_FLAGS */
+
+static inline int page_last__cpu(struct page *page)
+{
+	return cpupid_to_cpu(page_last__cpupid(page));
 }
 
-#endif /* LAST_CPU_NOT_IN_PAGE_FLAGS */
-#else /* CONFIG_NUMA_BALANCING */
-static inline int page_xchg_last_cpu(struct page *page, int cpu)
+static inline int page_last__pid(struct page *page)
+{
+	return cpupid_to_pid(page_last__cpupid(page));
+}
+
+#else /* !CONFIG_NUMA_BALANCING: */
+static inline int page_xchg_last_cpupid(struct page *page, int cpu)
 {
 	return page_to_nid(page);
 }
 
-static inline int page_last_cpu(struct page *page)
+static inline int page_last__cpupid(struct page *page)
 {
 	return page_to_nid(page);
 }
 
-static inline void reset_page_last_cpu(struct page *page)
+static inline void reset_page_last_cpupid(struct page *page)
 {
 }
 
-#endif /* CONFIG_NUMA_BALANCING */
+#endif /* !CONFIG_NUMA_BALANCING */
 
 static inline struct zone *page_zone(const struct page *page)
 {

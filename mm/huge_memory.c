@@ -1025,10 +1025,10 @@ int do_huge_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 {
 	struct page *page;
 	unsigned long haddr = addr & HPAGE_PMD_MASK;
-	int last_cpu;
+	int last_cpupid;
 	int target_nid;
-	int current_nid = -1;
-	bool migrated;
+	int page_nid = -1;
+	bool migrated = false;
 	bool page_locked = false;
 
 	spin_lock(&mm->page_table_lock);
@@ -1037,13 +1037,14 @@ int do_huge_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 
 	page = pmd_page(pmd);
 	get_page(page);
-	current_nid = page_to_nid(page);
-	last_cpu = page_last_cpu(page);
+	page_nid = page_to_nid(page);
+	last_cpupid = page_last__cpupid(page);
+
 	count_vm_numa_event(NUMA_HINT_FAULTS);
-	if (current_nid == numa_node_id())
+	if (page_nid == numa_node_id())
 		count_vm_numa_event(NUMA_HINT_FAULTS_LOCAL);
 
-	target_nid = mpol_misplaced(page, vma, haddr);
+	target_nid = mpol_misplaced(page, vma, haddr, HPAGE_SHIFT);
 	if (target_nid == -1) {
 		put_page(page);
 		goto clear_pmdnuma;
@@ -1068,7 +1069,7 @@ int do_huge_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 				pmdp, pmd, addr,
 				page, target_nid);
 	if (migrated)
-		current_nid = target_nid;
+		page_nid = target_nid;
 	else {
 		spin_lock(&mm->page_table_lock);
 		if (unlikely(!pmd_same(pmd, *pmdp))) {
@@ -1078,7 +1079,7 @@ int do_huge_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		goto clear_pmdnuma;
 	}
 
-	task_numa_fault(current_nid, last_cpu, HPAGE_PMD_NR);
+	task_numa_fault(addr, page_nid, last_cpupid, HPAGE_PMD_NR, migrated);
 	return 0;
 
 clear_pmdnuma:
@@ -1091,8 +1092,8 @@ clear_pmdnuma:
 
 out_unlock:
 	spin_unlock(&mm->page_table_lock);
-	if (current_nid != -1)
-		task_numa_fault(current_nid, last_cpu, HPAGE_PMD_NR);
+	if (page_nid != -1)
+		task_numa_fault(addr, page_nid, last_cpupid, HPAGE_PMD_NR, migrated);
 	return 0;
 }
 
@@ -1385,7 +1386,7 @@ static void __split_huge_page_refcount(struct page *page)
 		page_tail->mapping = page->mapping;
 
 		page_tail->index = page->index + i;
-		page_xchg_last_cpu(page_tail, page_last_cpu(page));
+		page_xchg_last_cpupid(page_tail, page_last__cpupid(page));
 
 		BUG_ON(!PageAnon(page_tail));
 		BUG_ON(!PageUptodate(page_tail));

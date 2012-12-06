@@ -161,7 +161,7 @@ static inline int vma_migratable(struct vm_area_struct *vma)
 	return 1;
 }
 
-extern int mpol_misplaced(struct page *, struct vm_area_struct *, unsigned long);
+extern int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long addr, int shift);
 
 #else
 
@@ -289,7 +289,7 @@ static inline int mpol_to_str(char *buffer, int maxlen, struct mempolicy *pol,
 }
 
 static inline int mpol_misplaced(struct page *page, struct vm_area_struct *vma,
-				 unsigned long address)
+				 unsigned long address, int shift)
 {
 	return -1; /* no node preference */
 }

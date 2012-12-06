@@ -1502,15 +1502,19 @@ struct task_struct {
 	short il_next;
 	short pref_node_fork;
 #endif
+	int wake_cpu;
 #ifdef CONFIG_NUMA_BALANCING
 	int numa_shared;
+	int numa_shared_enqueue;
 	int numa_max_node;
 	int numa_scan_seq;
 	unsigned long numa_scan_ts_secs;
+	int numa_migrate_seq;
 	unsigned int numa_scan_period;
 	u64 node_stamp;			/* migration stamp  */
 	unsigned long convergence_strength;
 	int convergence_node;
+	unsigned long numa_weight;
 	unsigned long *numa_faults;
 	unsigned long *numa_faults_curr;
 	struct callback_head numa_scan_work;
@@ -1598,9 +1602,9 @@ struct task_struct {
 #define tsk_cpus_allowed(tsk) (&(tsk)->cpus_allowed)
 
 #ifdef CONFIG_NUMA_BALANCING
-extern void task_numa_fault(int node, int cpu, int pages);
+extern void task_numa_fault(unsigned long addr, int node, int cpupid, int pages, bool migrated);
 #else
-static inline void task_numa_fault(int node, int cpu, int pages) { }
+static inline void task_numa_fault(unsigned long addr, int node, int cpupid, int pages, bool migrated) { }
 #endif /* CONFIG_NUMA_BALANCING */
 
 /*
@@ -2061,6 +2065,7 @@ extern unsigned int sysctl_sched_numa_scan_size_min;
 extern unsigned int sysctl_sched_numa_scan_size_max;
 extern unsigned int sysctl_sched_numa_rss_threshold;
 extern unsigned int sysctl_sched_numa_settle_count;
+extern unsigned int sysctl_sched_numa_fault_weight;
 
 #ifdef CONFIG_SCHED_DEBUG
 extern unsigned int sysctl_sched_migration_cost;
