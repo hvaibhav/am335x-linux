@@ -1554,6 +1554,9 @@ static void __sched_fork(struct task_struct *p)
 	}
 
 	p->numa_shared = -1;
+	p->numa_weight = 0;
+	p->numa_shared_enqueue = -1;
+	p->numa_max_node = -1;
 	p->node_stamp = 0ULL;
 	p->convergence_strength		= 0;
 	p->convergence_node		= -1;
@@ -6102,6 +6105,9 @@ void __sched_setnuma(struct rq *rq, struct task_struct *p, int node, int shared)
 		dequeue_task(rq, p, 0);
 	if (running)
 		p->sched_class->put_prev_task(rq, p);
+
+	WARN_ON_ONCE(p->numa_shared_enqueue != -1);
+	WARN_ON_ONCE(p->numa_weight);
 
 	p->numa_shared = shared;
 	p->numa_max_node = node;

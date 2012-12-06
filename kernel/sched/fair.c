@@ -801,6 +801,45 @@ static unsigned long task_h_load(struct task_struct *p);
 #endif
 
 #ifdef CONFIG_NUMA_BALANCING
+static void account_numa_enqueue(struct rq *rq, struct task_struct *p)
+{
+	int shared = task_numa_shared(p);
+
+	WARN_ON_ONCE(p->numa_weight);
+
+	if (shared != -1) {
+		p->numa_weight = p->se.load.weight;
+		WARN_ON_ONCE(!p->numa_weight);
+		p->numa_shared_enqueue = shared;
+
+		rq->nr_numa_running++;
+		rq->nr_shared_running += shared;
+		rq->nr_ideal_running += (cpu_to_node(task_cpu(p)) == p->numa_max_node);
+		rq->numa_weight += p->numa_weight;
+	} else {
+		if (p->numa_weight) {
+			WARN_ON_ONCE(p->numa_weight);
+			p->numa_weight = 0;
+		}
+	}
+}
+
+static void account_numa_dequeue(struct rq *rq, struct task_struct *p)
+{
+	if (p->numa_shared_enqueue != -1) {
+		rq->nr_numa_running--;
+		rq->nr_shared_running -= p->numa_shared_enqueue;
+		rq->nr_ideal_running -= (cpu_to_node(task_cpu(p)) == p->numa_max_node);
+		rq->numa_weight -= p->numa_weight;
+		p->numa_weight = 0;
+		p->numa_shared_enqueue = -1;
+	} else {
+		if (p->numa_weight) {
+			WARN_ON_ONCE(p->numa_weight);
+			p->numa_weight = 0;
+		}
+	}
+}
 
 /*
  * Scan @scan_size MB every @scan_period after an initial @scan_delay.
@@ -2551,8 +2590,11 @@ static void task_tick_numa(struct rq *rq, struct task_struct *curr)
 #else /* !CONFIG_NUMA_BALANCING: */
 #ifdef CONFIG_SMP
 static inline int task_ideal_cpu(struct task_struct *p)				{ return -1; }
+static inline void account_numa_enqueue(struct rq *rq, struct task_struct *p)	{ }
 #endif
+static inline void account_numa_dequeue(struct rq *rq, struct task_struct *p)	{ }
 static inline void task_tick_numa(struct rq *rq, struct task_struct *curr)	{ }
+static inline void task_numa_migrate(struct task_struct *p, int next_cpu)	{ }
 #endif /* CONFIG_NUMA_BALANCING */
 
 /**************************************************
@@ -2569,6 +2611,7 @@ account_entity_enqueue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	if (entity_is_task(se)) {
 		struct rq *rq = rq_of(cfs_rq);
 
+		account_numa_enqueue(rq, task_of(se));
 		list_add(&se->group_node, &rq->cfs_tasks);
 	}
 #endif /* CONFIG_SMP */
@@ -2581,9 +2624,10 @@ account_entity_dequeue(struct cfs_rq *cfs_rq, struct sched_entity *se)
 	update_load_sub(&cfs_rq->load, se->load.weight);
 	if (!parent_entity(se))
 		update_load_sub(&rq_of(cfs_rq)->load, se->load.weight);
-	if (entity_is_task(se))
+	if (entity_is_task(se)) {
 		list_del_init(&se->group_node);
-
+		account_numa_dequeue(rq_of(cfs_rq), task_of(se));
+	}
 	cfs_rq->nr_running--;
 }
 

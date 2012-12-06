@@ -1504,6 +1504,7 @@ struct task_struct {
 #endif
 #ifdef CONFIG_NUMA_BALANCING
 	int numa_shared;
+	int numa_shared_enqueue;
 	int numa_max_node;
 	int numa_scan_seq;
 	unsigned long numa_scan_ts_secs;
@@ -1511,6 +1512,7 @@ struct task_struct {
 	u64 node_stamp;			/* migration stamp  */
 	unsigned long convergence_strength;
 	int convergence_node;
+	unsigned long numa_weight;
 	unsigned long *numa_faults;
 	unsigned long *numa_faults_curr;
 	struct callback_head numa_scan_work;
