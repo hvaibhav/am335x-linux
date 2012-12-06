@@ -2339,7 +2339,7 @@ static void sp_free(struct sp_node *n)
  * Policy determination "mimics" alloc_page_vma().
  * Called from fault path where we know the vma and faulting address.
  */
-int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long addr)
+int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long addr, int shift)
 {
 	struct mempolicy *pol;
 	struct zone *zone;
@@ -2353,6 +2353,7 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 	BUG_ON(!vma);
 
 	pol = get_vma_policy(current, vma, addr);
+
 	if (!(pol->flags & MPOL_F_MOF))
 		goto out_keep_page;
 	if (task_numa_shared(current) < 0)
@@ -2360,23 +2361,13 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 	
 	switch (pol->mode) {
 	case MPOL_INTERLEAVE:
-	{
-		int shift;
 
 		BUG_ON(addr >= vma->vm_end);
 		BUG_ON(addr < vma->vm_start);
 
-#ifdef CONFIG_HUGETLB_PAGE
-		if (transparent_hugepage_enabled(vma) || vma->vm_flags & VM_HUGETLB)
-			shift = HPAGE_SHIFT;
-		else
-#endif
-			shift = PAGE_SHIFT;
-
 		target_node = interleave_nid(pol, vma, addr, shift);
 
 		goto out_keep_page;
-	}
 
 	case MPOL_PREFERRED:
 		if (pol->flags & MPOL_F_LOCAL)
