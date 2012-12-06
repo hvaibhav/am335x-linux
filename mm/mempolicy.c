@@ -121,8 +121,10 @@ static struct mempolicy default_policy_local = {
 static struct mempolicy *default_policy(void)
 {
 #ifdef CONFIG_NUMA_BALANCING
-	if (task_numa_shared(current) == 1)
-		return &current->numa_policy;
+	struct mempolicy *pol = &current->numa_policy;
+
+	if (task_numa_shared(current) == 1 && nodes_weight(pol->v.nodes) >= 2)
+		return pol;
 #endif
 	return &default_policy_local;
 }
@@ -135,6 +137,11 @@ static struct mempolicy *get_task_policy(struct task_struct *p)
 	int node;
 
 	if (!pol) {
+#ifdef CONFIG_NUMA_BALANCING
+		pol = default_policy();
+		if (pol != &default_policy_local)
+			return pol;
+#endif
 		node = numa_node_id();
 		if (node != -1)
 			pol = &preferred_node_policy[node];
@@ -2367,7 +2374,8 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 			shift = PAGE_SHIFT;
 
 		target_node = interleave_nid(pol, vma, addr, shift);
-		break;
+
+		goto out_keep_page;
 	}
 
 	case MPOL_PREFERRED:
