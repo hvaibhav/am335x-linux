@@ -70,8 +70,8 @@
 
 #include "internal.h"
 
-#ifdef LAST_CPU_NOT_IN_PAGE_FLAGS
-#warning Unfortunate NUMA config, growing page-frame for last_cpu.
+#ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
+# warning Large NUMA config, growing page-frame for last_cpu+pid.
 #endif
 
 #ifndef CONFIG_NEED_MULTIPLE_NODES
@@ -3472,7 +3472,7 @@ int do_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	bool migrated = false;
 	spinlock_t *ptl;
 	int target_nid;
-	int last_cpu;
+	int last_cpupid;
 	int page_nid;
 
 	/*
@@ -3505,14 +3505,14 @@ int do_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	WARN_ON_ONCE(page_nid == -1);
 
 	/* Get it before mpol_misplaced() flips it: */
-	last_cpu = page_last_cpu(page);
-	WARN_ON_ONCE(last_cpu == -1);
+	last_cpupid = page_last__cpupid(page);
 
 	target_nid = numa_migration_target(page, vma, addr, page_nid);
 	if (target_nid == -1) {
 		pte_unmap_unlock(ptep, ptl);
 		goto out;
 	}
+	WARN_ON_ONCE(target_nid == page_nid);
 
 	/* Get a reference for migration: */
 	get_page(page);
@@ -3524,7 +3524,7 @@ int do_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		page_nid = target_nid;
 out:
 	/* Always account where the page currently is, physically: */
-	task_numa_fault(page_nid, last_cpu, 1);
+	task_numa_fault(addr, page_nid, last_cpupid, 1, migrated);
 
 	return 0;
 }
@@ -3562,7 +3562,7 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		struct page *page;
 		int page_nid;
 		int target_nid;
-		int last_cpu;
+		int last_cpupid;
 		bool migrated;
 		pte_t pteval;
 
@@ -3592,12 +3592,16 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		page_nid = page_to_nid(page);
 		WARN_ON_ONCE(page_nid == -1);
 
-		last_cpu = page_last_cpu(page);
-		WARN_ON_ONCE(last_cpu == -1);
+		last_cpupid = page_last__cpupid(page);
 
 		target_nid = numa_migration_target(page, vma, addr, page_nid);
-		if (target_nid == -1)
+		if (target_nid == -1) {
+			/* Always account where the page currently is, physically: */
+			task_numa_fault(addr, page_nid, last_cpupid, 1, 0);
+
 			continue;
+		}
+		WARN_ON_ONCE(target_nid == page_nid);
 
 		/* Get a reference for the migration: */
 		get_page(page);
@@ -3609,7 +3613,7 @@ int do_pmd_numa_page(struct mm_struct *mm, struct vm_area_struct *vma,
 			page_nid = target_nid;
 
 		/* Always account where the page currently is, physically: */
-		task_numa_fault(page_nid, last_cpu, 1);
+		task_numa_fault(addr, page_nid, last_cpupid, 1, migrated);
 
 		pte = pte_offset_map_lock(mm, pmdp, addr, &ptl);
 	}

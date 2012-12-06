@@ -2338,6 +2338,10 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 	struct zone *zone;
 	int page_nid = page_to_nid(page);
 	int target_node = page_nid;
+#ifdef CONFIG_NUMA_BALANCING
+	int cpupid_last_access = -1;
+	int cpu_last_access = -1;
+#endif
 
 	BUG_ON(!vma);
 
@@ -2394,14 +2398,17 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 		BUG();
 	}
 
+#ifdef CONFIG_NUMA_BALANCING
 	/* Migrate the page towards the node whose CPU is referencing it */
 	if (pol->flags & MPOL_F_MORON) {
-		int cpu_last_access;
+		int this_cpupid;
 		int this_cpu;
 		int this_node;
 
 		this_cpu = raw_smp_processor_id();
 		this_node = numa_node_id();
+
+		this_cpupid = cpu_pid_to_cpupid(this_cpu, current->pid);
 
 		/*
 		 * Multi-stage node selection is used in conjunction
@@ -2424,12 +2431,20 @@ int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long 
 		 * it less likely we act on an unlikely task<->page
 		 * relation.
 		 */
-		cpu_last_access = page_xchg_last_cpu(page, this_cpu);
+		cpupid_last_access = page_xchg_last_cpupid(page, this_cpupid);
 
-		/* Migrate towards us: */
-		if (cpu_last_access == this_cpu)
+		/* Freshly allocated pages not accessed by anyone else yet: */
+		if (cpupid_last_access == cpu_pid_to_cpupid(-1, -1)) {
+			cpu_last_access = this_cpu;
 			target_node = this_node;
+		} else {
+			cpu_last_access = cpupid_to_cpu(cpupid_last_access);
+			/* Migrate towards us in the default policy: */
+			if (cpu_last_access == this_cpu)
+				target_node = this_node;
+		}
 	}
+#endif
 out_keep_page:
 	mpol_cond_put(pol);
 

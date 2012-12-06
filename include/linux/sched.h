@@ -1601,9 +1601,9 @@ struct task_struct {
 #define tsk_cpus_allowed(tsk) (&(tsk)->cpus_allowed)
 
 #ifdef CONFIG_NUMA_BALANCING
-extern void task_numa_fault(int node, int cpu, int pages);
+extern void task_numa_fault(unsigned long addr, int node, int cpupid, int pages, bool migrated);
 #else
-static inline void task_numa_fault(int node, int cpu, int pages) { }
+static inline void task_numa_fault(unsigned long addr, int node, int cpupid, int pages, bool migrated) { }
 #endif /* CONFIG_NUMA_BALANCING */
 
 /*

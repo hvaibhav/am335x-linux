@@ -1458,7 +1458,7 @@ static struct page *alloc_misplaced_dst_page(struct page *page,
 					  __GFP_NOWARN) &
 					 ~GFP_IOFS, 0);
 	if (newpage)
-		page_xchg_last_cpu(newpage, page_last_cpu(page));
+		page_xchg_last_cpupid(newpage, page_last__cpupid(page));
 
 	return newpage;
 }
@@ -1567,7 +1567,7 @@ int migrate_misplaced_transhuge_page_put(struct mm_struct *mm,
 		count_vm_events(PGMIGRATE_FAIL, HPAGE_PMD_NR);
 		goto out_dropref;
 	}
-	page_xchg_last_cpu(new_page, page_last_cpu(page));
+	page_xchg_last_cpupid(new_page, page_last__cpupid(page));
 
 	isolated = numamigrate_isolate_page(pgdat, page);
 	if (!isolated) {

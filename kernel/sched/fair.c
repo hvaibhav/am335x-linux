@@ -2267,11 +2267,31 @@ out_hit:
 /*
  * Got a PROT_NONE fault for a page on @node.
  */
-void task_numa_fault(int node, int last_cpu, int pages)
+void task_numa_fault(unsigned long addr, int node, int last_cpupid, int pages, bool migrated)
 {
 	struct task_struct *p = current;
-	int priv = (task_cpu(p) == last_cpu);
-	int idx = 2*node + priv;
+	int this_cpu = raw_smp_processor_id();
+	int last_cpu = cpupid_to_cpu(last_cpupid);
+	int last_pid = cpupid_to_pid(last_cpupid);
+	int this_pid = current->pid & CPUPID_PID_MASK;
+	int priv;
+	int idx;
+
+	if (last_cpupid != cpu_pid_to_cpupid(-1, -1)) {
+		/* Did we access it last time around? */
+		if (last_pid == this_pid) {
+			priv = 1;
+		} else {
+			priv = 0;
+		}
+	} else {
+		/* The default for fresh pages is private: */
+		priv = 1;
+		last_cpu = this_cpu;
+		node = cpu_to_node(this_cpu);
+	}
+
+	idx = 2*node + priv;
 
 	WARN_ON_ONCE(last_cpu == -1 || node == -1);
 	BUG_ON(!p->numa_faults);
