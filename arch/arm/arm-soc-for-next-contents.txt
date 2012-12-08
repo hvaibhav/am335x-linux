@@ -93,6 +93,7 @@ samsung/exynos5440	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-sam
 samsung/cam		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cam-samsung
 samsung/pinctrl-2	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/pinctrl-samsung-2
 samsung/devel-soc	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-3
+sunxi/soc-fixes		git://github.com/mripard/linux.git tags/sunxi-fixes-for-3.8
 
 next/boards:
 renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
