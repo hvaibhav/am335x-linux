@@ -77,7 +77,7 @@
  *
  * Assume these are all power of twos.
  * When 0 use the default page size.
- */  
+ */
 #define MAP_HUGE_SHIFT	26
 #define MAP_HUGE_MASK	0x3f
 
