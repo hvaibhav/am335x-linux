@@ -213,7 +213,7 @@ struct memcg_cache_params {
 			struct kmem_cache *root_cache;
 			bool dead;
 			atomic_t nr_pages;
-			struct delayed_work destroy;
+			struct work_struct destroy;
 		};
 	};
 };

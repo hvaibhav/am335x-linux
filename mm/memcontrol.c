@@ -3076,9 +3076,8 @@ static void kmem_cache_destroy_work_func(struct work_struct *w)
 {
 	struct kmem_cache *cachep;
 	struct memcg_cache_params *p;
-	struct delayed_work *dw = to_delayed_work(w);
 
-	p = container_of(dw, struct memcg_cache_params, destroy);
+	p = container_of(w, struct memcg_cache_params, destroy);
 
 	cachep = memcg_params_to_cache(p);
 
@@ -3102,8 +3101,6 @@ static void kmem_cache_destroy_work_func(struct work_struct *w)
 		kmem_cache_shrink(cachep);
 		if (atomic_read(&cachep->memcg_params->nr_pages) == 0)
 			return;
-		/* Once per minute should be good enough. */
-		schedule_delayed_work(&cachep->memcg_params->destroy, 60 * HZ);
 	} else
 		kmem_cache_destroy(cachep);
 }
@@ -3126,18 +3123,18 @@ void mem_cgroup_destroy_cache(struct kmem_cache *cachep)
 	 * kmem_cache_shrink is enough to shake all the remaining objects and
 	 * get the page count to 0. In this case, we'll deadlock if we try to
 	 * cancel the work (the worker runs with an internal lock held, which
-	 * is the same lock we would hold for cancel_delayed_work_sync().)
+	 * is the same lock we would hold for cancel_work_sync().)
 	 *
 	 * Since we can't possibly know who got us here, just refrain from
 	 * running if there is already work pending
 	 */
-	if (delayed_work_pending(&cachep->memcg_params->destroy))
+	if (work_pending(&cachep->memcg_params->destroy))
 		return;
 	/*
 	 * We have to defer the actual destroying to a workqueue, because
 	 * we might currently be in a context that cannot sleep.
 	 */
-	schedule_delayed_work(&cachep->memcg_params->destroy, 0);
+	schedule_work(&cachep->memcg_params->destroy);
 }
 
 static char *memcg_cache_name(struct mem_cgroup *memcg, struct kmem_cache *s)
@@ -3261,7 +3258,7 @@ void kmem_cache_destroy_memcg_children(struct kmem_cache *s)
 		 * set, so flip it down to guarantee we are in control.
 		 */
 		c->memcg_params->dead = false;
-		cancel_delayed_work_sync(&c->memcg_params->destroy);
+		cancel_work_sync(&c->memcg_params->destroy);
 		kmem_cache_destroy(c);
 	}
 	mutex_unlock(&set_limit_mutex);
@@ -3285,9 +3282,9 @@ static void mem_cgroup_destroy_all_caches(struct mem_cgroup *memcg)
 	list_for_each_entry(params, &memcg->memcg_slab_caches, list) {
 		cachep = memcg_params_to_cache(params);
 		cachep->memcg_params->dead = true;
-		INIT_DELAYED_WORK(&cachep->memcg_params->destroy,
+		INIT_WORK(&cachep->memcg_params->destroy,
 				  kmem_cache_destroy_work_func);
-		schedule_delayed_work(&cachep->memcg_params->destroy, 0);
+		schedule_work(&cachep->memcg_params->destroy);
 	}
 	mutex_unlock(&memcg->slab_caches_mutex);
 }
