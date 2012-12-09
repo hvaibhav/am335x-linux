@@ -569,7 +569,7 @@ static void disarm_sock_keys(struct mem_cgroup *memcg)
  * memcg_limited_groups_array_size.  It will double each time we have to
  * increase it.
  */
-static struct ida kmem_limited_groups;
+static DEFINE_IDA(kmem_limited_groups);
 static int memcg_limited_groups_array_size;
 /*
  * MIN_SIZE is different than 1, because we would like to avoid going through
@@ -5252,9 +5252,6 @@ static int memcg_init_kmem(struct mem_cgroup *memcg, struct cgroup_subsys *ss)
 	ret = memcg_propagate_kmem(memcg);
 	if (ret)
 		return ret;
-
-	if (mem_cgroup_is_root(memcg))
-		ida_init(&kmem_limited_groups);
 
 	return mem_cgroup_sockets_init(memcg, ss);
 };
