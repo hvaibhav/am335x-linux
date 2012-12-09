@@ -158,7 +158,9 @@ static int proc_ipcauto_dointvec_minmax(ctl_table *table, int write,
 
 static int zero;
 static int one = 1;
+#ifdef CONFIG_CHECKPOINT_RESTORE
 static int int_max = INT_MAX;
+#endif
 
 static struct ctl_table ipc_kern_table[] = {
 	{
@@ -228,6 +230,7 @@ static struct ctl_table ipc_kern_table[] = {
 		.extra1		= &zero,
 		.extra2		= &one,
 	},
+#ifdef CONFIG_CHECKPOINT_RESTORE
 	{
 		.procname	= "sem_next_id",
 		.data		= &init_ipc_ns.ids[IPC_SEM_IDS].next_id,
@@ -255,6 +258,7 @@ static struct ctl_table ipc_kern_table[] = {
 		.extra1		= &zero,
 		.extra2		= &int_max,
 	},
+#endif
 	{}
 };
 
