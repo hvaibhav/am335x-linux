@@ -826,10 +826,9 @@ static int ep_show_fdinfo(struct seq_file *m, struct file *f)
 	for (rbp = rb_first(&ep->rbr); rbp; rbp = rb_next(rbp)) {
 		struct epitem *epi = rb_entry(rbp, struct epitem, rbn);
 
-		ret = seq_printf(m, "tfd: %8d events: %8x data: %16llx enabled: %d\n",
+		ret = seq_printf(m, "tfd: %8d events: %8x data: %16llx\n",
 				 epi->ffd.fd, epi->event.events,
-				 (long long)epi->event.data,
-				 ep_is_linked(&epi->rdllink));
+				 (long long)epi->event.data);
 		if (ret)
 			break;
 	}
