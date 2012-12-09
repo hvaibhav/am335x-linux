@@ -777,19 +777,48 @@ long do_msgrcv(int msqid, void __user *buf, size_t bufsz, long msgtyp,
 	struct msg_msg *msg;
 	int mode;
 	struct ipc_namespace *ns;
+#ifdef CONFIG_CHECKPOINT_RESTORE
+	struct msg_msg *copy = NULL;
+	unsigned long copy_number = 0;
+#endif
 
 	if (msqid < 0 || (long) bufsz < 0)
 		return -EINVAL;
+	if (msgflg & MSG_COPY) {
+#ifdef CONFIG_CHECKPOINT_RESTORE
+
+		if (msgflg & MSG_COPY) {
+			copy_number = msgtyp;
+			msgtyp = 0;
+		}
+
+		/*
+		 * Create dummy message to copy real message to.
+		 */
+		copy = load_msg(buf, bufsz);
+		if (IS_ERR(copy))
+			return PTR_ERR(copy);
+		copy->m_ts = bufsz;
+#else
+		return -ENOSYS;
+#endif
+	}
 	mode = convert_mode(&msgtyp, msgflg);
 	ns = current->nsproxy->ipc_ns;
 
 	msq = msg_lock_check(ns, msqid);
-	if (IS_ERR(msq))
+	if (IS_ERR(msq)) {
+#ifdef CONFIG_CHECKPOINT_RESTORE
+		if (msgflg & MSG_COPY)
+			free_msg(copy);
+#endif
 		return PTR_ERR(msq);
+	}
 
 	for (;;) {
 		struct msg_receiver msr_d;
 		struct list_head *tmp;
+		long msg_counter = 0;
 
 		msg = ERR_PTR(-EACCES);
 		if (ipcperms(ns, &msq->q_perm, S_IRUGO))
@@ -809,8 +838,16 @@ long do_msgrcv(int msqid, void __user *buf, size_t bufsz, long msgtyp,
 				if (mode == SEARCH_LESSEQUAL &&
 						walk_msg->m_type != 1) {
 					msgtyp = walk_msg->m_type - 1;
+#ifdef CONFIG_CHECKPOINT_RESTORE
+				} else if (msgflg & MSG_COPY) {
+					if (copy_number == msg_counter) {
+						msg = copy_msg(walk_msg, copy);
+						break;
+					}
+#endif
 				} else
 					break;
+				msg_counter++;
 			}
 			tmp = tmp->next;
 		}
@@ -823,6 +860,10 @@ long do_msgrcv(int msqid, void __user *buf, size_t bufsz, long msgtyp,
 				msg = ERR_PTR(-E2BIG);
 				goto out_unlock;
 			}
+#ifdef CONFIG_CHECKPOINT_RESTORE
+			if (msgflg & MSG_COPY)
+				goto out_unlock;
+#endif
 			list_del(&msg->m_list);
 			msq->q_qnum--;
 			msq->q_rtime = get_seconds();
@@ -906,8 +947,13 @@ out_unlock:
 			break;
 		}
 	}
-	if (IS_ERR(msg))
+	if (IS_ERR(msg)) {
+#ifdef CONFIG_CHECKPOINT_RESTORE
+		if (msgflg & MSG_COPY)
+			free_msg(copy);
+#endif
 		return PTR_ERR(msg);
+	}
 
 	bufsz = msg_handler(buf, msg, bufsz);
 	free_msg(msg);
