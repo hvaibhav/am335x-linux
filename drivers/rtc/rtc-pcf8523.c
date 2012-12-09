@@ -178,14 +178,26 @@ static int pcf8523_rtc_read_time(struct device *dev, struct rtc_time *tm)
 		return err;
 
 	if (regs[0] & REG_SECONDS_OS) {
-		dev_dbg(dev, "clock integrity is not guaranteed\n");
+		/*
+		 * If the oscillator was stopped, try to clear the flag. Upon
+		 * power-up the flag is always set, but if we cannot clear it
+		 * the oscillator isn't running properly for some reason. The
+		 * sensible thing therefore is to return an error, signalling
+		 * that the clock cannot be assumed to be correct.
+		 */
 
-		/* try to clear the flag */
 		regs[0] &= ~REG_SECONDS_OS;
 
 		err = pcf8523_write(client, REG_SECONDS, regs[0]);
 		if (err < 0)
 			return err;
+
+		err = pcf8523_read(client, REG_SECONDS, &regs[0]);
+		if (err < 0)
+			return err;
+
+		if (regs[0] & REG_SECONDS_OS)
+			return -EAGAIN;
 	}
 
 	tm->tm_sec = bcd2bin(regs[0] & 0x7f);
@@ -225,8 +237,15 @@ static int pcf8523_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	msg.buf = regs;
 
 	err = i2c_transfer(client->adapter, &msg, 1);
-	if (err < 0)
+	if (err < 0) {
+		/*
+		 * If the time cannot be set, restart the RTC anyway. Note
+		 * that errors are ignored if the RTC cannot be started so
+		 * that we have a chance to propagate the original error.
+		 */
+		pcf8523_start_rtc(client);
 		return err;
+	}
 
 	return pcf8523_start_rtc(client);
 }
