@@ -40,6 +40,7 @@
 #include <linux/wait.h>
 
 #include "inotify.h"
+#include "../fdinfo.h"
 
 #include <asm/ioctls.h>
 
@@ -329,6 +330,7 @@ static long inotify_ioctl(struct file *file, unsigned int cmd,
 }
 
 static const struct file_operations inotify_fops = {
+	.show_fdinfo	= inotify_show_fdinfo,
 	.poll		= inotify_poll,
 	.read		= inotify_read,
 	.fasync		= fsnotify_fasync,
