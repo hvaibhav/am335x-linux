@@ -2215,12 +2215,20 @@ bool __mpol_equal(struct mempolicy *a, struct mempolicy *b)
  *
  * Remember policies even when nobody has shared memory mapped.
  * The policies are kept in Red-Black tree linked from the inode.
- * They are protected by the sp->lock spinlock, which should be held
- * for any accesses to the tree.
+ *
+ * The rb-tree is locked using both a mutex and a spinlock. Every modification
+ * to the tree must hold both the mutex and the spinlock, lookups can hold
+ * either to observe a stable tree.
+ *
+ * In particular, sp_insert() and sp_delete() take the spinlock, whereas
+ * sp_lookup() doesn't, this so users have choice.
+ *
+ * shared_policy_replace() and mpol_free_shared_policy() take the mutex
+ * and call sp_insert(), sp_delete().
  */
 
 /* lookup first element intersecting start-end */
-/* Caller holds sp->mutex */
+/* Caller holds either sp->lock and/or sp->mutex */
 static struct sp_node *
 sp_lookup(struct shared_policy *sp, unsigned long start, unsigned long end)
 {
@@ -2259,6 +2267,7 @@ static void sp_insert(struct shared_policy *sp, struct sp_node *new)
 	struct rb_node *parent = NULL;
 	struct sp_node *nd;
 
+	spin_lock(&sp->lock);
 	while (*p) {
 		parent = *p;
 		nd = rb_entry(parent, struct sp_node, nd);
@@ -2271,6 +2280,7 @@ static void sp_insert(struct shared_policy *sp, struct sp_node *new)
 	}
 	rb_link_node(&new->nd, parent, p);
 	rb_insert_color(&new->nd, &sp->root);
+	spin_unlock(&sp->lock);
 	pr_debug("inserting %lx-%lx: %d\n", new->start, new->end,
 		 new->policy ? new->policy->mode : 0);
 }
@@ -2284,13 +2294,13 @@ mpol_shared_policy_lookup(struct shared_policy *sp, unsigned long idx)
 
 	if (!sp->root.rb_node)
 		return NULL;
-	mutex_lock(&sp->mutex);
+	spin_lock(&sp->lock);
 	sn = sp_lookup(sp, idx, idx+1);
 	if (sn) {
 		mpol_get(sn->policy);
 		pol = sn->policy;
 	}
-	mutex_unlock(&sp->mutex);
+	spin_unlock(&sp->lock);
 	return pol;
 }
 
@@ -2436,8 +2446,10 @@ out_keep_page:
 static void sp_delete(struct shared_policy *sp, struct sp_node *n)
 {
 	pr_debug("deleting %lx-l%lx\n", n->start, n->end);
+	spin_lock(&sp->lock);
 	rb_erase(&n->nd, &sp->root);
 	sp_free(n);
+	spin_unlock(&sp->lock);
 }
 
 static struct sp_node *sp_alloc(unsigned long start, unsigned long end,
@@ -2522,6 +2534,7 @@ void mpol_shared_policy_init(struct shared_policy *sp, struct mempolicy *mpol)
 	int ret;
 
 	sp->root = RB_ROOT;		/* empty tree == default mempolicy */
+	spin_lock_init(&sp->lock);
 	mutex_init(&sp->mutex);
 
 	if (mpol) {
