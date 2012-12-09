@@ -161,7 +161,7 @@ static int start_khugepaged(void)
 	return err;
 }
 
-static int init_huge_zero_page(void)
+static int __init init_huge_zero_page(void)
 {
 	struct page *hpage;
 
