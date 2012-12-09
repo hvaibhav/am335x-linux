@@ -1602,7 +1602,7 @@ unsigned long unmapped_area(struct vm_unmapped_area_info *info)
 		}
 
 		gap_start = vma->vm_prev ? vma->vm_prev->vm_end : 0;
-	check_current:
+check_current:
 		/* Check if current node has a suitable gap */
 		if (gap_start > high_limit)
 			return -ENOMEM;
@@ -1704,7 +1704,7 @@ unsigned long unmapped_area_topdown(struct vm_unmapped_area_info *info)
 			}
 		}
 
-	check_current:
+check_current:
 		/* Check if current node has a suitable gap */
 		gap_end = vma->vm_start;
 		if (gap_end < low_limit)
