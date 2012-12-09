@@ -192,7 +192,7 @@ config SPLIT_PTLOCK_CPUS
 config BALLOON_COMPACTION
 	bool "Allow for balloon memory compaction/migration"
 	def_bool y
-	depends on TRANSPARENT_HUGEPAGE && VIRTIO_BALLOON
+	depends on COMPACTION && VIRTIO_BALLOON
 	help
 	  Memory fragmentation introduced by ballooning might reduce
 	  significantly the number of 2MB contiguous memory blocks that can be
