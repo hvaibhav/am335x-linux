@@ -1591,7 +1591,7 @@ unsigned int disk_clear_events(struct gendisk *disk, unsigned int mask)
 }
 
 /*
- * Seperate this part out so that a different pointer for clearing_ptr can be
+ * Separate this part out so that a different pointer for clearing_ptr can be
  * passed in for disk_clear_events.
  */
 static void disk_events_workfn(struct work_struct *work)
