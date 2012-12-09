@@ -23,8 +23,6 @@ struct shmid_kernel /* private to the kernel */
 	struct task_struct	*shm_creator;
 };
 
-#endif
-
 /* shm_mode upper byte flags */
 #define	SHM_DEST	01000	/* segment will be destroyed on last detach */
 #define SHM_LOCKED      02000   /* segment will not be swapped */
@@ -45,8 +43,6 @@ struct shmid_kernel /* private to the kernel */
 #define SHM_HUGE_MASK   0x3f
 #define SHM_HUGE_2MB    (21 << SHM_HUGE_SHIFT)
 #define SHM_HUGE_1GB    (30 << SHM_HUGE_SHIFT)
-
-#ifdef __KERNEL__
 
 #ifdef CONFIG_SYSVIPC
 long do_shmat(int shmid, char __user *shmaddr, int shmflg, unsigned long *addr,
