@@ -1914,7 +1914,7 @@ int expand_upwards(struct vm_area_struct *vma, unsigned long address)
 				if (vma->vm_next)
 					vma_gap_update(vma->vm_next);
 				else
-					mm->highest_vm_end = address;
+					vma->vm_mm->highest_vm_end = address;
 				perf_event_mmap(vma);
 			}
 		}
