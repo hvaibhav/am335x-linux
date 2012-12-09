@@ -3013,7 +3013,8 @@ int memcg_update_cache_size(struct kmem_cache *s, int num_groups)
 	return 0;
 }
 
-int memcg_register_cache(struct mem_cgroup *memcg, struct kmem_cache *s)
+int memcg_register_cache(struct mem_cgroup *memcg, struct kmem_cache *s,
+			 struct kmem_cache *root_cache)
 {
 	size_t size = sizeof(struct memcg_cache_params);
 
@@ -3027,8 +3028,10 @@ int memcg_register_cache(struct mem_cgroup *memcg, struct kmem_cache *s)
 	if (!s->memcg_params)
 		return -ENOMEM;
 
-	if (memcg)
+	if (memcg) {
 		s->memcg_params->memcg = memcg;
+		s->memcg_params->root_cache = root_cache;
+	}
 	return 0;
 }
 
@@ -3187,7 +3190,7 @@ static struct kmem_cache *kmem_cache_dup(struct mem_cgroup *memcg,
 		return NULL;
 
 	new = kmem_cache_create_memcg(memcg, name, s->object_size, s->align,
-				      (s->flags & ~SLAB_PANIC), s->ctor);
+				      (s->flags & ~SLAB_PANIC), s->ctor, s);
 
 	if (new)
 		new->allocflags |= __GFP_KMEMCG;
@@ -3227,7 +3230,6 @@ static struct kmem_cache *memcg_create_kmem_cache(struct mem_cgroup *memcg,
 	}
 
 	mem_cgroup_get(memcg);
-	new_cachep->memcg_params->root_cache = cachep;
 	atomic_set(&new_cachep->memcg_params->nr_pages , 0);
 
 	cachep->memcg_params->memcg_caches[idx] = new_cachep;
