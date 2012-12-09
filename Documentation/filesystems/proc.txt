@@ -1639,7 +1639,7 @@ if precise results are needed.
 This file provides information associated with an opened file. The regular
 files have at least two fields -- 'pos' and 'flags'. The 'pos' represents
 the current offset of the opened file in decimal form [see lseek(2) for
-details] and the 'flags' denotes octal O_xxx mask the file has been
+details] and 'flags' denotes the octal O_xxx mask the file has been
 created with [see open(2) for details].
 
 A typical output is
@@ -1648,7 +1648,7 @@ A typical output is
 	flags:	0100002
 
 The files such as eventfd, fsnotify, signalfd, epoll among the regular pos/flags
-pair provide additional information peculiar to the objects they represent.
+pair provide additional information particular to the objects they represent.
 
 	Eventfd files
 	~~~~~~~~~~~~~
@@ -1687,17 +1687,18 @@ pair provide additional information peculiar to the objects they represent.
 
 	where 'wd' is a watch descriptor in decimal form, ie a target file
 	descriptor number, 'ino' and 'sdev' are inode and device where the
-	target file lays on and the 'mask' is the mask of events, all in hex
+	target file resides and the 'mask' is the mask of events, all in hex
 	form [see inotify(7) for more details].
 
-	In case if the kernel built with exportfs the path to the target file
-	is encoded as a file handle. The file handle provided by three fields
-	'fhandle-bytes', 'fhandle-type' and 'f_handle', all in hex format.
+	If the kernel was built with exportfs support, the path to the target
+	file is encoded as a file handle.  The file handle is provided by three
+	fields 'fhandle-bytes', 'fhandle-type' and 'f_handle', all in hex
+	format.
 
 	If the kernel is built without exportfs support the file handle won't be
 	printed out.
 
-	For fanotify files the format is the following
+	For fanotify files the format is
 
 	pos:	0
 	flags:	02
@@ -1709,9 +1710,9 @@ pair provide additional information peculiar to the objects they represent.
 	flags:	02
 	fanotify mnt_id:13 mask:1 ignored_mask:40000000
 
-	where 'ino', 'sdev' are target inode and device, 'mnt_id' is the mount point identifier,
-	'mask' is the events mask used and 'ignored_mask' is the mask of events which are
-	to be ignored. All written in hex format.
+	where 'ino', 'sdev' are target inode and device, 'mnt_id' is the mount
+	point identifier, 'mask' is the events mask used and 'ignored_mask' is
+	the mask of events which are to be ignored. All in hex format.
 
 
 ------------------------------------------------------------------------------
