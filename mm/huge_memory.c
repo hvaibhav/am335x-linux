@@ -800,7 +800,7 @@ int copy_huge_pmd(struct mm_struct *dst_mm, struct mm_struct *src_mm,
 		goto out_unlock;
 	}
 	/*
-	 * mm->pagetable lock is enough to be sure that huge zero pmd is not
+	 * mm->page_table_lock is enough to be sure that huge zero pmd is not
 	 * under splitting since we don't split the page itself, only pmd to
 	 * a page table.
 	 */
