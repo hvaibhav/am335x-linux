@@ -132,10 +132,8 @@ static int hfsplus_system_write_inode(struct inode *inode)
 	if (tree) {
 		int err = hfs_btree_write(tree);
 		if (err) {
-			printk(KERN_ERR "hfs: unable to write b-tree: %d\n",
-				err);
-			dprint(DBG_INODE, "hfsplus_system_write_inode: %lu\n",
-				inode->i_ino);
+			printk(KERN_ERR "hfs: b-tree write err: %d, ino %lu\n",
+					err, inode->i_ino);
 			return err;
 		}
 	}
