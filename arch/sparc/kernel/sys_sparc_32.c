@@ -34,8 +34,6 @@ asmlinkage unsigned long sys_getpagesize(void)
 	return PAGE_SIZE; /* Possibly older binaries want 8192 on sun4's? */
 }
 
-#define COLOUR_ALIGN(addr)      (((addr)+SHMLBA-1)&~(SHMLBA-1))
-
 unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr, unsigned long len, unsigned long pgoff, unsigned long flags)
 {
 	struct vm_unmapped_area_info info;
