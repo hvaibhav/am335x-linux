@@ -919,7 +919,7 @@ static struct page *shmem_swapin(swp_entry_t swap, gfp_t gfp,
 	pvma.vm_pgoff = index + info->vfs_inode.i_ino;
 	pvma.vm_ops = NULL;
 	pvma.vm_policy = mpol_shared_policy_lookup(&info->policy, index);
-
+	pvma.anon_vma = NULL;
 	page = swapin_readahead(swap, gfp, &pvma, 0);
 
 	/* Drop reference taken by mpol_shared_policy_lookup() */

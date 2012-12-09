@@ -367,6 +367,9 @@ static void anon_vma_ctor(void *data)
 
 	init_rwsem(&anon_vma->rwsem);
 	atomic_set(&anon_vma->refcount, 0);
+#ifdef CONFIG_SWAP
+	atomic_set(&anon_vma->swapra_miss, 0);
+#endif
 	anon_vma->rb_root = RB_ROOT;
 }
 
