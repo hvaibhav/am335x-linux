@@ -2572,6 +2572,7 @@ static int khugepaged(void *none)
 static void __split_huge_zero_page_pmd(struct vm_area_struct *vma,
 		unsigned long haddr, pmd_t *pmd)
 {
+	struct mm_struct *mm = vma->vm_mm;
 	pgtable_t pgtable;
 	pmd_t _pmd;
 	int i;
@@ -2579,8 +2580,8 @@ static void __split_huge_zero_page_pmd(struct vm_area_struct *vma,
 	pmdp_clear_flush(vma, haddr, pmd);
 	/* leave pmd empty until pte is filled */
 
-	pgtable = get_pmd_huge_pte(vma->vm_mm);
-	pmd_populate(vma->vm_mm, &_pmd, pgtable);
+	pgtable = pgtable_trans_huge_withdraw(mm);
+	pmd_populate(mm, &_pmd, pgtable);
 
 	for (i = 0; i < HPAGE_PMD_NR; i++, haddr += PAGE_SIZE) {
 		pte_t *pte, entry;
@@ -2588,11 +2589,11 @@ static void __split_huge_zero_page_pmd(struct vm_area_struct *vma,
 		entry = pte_mkspecial(entry);
 		pte = pte_offset_map(&_pmd, haddr);
 		VM_BUG_ON(!pte_none(*pte));
-		set_pte_at(vma->vm_mm, haddr, pte, entry);
+		set_pte_at(mm, haddr, pte, entry);
 		pte_unmap(pte);
 	}
 	smp_wmb(); /* make pte visible before pmd */
-	pmd_populate(vma->vm_mm, pmd, pgtable);
+	pmd_populate(mm, pmd, pgtable);
 }
 
 void __split_huge_page_pmd(struct vm_area_struct *vma, unsigned long address,
@@ -2607,7 +2608,7 @@ void __split_huge_page_pmd(struct vm_area_struct *vma, unsigned long address,
 	BUG_ON(vma->vm_start > haddr || vma->vm_end < haddr + HPAGE_PMD_SIZE);
 
 	mmun_start = haddr;
-	mmun_end   = address + HPAGE_PMD_SIZE;
+	mmun_end   = haddr + HPAGE_PMD_SIZE;
 	mmu_notifier_invalidate_range_start(mm, mmun_start, mmun_end);
 	spin_lock(&mm->page_table_lock);
 	if (unlikely(!pmd_trans_huge(*pmd))) {
