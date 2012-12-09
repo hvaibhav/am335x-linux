@@ -4530,8 +4530,8 @@ void __init set_pageblock_order(void)
 
 #endif /* CONFIG_HUGETLB_PAGE_SIZE_VARIABLE */
 
-static unsigned long calc_memmap_size(unsigned long spanned_pages,
-				      unsigned long present_pages)
+static unsigned long __paginginit calc_memmap_size(unsigned long spanned_pages,
+						   unsigned long present_pages)
 {
 	unsigned long pages = spanned_pages;
 
