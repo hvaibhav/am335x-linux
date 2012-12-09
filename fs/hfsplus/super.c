@@ -100,6 +100,7 @@ static int hfsplus_system_write_inode(struct inode *inode)
 	struct hfsplus_vh *vhdr = sbi->s_vhdr;
 	struct hfsplus_fork_raw *fork;
 	struct hfs_btree *tree = NULL;
+	int err;
 
 	switch (inode->i_ino) {
 	case HFSPLUS_EXT_CNID:
@@ -129,8 +130,15 @@ static int hfsplus_system_write_inode(struct inode *inode)
 		hfsplus_mark_mdb_dirty(inode->i_sb);
 	}
 	hfsplus_inode_write_fork(inode, fork);
-	if (tree)
-		hfs_btree_write(tree);
+	if (tree) {
+		err = hfs_btree_write(tree);
+		if (err) {
+			printk(KERN_ERR "hfs: unable to write b-tree\n");
+			dprint(DBG_INODE, "hfsplus_system_write_inode: %lu\n",
+				inode->i_ino);
+			return err;
+		}
+	}
 	return 0;
 }
 
