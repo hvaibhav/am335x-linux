@@ -1844,10 +1844,8 @@ SYSCALL_DEFINE1(unshare, unsigned long, unshare_flags)
 			exit_sem(current);
 		}
 
-		if (new_nsproxy) {
+		if (new_nsproxy)
 			switch_task_namespaces(current, new_nsproxy);
-			new_nsproxy = NULL;
-		}
 
 		task_lock(current);
 
@@ -1876,9 +1874,6 @@ SYSCALL_DEFINE1(unshare, unsigned long, unshare_flags)
 			new_cred = NULL;
 		}
 	}
-
-	if (new_nsproxy)
-		put_nsproxy(new_nsproxy);
 
 bad_unshare_cleanup_cred:
 	if (new_cred)
