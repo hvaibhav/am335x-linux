@@ -60,7 +60,6 @@ hugetlb_get_unmapped_area_topdown(struct file *filp, const unsigned long addr0,
 				  const unsigned long pgoff,
 				  const unsigned long flags)
 {
-	struct vm_area_struct *vma;
 	struct mm_struct *mm = current->mm;
 	unsigned long addr = addr0;
 	struct vm_unmapped_area_info info;
