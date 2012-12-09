@@ -38,7 +38,6 @@ asmlinkage unsigned long sys_getpagesize(void)
 
 unsigned long arch_get_unmapped_area(struct file *filp, unsigned long addr, unsigned long len, unsigned long pgoff, unsigned long flags)
 {
-	struct vm_area_struct * vmm;
 	struct vm_unmapped_area_info info;
 
 	if (flags & MAP_FIXED) {
