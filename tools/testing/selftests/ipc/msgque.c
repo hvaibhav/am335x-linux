@@ -3,6 +3,7 @@
 #include <string.h>
 #include <errno.h>
 #include <linux/msg.h>
+#include <fcntl.h>
 
 #define MAX_MSG_SIZE		32
 
@@ -19,9 +20,9 @@ struct msg1 {
 #define ANOTHER_MSG_TYPE 26538
 
 struct msgque_data {
+	key_t key;
 	int msq_id;
 	int qbytes;
-	int kern_id;
 	int qnum;
 	int mode;
 	struct msg1 *messages;
@@ -29,41 +30,49 @@ struct msgque_data {
 
 int restore_queue(struct msgque_data *msgque)
 {
-	struct msqid_ds ds;
-	int id, i;
+	int fd, ret, id, i;
+	char buf[32];
 
-	id = msgget(msgque->msq_id,
-		     msgque->mode | IPC_CREAT | IPC_EXCL | IPC_PRESET);
+	fd = open("/proc/sys/kernel/msg_next_id", O_WRONLY);
+	if (fd == -1) {
+		printf("Failed to open /proc/sys/kernel/msg_next_id\n");
+		return -errno;
+	}
+	sprintf(buf, "%d", msgque->msq_id);
+
+	ret = write(fd, buf, strlen(buf));
+	if (ret != strlen(buf)) {
+		printf("Failed to write to /proc/sys/kernel/msg_next_id\n");
+		return -errno;
+	}
+
+	id = msgget(msgque->key, msgque->mode | IPC_CREAT | IPC_EXCL);
 	if (id == -1) {
 		printf("Failed to create queue\n");
 		return -errno;
 	}
 
 	if (id != msgque->msq_id) {
-		printf("Failed to preset id (%d instead of %d)\n",
+		printf("Restored queue has wrong id (%d instead of %d)\n",
 							id, msgque->msq_id);
-		return -EFAULT;
-	}
-
-	if (msgctl(id, MSG_STAT, &ds) < 0) {
-		printf("Failed to stat queue\n");
-		return -errno;
-	}
-
-	ds.msg_perm.key = msgque->msq_id;
-	ds.msg_qbytes = msgque->qbytes;
-	if (msgctl(id, MSG_SET, &ds) < 0) {
-		printf("Failed to update message key\n");
-		return -errno;
+		ret = -EFAULT;
+		goto destroy;
 	}
 
 	for (i = 0; i < msgque->qnum; i++) {
-		if (msgsnd(msgque->msq_id, &msgque->messages[i].mtype, msgque->messages[i].msize, IPC_NOWAIT) != 0) {
+		if (msgsnd(msgque->msq_id, &msgque->messages[i].mtype,
+			   msgque->messages[i].msize, IPC_NOWAIT) != 0) {
 			printf("msgsnd failed (%m)\n");
-			return -errno;
+			ret = -errno;
+			goto destroy;
 		};
 	}
 	return 0;
+
+destroy:
+	if (msgctl(id, IPC_RMID, 0))
+		printf("Failed to destroy queue: %d\n", -errno);
+	return ret;
 }
 
 int check_and_destroy_queue(struct msgque_data *msgque)
@@ -72,7 +81,8 @@ int check_and_destroy_queue(struct msgque_data *msgque)
 	int cnt = 0, ret;
 
 	while (1) {
-		ret = msgrcv(msgque->msq_id, &message.mtype, MAX_MSG_SIZE, 0, IPC_NOWAIT);
+		ret = msgrcv(msgque->msq_id, &message.mtype, MAX_MSG_SIZE,
+				0, IPC_NOWAIT);
 		if (ret < 0) {
 			if (errno == ENOMSG)
 				break;
@@ -81,7 +91,8 @@ int check_and_destroy_queue(struct msgque_data *msgque)
 			goto err;
 		}
 		if (ret != msgque->messages[cnt].msize) {
-			printf("Wrong message size: %d (expected %d)\n", ret, msgque->messages[cnt].msize);
+			printf("Wrong message size: %d (expected %d)\n", ret,
+						msgque->messages[cnt].msize);
 			ret = -EINVAL;
 			goto err;
 		}
@@ -115,15 +126,17 @@ err:
 
 int dump_queue(struct msgque_data *msgque)
 {
-	struct msqid_ds ds;
+	struct msqid64_ds ds;
+	int kern_id;
 	int i, ret;
 
-	for (msgque->kern_id = 0; msgque->kern_id < 256; msgque->kern_id++) {
-		ret = msgctl(msgque->kern_id, MSG_STAT, &ds);
+	for (kern_id = 0; kern_id < 256; kern_id++) {
+		ret = msgctl(kern_id, MSG_STAT, &ds);
 		if (ret < 0) {
 			if (errno == -EINVAL)
 				continue;
-			printf("Failed to get stats for IPC queue with id %d\n", msgque->kern_id);
+			printf("Failed to get stats for IPC queue with id %d\n",
+					kern_id);
 			return -errno;
 		}
 
@@ -142,7 +155,8 @@ int dump_queue(struct msgque_data *msgque)
 	msgque->qbytes = ds.msg_qbytes;
 
 	for (i = 0; i < msgque->qnum; i++) {
-		ret = msgrcv(msgque->msq_id, &msgque->messages[i].mtype, MAX_MSG_SIZE, i, IPC_NOWAIT | MSG_COPY);
+		ret = msgrcv(msgque->msq_id, &msgque->messages[i].mtype,
+				MAX_MSG_SIZE, i, IPC_NOWAIT | MSG_COPY);
 		if (ret < 0) {
 			printf("Failed to copy IPC message: %m (%d)\n", errno);
 			return -errno;
@@ -158,33 +172,34 @@ int fill_msgque(struct msgque_data *msgque)
 
 	msgbuf.mtype = MSG_TYPE;
 	memcpy(msgbuf.mtext, TEST_STRING, sizeof(TEST_STRING));
-	if (msgsnd(msgque->msq_id, &msgbuf.mtype, sizeof(TEST_STRING), IPC_NOWAIT) != 0) {
+	if (msgsnd(msgque->msq_id, &msgbuf.mtype, sizeof(TEST_STRING),
+				IPC_NOWAIT) != 0) {
 		printf("First message send failed (%m)\n");
 		return -errno;
 	};
 
 	msgbuf.mtype = ANOTHER_MSG_TYPE;
 	memcpy(msgbuf.mtext, ANOTHER_TEST_STRING, sizeof(ANOTHER_TEST_STRING));
-	if (msgsnd(msgque->msq_id, &msgbuf.mtype, sizeof(ANOTHER_TEST_STRING), IPC_NOWAIT) != 0) {
+	if (msgsnd(msgque->msq_id, &msgbuf.mtype, sizeof(ANOTHER_TEST_STRING),
+				IPC_NOWAIT) != 0) {
 		printf("Second message send failed (%m)\n");
 		return -errno;
 	};
 	return 0;
 }
 
-int main (int argc, char **argv)
+int main(int argc, char **argv)
 {
-	key_t key;
 	int msg, pid, err;
 	struct msgque_data msgque;
 
-	key = ftok(argv[0], 822155650);
-	if (key == -1) {
+	msgque.key = ftok(argv[0], 822155650);
+	if (msgque.key == -1) {
 		printf("Can't make key\n");
 		return -errno;
 	}
 
-	msgque.msq_id = msgget(key, IPC_CREAT | IPC_EXCL | 0666);
+	msgque.msq_id = msgget(msgque.key, IPC_CREAT | IPC_EXCL | 0666);
 	if (msgque.msq_id == -1) {
 		printf("Can't create queue\n");
 		goto err_out;
