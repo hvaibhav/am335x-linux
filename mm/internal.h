@@ -377,15 +377,12 @@ unsigned long reclaim_clean_pages_from_list(struct zone *zone,
 #define ALLOC_CMA		0x80 /* allow allocations from CMA areas */
 
 /*
- * Unnecessary readahead harms performance. 1. for SSD, big size read is more
- * expensive than small size read, so extra unnecessary read only has overhead.
- * For harddisk, this overhead doesn't exist. 2. unnecessary readahead will
- * allocate extra memroy, which further tights memory pressure, so more
- * swapout/swapin.
- * These adds a simple swap random access detection. In swap page fault, if
- * page is found in swap cache, decrease an account of vma, otherwise we need
- * do sync swapin and the account is increased. Optionally swapin will do
- * readahead if the counter is below a threshold.
+ * Unnecessary readahead harms performance, especially for SSD devices, where
+ * large reads are significantly more expensive than small ones.
+ * These implements simple swap random access detection. In swap page fault: if
+ * the page is found in swapcache, decrease a counter in the vma, otherwise we
+ * need to perform sync swapin and the counter is increased.  Optionally swapin
+ * will perform readahead if the counter is below a threshold.
  */
 #ifdef CONFIG_SWAP
 #define SWAPRA_MISS_THRESHOLD  (100)
