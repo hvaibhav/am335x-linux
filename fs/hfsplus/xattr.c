@@ -310,6 +310,7 @@ ssize_t hfsplus_getxattr(struct dentry *dentry, const char *name,
 	struct inode *inode = dentry->d_inode;
 	struct hfs_find_data fd;
 	hfsplus_attr_entry *entry;
+	__be32 xattr_record_type;
 	u32 record_type;
 	u16 record_length = 0;
 	ssize_t res = 0;
@@ -358,9 +359,9 @@ ssize_t hfsplus_getxattr(struct dentry *dentry, const char *name,
 		goto out;
 	}
 
-	hfs_bnode_read(fd.bnode, &record_type,
-			fd.entryoffset, sizeof(record_type));
-	record_type = be32_to_cpu(record_type);
+	hfs_bnode_read(fd.bnode, &xattr_record_type,
+			fd.entryoffset, sizeof(xattr_record_type));
+	record_type = be32_to_cpu(xattr_record_type);
 	if (record_type == HFSPLUS_ATTR_INLINE_DATA) {
 		record_length = hfs_bnode_read_u16(fd.bnode,
 				fd.entryoffset +
