@@ -164,7 +164,7 @@ static int __init test_init(void)
 	return 0;
 
 exit_device_unregister:
-	platform_device_unregister(test0);
+	platform_device_del(test0);
 
 exit_free_test1:
 	platform_device_put(test1);
