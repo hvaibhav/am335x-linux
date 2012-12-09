@@ -3047,17 +3047,13 @@ out:
  */
 static inline void memcg_stop_kmem_account(void)
 {
-	if (!current->mm)
-		return;
-
+	VM_BUG_ON(!current->mm);
 	current->memcg_kmem_skip_account++;
 }
 
 static inline void memcg_resume_kmem_account(void)
 {
-	if (!current->mm)
-		return;
-
+	VM_BUG_ON(!current->mm);
 	current->memcg_kmem_skip_account--;
 }
 
@@ -3119,11 +3115,7 @@ static struct kmem_cache *memcg_create_kmem_cache(struct mem_cgroup *memcg,
 	if (new_cachep)
 		goto out;
 
-	/* Don't block progress to enqueue caches for internal infrastructure */
-	memcg_stop_kmem_account();
 	new_cachep = kmem_cache_dup(memcg, cachep);
-	memcg_resume_kmem_account();
-
 	if (new_cachep == NULL) {
 		new_cachep = cachep;
 		goto out;
