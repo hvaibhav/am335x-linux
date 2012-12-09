@@ -535,7 +535,7 @@ static void show_smap_vma_flags(struct seq_file *m, struct vm_area_struct *vma)
 		/*
 		 * In case if we meet a flag we don't know about.
 		 */
-		[0 ... (BITS_PER_LONG-1)] = { "??" },
+		[0 ... (BITS_PER_LONG-1)] = "??",
 
 		[ilog2(VM_READ)]	= "rd",
 		[ilog2(VM_WRITE)]	= "wr",
@@ -568,10 +568,11 @@ static void show_smap_vma_flags(struct seq_file *m, struct vm_area_struct *vma)
 	size_t i;
 
 	seq_puts(m, "VmFlags: ");
-	for_each_set_bit(i, &vma->vm_flags, BITS_PER_LONG) {
-		seq_printf(m, "%c%c ",
-			   mnemonics[i][0],
-			   mnemonics[i][1]);
+	for (i = 0; i < BITS_PER_LONG; i++) {
+		if (vma->vm_flags & (1UL << i)) {
+			seq_printf(m, "%c%c ",
+				   mnemonics[i][0], mnemonics[i][1]);
+		}
 	}
 	seq_putc(m, '\n');
 }
