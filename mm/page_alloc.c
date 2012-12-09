@@ -739,7 +739,7 @@ static void __free_pages_ok(struct page *page, unsigned int order)
  * Read access to zone->managed_pages is safe because it's unsigned long,
  * but we still need to serialize writers. Currently all callers of
  * __free_pages_bootmem() except put_page_bootmem() should only be used
- * at boot time. So for shorter boot time, we have shift the burden to
+ * at boot time. So for shorter boot time, we shift the burden to
  * put_page_bootmem() to serialize writers.
  */
 void __meminit __free_pages_bootmem(struct page *page, unsigned int order)

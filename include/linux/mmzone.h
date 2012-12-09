@@ -451,7 +451,7 @@ struct zone {
 
 	/*
 	 * spanned_pages is the total pages spanned by the zone, including
-	 * holes, which is calcualted as:
+	 * holes, which is calculated as:
 	 * 	spanned_pages = zone_end_pfn - zone_start_pfn;
 	 *
 	 * present_pages is physical pages existing within the zone, which
@@ -469,9 +469,9 @@ struct zone {
 	 * by page allocator and vm scanner to calculate all kinds of watermarks
 	 * and thresholds.
 	 *
-	 * Lock Rules:
+	 * Locking rules:
 	 *
-	 * zone_start_pfn, spanned_pages are protected by span_seqlock.
+	 * zone_start_pfn and spanned_pages are protected by span_seqlock.
 	 * It is a seqlock because it has to be read outside of zone->lock,
 	 * and it is done in the main allocator path.  But, it is written
 	 * quite infrequently.
@@ -480,7 +480,7 @@ struct zone {
 	 * frequently read in proximity to zone->lock.  It's good to
 	 * give them a chance of being in the same cacheline.
 	 *
-	 * Writing access to present_pages and managed_pages at runtime should
+	 * Write access to present_pages and managed_pages at runtime should
 	 * be protected by lock_memory_hotplug()/unlock_memory_hotplug().
 	 * Any reader who can't tolerant drift of present_pages and
 	 * managed_pages should hold memory hotplug lock to get a stable value.
