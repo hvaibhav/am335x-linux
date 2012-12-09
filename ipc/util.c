@@ -282,7 +282,7 @@ int ipc_addid(struct ipc_ids* ids, struct kern_ipc_perm* new, int size)
 
 	if (next_id < 0) {
 		new->seq = ids->seq++;
-		if(ids->seq > ids->seq_max)
+		if (ids->seq > ids->seq_max)
 			ids->seq = 0;
 	} else {
 		new->seq = ipcid_to_seqx(next_id);
