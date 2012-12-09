@@ -2573,18 +2573,19 @@ void __split_huge_page_pmd(struct vm_area_struct *vma, unsigned long address,
 {
 	struct page *page;
 	unsigned long haddr = address & HPAGE_PMD_MASK;
+	struct mm_struct *mm = vma->vm_mm;
 
 	BUG_ON(vma->vm_start > haddr || vma->vm_end < haddr + HPAGE_PMD_SIZE);
 
-	spin_lock(&vma->vm_mm->page_table_lock);
+	spin_lock(&mm->page_table_lock);
 	if (unlikely(!pmd_trans_huge(*pmd))) {
-		spin_unlock(&vma->vm_mm->page_table_lock);
+		spin_unlock(&mm->page_table_lock);
 		return;
 	}
 	page = pmd_page(*pmd);
 	VM_BUG_ON(!page_count(page));
 	get_page(page);
-	spin_unlock(&vma->vm_mm->page_table_lock);
+	spin_unlock(&mm->page_table_lock);
 
 	split_huge_page(page);
 
