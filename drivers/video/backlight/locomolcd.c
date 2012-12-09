@@ -33,19 +33,25 @@ static unsigned long locomolcd_flags;
 
 static void locomolcd_on(int comadj)
 {
-	locomo_gpio_set_dir(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHA_ON, 0);
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHA_ON, 1);
+	locomo_gpio_set_dir(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHA_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHA_ON, 1);
 	mdelay(2);
 
-	locomo_gpio_set_dir(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHD_ON, 0);
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHD_ON, 1);
+	locomo_gpio_set_dir(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHD_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHD_ON, 1);
 	mdelay(2);
 
 	locomo_m62332_senddata(locomolcd_dev, comadj, 0);
 	mdelay(5);
 
-	locomo_gpio_set_dir(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VEE_ON, 0);
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VEE_ON, 1);
+	locomo_gpio_set_dir(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VEE_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VEE_ON, 1);
 	mdelay(10);
 
 	/* TFTCRST | CPSOUT=0 | CPSEN */
@@ -68,16 +74,19 @@ static void locomolcd_off(int comadj)
 	locomo_writel(0x06, locomolcd_dev->mapbase + LOCOMO_TC);
 	mdelay(1);
 
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHA_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHA_ON, 0);
 	mdelay(110);
 
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VEE_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VEE_ON, 0);
 	mdelay(700);
 
 	/* TFTCRST=0 | CPSOUT=0 | CPSEN = 0 */
 	locomo_writel(0, locomolcd_dev->mapbase + LOCOMO_TC);
 	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_MOD, 0);
-	locomo_gpio_write(locomolcd_dev->dev.parent, LOCOMO_GPIO_LCD_VSHD_ON, 0);
+	locomo_gpio_write(locomolcd_dev->dev.parent,
+			LOCOMO_GPIO_LCD_VSHD_ON, 0);
 }
 
 void locomolcd_power(int on)
@@ -107,7 +116,6 @@ void locomolcd_power(int on)
 }
 EXPORT_SYMBOL(locomolcd_power);
 
-
 static int current_intensity;
 
 static int locomolcd_set_intensity(struct backlight_device *bd)
@@ -122,13 +130,25 @@ static int locomolcd_set_intensity(struct backlight_device *bd)
 		intensity = 0;
 
 	switch (intensity) {
-	/* AC and non-AC are handled differently, but produce same results in sharp code? */
-	case 0: locomo_frontlight_set(locomolcd_dev, 0, 0, 161); break;
-	case 1: locomo_frontlight_set(locomolcd_dev, 117, 0, 161); break;
-	case 2: locomo_frontlight_set(locomolcd_dev, 163, 0, 148); break;
-	case 3: locomo_frontlight_set(locomolcd_dev, 194, 0, 161); break;
-	case 4: locomo_frontlight_set(locomolcd_dev, 194, 1, 161); break;
-
+	/*
+	 * AC and non-AC are handled differently,
+	 * but produce same results in sharp code?
+	 */
+	case 0:
+		locomo_frontlight_set(locomolcd_dev, 0, 0, 161);
+		break;
+	case 1:
+		locomo_frontlight_set(locomolcd_dev, 117, 0, 161);
+		break;
+	case 2:
+		locomo_frontlight_set(locomolcd_dev, 163, 0, 148);
+		break;
+	case 3:
+		locomo_frontlight_set(locomolcd_dev, 194, 0, 161);
+		break;
+	case 4:
+		locomo_frontlight_set(locomolcd_dev, 194, 1, 161);
+		break;
 	default:
 		return -ENODEV;
 	}
@@ -175,9 +195,11 @@ static int locomolcd_probe(struct locomo_dev *ldev)
 
 	locomo_gpio_set_dir(ldev->dev.parent, LOCOMO_GPIO_FL_VR, 0);
 
-	/* the poodle_lcd_power function is called for the first time
+	/*
+	 * the poodle_lcd_power function is called for the first time
 	 * from fs_initcall, which is before locomo is activated.
-	 * We need to recall poodle_lcd_power here*/
+	 * We need to recall poodle_lcd_power here
+	 */
 	if (machine_is_poodle())
 		locomolcd_power(1);
 
@@ -190,8 +212,8 @@ static int locomolcd_probe(struct locomo_dev *ldev)
 							&ldev->dev, NULL,
 							&locomobl_data, &props);
 
-	if (IS_ERR (locomolcd_bl_device))
-		return PTR_ERR (locomolcd_bl_device);
+	if (IS_ERR(locomolcd_bl_device))
+		return PTR_ERR(locomolcd_bl_device);
 
 	/* Set up frontlight so that screen is readable */
 	locomolcd_bl_device->props.brightness = 2;
@@ -225,7 +247,6 @@ static struct locomo_driver poodle_lcd_driver = {
 	.suspend = locomolcd_suspend,
 	.resume = locomolcd_resume,
 };
-
 
 static int __init locomolcd_init(void)
 {
