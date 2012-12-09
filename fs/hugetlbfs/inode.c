@@ -1053,7 +1053,7 @@ static int __init init_hugetlbfs_fs(void)
 		char buf[50];
 		unsigned ps_kb = 1U << (h->order + PAGE_SHIFT - 10);
 
-		snprintf(buf, sizeof buf, "pagesize=%uK", ps_kb);
+		snprintf(buf, sizeof(buf), "pagesize=%uK", ps_kb);
 		hugetlbfs_vfsmount[i] = kern_mount_data(&hugetlbfs_fs_type,
 							buf);
 
