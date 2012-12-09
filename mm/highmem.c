@@ -324,6 +324,7 @@ struct page_address_map {
 	void *virtual;
 	struct list_head list;
 };
+
 static struct page_address_map page_address_maps[LAST_PKMAP];
 
 /*
