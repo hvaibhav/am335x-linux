@@ -826,7 +826,7 @@ long do_msgrcv(int msqid, void __user *buf, size_t bufsz, long msgtyp,
 	int mode;
 	struct ipc_namespace *ns;
 	struct msg_msg *copy = NULL;
-	unsigned long __maybe_unused copy_number = 0;
+	unsigned long copy_number = 0;
 
 	if (msqid < 0 || (long) bufsz < 0)
 		return -EINVAL;
