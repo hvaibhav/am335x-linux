@@ -50,13 +50,9 @@ __setup("aoe_iflist=", aoe_iflist_setup);
 static spinlock_t txlock;
 static struct sk_buff_head skbtxq;
 
-/* enters with txlock held
- *
- * Use __must_hold(&txlock) for sparse when upcoming patch adds it to
- * compiler.h.
- */
+/* enters with txlock held */
 static int
-tx(void)
+tx(void) __must_hold(&txlock)
 {
 	struct sk_buff *skb;
 
