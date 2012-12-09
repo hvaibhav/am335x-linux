@@ -139,7 +139,10 @@ static void lp855x_pwm_ctrl(struct lp855x *lp, int br, int max_br)
 	}
 
 	pwm_config(lp->pwm, duty, period);
-	duty == 0 ? pwm_disable(lp->pwm) : pwm_enable(lp->pwm);
+	if (duty)
+		pwm_enable(lp->pwm);
+	else
+		pwm_disable(lp->pwm);
 }
 
 static int lp855x_bl_update_status(struct backlight_device *bl)
