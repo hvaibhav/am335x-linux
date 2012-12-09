@@ -738,7 +738,7 @@ int do_huge_pmd_anonymous_page(struct mm_struct *mm, struct vm_area_struct *vma,
 			pgtable_t pgtable;
 			pgtable = pte_alloc_one(mm, haddr);
 			if (unlikely(!pgtable))
-				goto out;
+				return VM_FAULT_OOM;
 			spin_lock(&mm->page_table_lock);
 			set_huge_zero_page(pgtable, mm, vma, haddr, pmd);
 			spin_unlock(&mm->page_table_lock);
