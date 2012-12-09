@@ -144,7 +144,7 @@ config MEMORY_ISOLATION
 	boolean
 
 config MOVABLE_NODE
-	boolean "Enable to assign a node has only movable memory"
+	boolean "Enable to assign a node which has only movable memory"
 	depends on HAVE_MEMBLOCK
 	depends on NO_BOOTMEM
 	depends on X86_64
