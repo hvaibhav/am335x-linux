@@ -5175,7 +5175,6 @@ static ssize_t slab_attr_store(struct kobject *kobj,
 	struct slab_attribute *attribute;
 	struct kmem_cache *s;
 	int err;
-	int i __maybe_unused;
 
 	attribute = to_slab_attr(attr);
 	s = to_slab(kobj);
@@ -5185,23 +5184,24 @@ static ssize_t slab_attr_store(struct kobject *kobj,
 
 	err = attribute->store(s, buf, len);
 #ifdef CONFIG_MEMCG_KMEM
-	if (slab_state < FULL)
-		return err;
+	if (slab_state >= FULL && err >= 0 && is_root_cache(s)) {
+		int i;
 
-	if ((err < 0) || !is_root_cache(s))
-		return err;
+		mutex_lock(&slab_mutex);
+		if (s->max_attr_size < len)
+			s->max_attr_size = len;
 
-	mutex_lock(&slab_mutex);
-	if (s->max_attr_size < len)
-		s->max_attr_size = len;
-
-	for_each_memcg_cache_index(i) {
-		struct kmem_cache *c = cache_from_memcg(s, i);
-		if (c)
-			/* return value determined by the parent cache only */
-			attribute->store(c, buf, len);
+		for_each_memcg_cache_index(i) {
+			struct kmem_cache *c = cache_from_memcg(s, i);
+			/*
+			 * This function's return value is determined by the
+			 * parent cache only
+			 */
+			if (c)
+				attribute->store(c, buf, len);
+		}
+		mutex_unlock(&slab_mutex);
 	}
-	mutex_unlock(&slab_mutex);
 #endif
 	return err;
 }
