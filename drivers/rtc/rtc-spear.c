@@ -363,11 +363,6 @@ static int __devinit spear_rtc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "no resource defined\n");
 		return -EBUSY;
 	}
-	if (!devm_request_mem_region(&pdev->dev, res->start, resource_size(res),
-				pdev->name)) {
-		dev_err(&pdev->dev, "rtc region already claimed\n");
-		return -EBUSY;
-	}
 
 	config = devm_kzalloc(&pdev->dev, sizeof(*config), GFP_KERNEL);
 	if (!config) {
@@ -390,10 +385,9 @@ static int __devinit spear_rtc_probe(struct platform_device *pdev)
 		return status;
 	}
 
-	config->ioaddr = devm_ioremap(&pdev->dev, res->start,
-			resource_size(res));
+	config->ioaddr = devm_request_and_ioremap(&pdev->dev, res);
 	if (!config->ioaddr) {
-		dev_err(&pdev->dev, "ioremap fail\n");
+		dev_err(&pdev->dev, "request-ioremap fail\n");
 		return -ENOMEM;
 	}
 
