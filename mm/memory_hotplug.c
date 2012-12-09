@@ -217,7 +217,6 @@ static void grow_zone_span(struct zone *zone, unsigned long start_pfn,
 static void resize_zone(struct zone *zone, unsigned long start_pfn,
 		unsigned long end_pfn)
 {
-
 	zone_span_writelock(zone);
 
 	zone->zone_start_pfn = start_pfn;
