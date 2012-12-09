@@ -50,7 +50,11 @@ __setup("aoe_iflist=", aoe_iflist_setup);
 static spinlock_t txlock;
 static struct sk_buff_head skbtxq;
 
-/* enters with txlock held */
+/* enters with txlock held
+ *
+ * Use __must_hold(&txlock) for sparse when upcoming patch adds it to
+ * compiler.h.
+ */
 static int
 tx(void)
 {
@@ -58,7 +62,10 @@ tx(void)
 
 	while ((skb = skb_dequeue(&skbtxq))) {
 		spin_unlock_irq(&txlock);
-		dev_queue_xmit(skb);
+		if (dev_queue_xmit(skb) == NET_XMIT_DROP && net_ratelimit())
+			pr_warn("aoe: packet could not be sent on %s.  %s\n",
+				skb->dev ? skb->dev->name : "netif",
+				"consider increasing tx_queue_len");
 		spin_lock_irq(&txlock);
 	}
 	return 0;
