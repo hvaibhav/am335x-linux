@@ -41,6 +41,7 @@
 #ifndef _LINUX_BALLOON_COMPACTION_H
 #define _LINUX_BALLOON_COMPACTION_H
 #include <linux/pagemap.h>
+#include <linux/page-flags.h>
 #include <linux/migrate.h>
 #include <linux/gfp.h>
 #include <linux/err.h>
@@ -107,20 +108,18 @@ static inline void balloon_mapping_free(struct address_space *balloon_mapping)
 }
 
 /*
- * __balloon_page_flags - helper to perform balloon @page ->flags tests.
+ * page_flags_cleared - helper to perform balloon @page ->flags tests.
  *
- * As balloon pages are got from Buddy, and we do not play with page->flags
+ * As balloon pages are obtained from buddy and we do not play with page->flags
  * at driver level (exception made when we get the page lock for compaction),
- * therefore we can safely identify a ballooned page by checking if the
- * NR_PAGEFLAGS rightmost bits from the page->flags are all cleared.
- * This approach also helps on skipping ballooned pages that are locked for
- * compaction or release, thus mitigating their racy check at
- * balloon_page_movable()
+ * we can safely identify a ballooned page by checking if the
+ * PAGE_FLAGS_CHECK_AT_PREP page->flags are all cleared.  This approach also
+ * helps us skip ballooned pages that are locked for compaction or release, thus
+ * mitigating their racy check at balloon_page_movable()
  */
-#define BALLOON_PAGE_FLAGS_MASK       ((1UL << NR_PAGEFLAGS) - 1)
-static inline bool __balloon_page_flags(struct page *page)
+static inline bool page_flags_cleared(struct page *page)
 {
-	return page->flags & BALLOON_PAGE_FLAGS_MASK ? false : true;
+	return !(page->flags & PAGE_FLAGS_CHECK_AT_PREP);
 }
 
 /*
@@ -149,10 +148,10 @@ static inline bool __is_movable_balloon_page(struct page *page)
 static inline bool balloon_page_movable(struct page *page)
 {
 	/*
-	 * Before dereferencing and testing mapping->flags, lets make sure
+	 * Before dereferencing and testing mapping->flags, let's make sure
 	 * this is not a page that uses ->mapping in a different way
 	 */
-	if (__balloon_page_flags(page) && !page_mapped(page) &&
+	if (page_flags_cleared(page) && !page_mapped(page) &&
 	    page_count(page) == 1)
 		return __is_movable_balloon_page(page);
 
