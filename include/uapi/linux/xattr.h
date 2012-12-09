@@ -17,6 +17,9 @@
 #define XATTR_OS2_PREFIX "os2."
 #define XATTR_OS2_PREFIX_LEN (sizeof (XATTR_OS2_PREFIX) - 1)
 
+#define XATTR_MAC_OSX_PREFIX "osx."
+#define XATTR_MAC_OSX_PREFIX_LEN (sizeof (XATTR_MAC_OSX_PREFIX) - 1)
+
 #define XATTR_SECURITY_PREFIX	"security."
 #define XATTR_SECURITY_PREFIX_LEN (sizeof (XATTR_SECURITY_PREFIX) - 1)
 
