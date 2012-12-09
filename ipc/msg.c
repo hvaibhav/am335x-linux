@@ -786,11 +786,8 @@ long do_msgrcv(int msqid, void __user *buf, size_t bufsz, long msgtyp,
 		return -EINVAL;
 	if (msgflg & MSG_COPY) {
 #ifdef CONFIG_CHECKPOINT_RESTORE
-
-		if (msgflg & MSG_COPY) {
-			copy_number = msgtyp;
-			msgtyp = 0;
-		}
+		copy_number = msgtyp;
+		msgtyp = 0;
 
 		/*
 		 * Create dummy message to copy real message to.
