@@ -4,9 +4,11 @@
  * for more details.
  *
  * Copyright (C) 2004-2007 Cavium Networks
- * Copyright (C) 2008 Wind River Systems
+ * Copyright (C) 2008, 2009 Wind River Systems
+ *   written by Ralf Baechle <ralf@linux-mips.org>
  */
 #include <linux/init.h>
+#include <linux/kernel.h>
 #include <linux/console.h>
 #include <linux/delay.h>
 #include <linux/export.h>
@@ -664,20 +666,10 @@ void __init plat_mem_setup(void)
 	cvmx_bootmem_lock();
 	while ((boot_mem_map.nr_map < BOOT_MEM_MAP_MAX)
 		&& (total < MAX_MEMORY)) {
-#if defined(CONFIG_64BIT) || defined(CONFIG_64BIT_PHYS_ADDR)
 		memory = cvmx_bootmem_phy_alloc(mem_alloc_size,
 						__pa_symbol(&__init_end), -1,
 						0x100000,
 						CVMX_BOOTMEM_FLAG_NO_LOCKING);
-#elif defined(CONFIG_HIGHMEM)
-		memory = cvmx_bootmem_phy_alloc(mem_alloc_size, 0, 1ull << 31,
-						0x100000,
-						CVMX_BOOTMEM_FLAG_NO_LOCKING);
-#else
-		memory = cvmx_bootmem_phy_alloc(mem_alloc_size, 0, 512 << 20,
-						0x100000,
-						CVMX_BOOTMEM_FLAG_NO_LOCKING);
-#endif
 		if (memory >= 0) {
 			u64 size = mem_alloc_size;
 
@@ -821,3 +813,51 @@ void __init device_tree_init(void)
 	}
 	unflatten_device_tree();
 }
+
+static int __initdata disable_octeon_edac_p;
+
+static int __init disable_octeon_edac(char *str)
+{
+	disable_octeon_edac_p = 1;
+	return 0;
+}
+early_param("disable_octeon_edac", disable_octeon_edac);
+
+static char *edac_device_names[] = {
+	"octeon_l2c_edac",
+	"octeon_pc_edac",
+};
+
+static int __init edac_devinit(void)
+{
+	struct platform_device *dev;
+	int i, err = 0;
+	int num_lmc;
+	char *name;
+
+	if (disable_octeon_edac_p)
+		return 0;
+
+	for (i = 0; i < ARRAY_SIZE(edac_device_names); i++) {
+		name = edac_device_names[i];
+		dev = platform_device_register_simple(name, -1, NULL, 0);
+		if (IS_ERR(dev)) {
+			pr_err("Registation of %s failed!\n", name);
+			err = PTR_ERR(dev);
+		}
+	}
+
+	num_lmc = OCTEON_IS_MODEL(OCTEON_CN68XX) ? 4 :
+		(OCTEON_IS_MODEL(OCTEON_CN56XX) ? 2 : 1);
+	for (i = 0; i < num_lmc; i++) {
+		dev = platform_device_register_simple("octeon_lmc_edac",
+						      i, NULL, 0);
+		if (IS_ERR(dev)) {
+			pr_err("Registation of octeon_lmc_edac %d failed!\n", i);
+			err = PTR_ERR(dev);
+		}
+	}
+
+	return err;
+}
+device_initcall(edac_devinit);

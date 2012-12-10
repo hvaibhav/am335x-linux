@@ -5,11 +5,14 @@
  * Copyright (C) 1999 by Silicon Graphics, Inc.
  */
 #include <linux/kernel.h>
+#include <linux/hugetlb.h>
 #include <linux/mm.h>
+#include <linux/sched.h>
 
 #include <asm/mipsregs.h>
 #include <asm/page.h>
 #include <asm/pgtable.h>
+#include <asm/current.h>
 #include <asm/tlbdebug.h>
 
 static inline const char *msk2str(unsigned int mask)
@@ -110,4 +113,48 @@ static void dump_tlb(int first, int last)
 void dump_tlb_all(void)
 {
 	dump_tlb(0, current_cpu_data.tlbsize - 1);
+}
+
+void dump_current_addr(unsigned long addr)
+{
+	pgd_t *pgdp;
+	pud_t *pudp;
+	pmd_t *pmdp;
+	pte_t *ptep;
+	pte_t pte;
+
+	printk("Dumping for address %lx\n", addr);
+	pgdp = pgd_offset(current->mm, addr);
+	printk("pgd %lx\n", pgd_val(*pgdp));
+
+	pudp = pud_offset(pgdp, addr);
+	printk("pud %lx", pud_val(*pudp));
+#ifndef __PAGETABLE_PMD_FOLDED
+	if (pud_val(*pudp) == (unsigned long) invalid_pmd_table) {
+		printk("  (invalid_pmd_table)\n");
+
+		return;
+	}
+#endif
+	printk("\n");
+
+	pmdp = pmd_offset(pudp, addr);
+	printk("pmd  %lx", pmd_val(*pmdp));
+	if (pmd_huge(*pmdp)) {
+		printk("  pmd is huge\n");
+
+		return;
+	}
+	if (pmd_val(*pmdp) == (unsigned long) invalid_pte_table) {
+		printk("  (invalid_pte_table)\n");
+
+		return;
+	}
+	printk("\n");
+
+	ptep = pte_offset_map(pmdp, addr);
+	pte = *ptep;
+	printk("pte %lx\n", pte_val(pte));
+	if (pte_huge(pte))
+		printk("  pte is huge\n");
 }
