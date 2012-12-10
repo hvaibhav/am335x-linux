@@ -492,8 +492,8 @@ enum pnfs_iomode {
 };
 
 enum pnfs_notify_deviceid_type4 {
-	NOTIFY_DEVICEID4_CHANGE = 1 << 1,
-	NOTIFY_DEVICEID4_DELETE = 1 << 2,
+       NOTIFY_DEVICEID4_CHANGE = 1,
+       NOTIFY_DEVICEID4_DELETE = 2,
 };
 
 #define NFL4_UFLG_MASK			0x0000003F
