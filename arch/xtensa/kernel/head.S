@@ -18,6 +18,7 @@
 #include <asm/processor.h>
 #include <asm/page.h>
 #include <asm/cacheasm.h>
+#include <asm/initialize_mmu.h>
 
 #include <linux/init.h>
 #include <linux/linkage.h>
@@ -47,16 +48,19 @@
 	 */
 
 	__HEAD
-	.globl _start
-_start:	_j	2f
+ENTRY(_start)
+
+	_j	2f
 	.align	4
 1:	.word	_startup
 2:	l32r	a0, 1b
 	jx	a0
 
+ENDPROC(_start)
+
 	.section .init.text, "ax"
-	.align 4
-_startup:
+
+ENTRY(_startup)
 
 	/* Disable interrupts and exceptions. */
 
@@ -152,6 +156,8 @@ _startup:
 
 	isync
 
+	initialize_mmu
+
 	/* Unpack data sections
 	 *
 	 * The linker script used to build the Linux kernel image
@@ -230,6 +236,7 @@ _startup:
 should_never_return:
 	j	should_never_return
 
+ENDPROC(_startup)
 
 /*
  * BSS section
@@ -239,6 +246,8 @@ __PAGE_ALIGNED_BSS
 #ifdef CONFIG_MMU
 ENTRY(swapper_pg_dir)
 	.fill	PAGE_SIZE, 1, 0
+END(swapper_pg_dir)
 #endif
 ENTRY(empty_zero_page)
 	.fill	PAGE_SIZE, 1, 0
+END(empty_zero_page)
