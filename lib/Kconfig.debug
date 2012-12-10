@@ -1195,6 +1195,7 @@ config MEMORY_NOTIFIER_ERROR_INJECT
 config PSERIES_RECONFIG_NOTIFIER_ERROR_INJECT
 	tristate "pSeries reconfig notifier error injection module"
 	depends on PPC_PSERIES && NOTIFIER_ERROR_INJECTION
+	depends on BROKEN
 	help
 	  This option provides the ability to inject artifical errors to
 	  pSeries reconfig notifier chain callbacks.  It is controlled
