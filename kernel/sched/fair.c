@@ -2351,6 +2351,13 @@ void task_numa_fault(unsigned long addr, int node, int last_cpupid, int pages, b
 	int priv;
 	int idx;
 
+	/*
+	 * Kernel threads might not have an mm but might still
+	 * do fault processing (such as KSM):
+	 */
+	if (!p->numa_faults)
+		return;
+
 	if (last_cpupid != cpu_pid_to_cpupid(-1, -1)) {
 		/* Did we access it last time around? */
 		if (last_pid == this_pid) {
@@ -2367,8 +2374,8 @@ void task_numa_fault(unsigned long addr, int node, int last_cpupid, int pages, b
 
 	idx = 2*node + priv;
 
-	WARN_ON_ONCE(last_cpu == -1 || node == -1);
-	BUG_ON(!p->numa_faults);
+	if (WARN_ON_ONCE(last_cpu == -1 || node == -1))
+		return;
 
 	p->numa_faults_curr[idx] += pages;
 	shared_fault_tick(p, node, last_cpu, pages);
