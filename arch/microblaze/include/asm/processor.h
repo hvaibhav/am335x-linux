@@ -27,10 +27,13 @@ extern const struct seq_operations cpuinfo_op;
 #define task_pt_regs(tsk) \
 		(((struct pt_regs *)(THREAD_SIZE + task_stack_page(tsk))) - 1)
 
+#define current_pt_regs() task_pt_regs(current)
+
 /* Do necessary setup to start up a newly executed thread. */
 void start_thread(struct pt_regs *regs, unsigned long pc, unsigned long usp);
 
 extern void ret_from_fork(void);
+extern void ret_from_kernel_thread(void);
 
 # endif /* __ASSEMBLY__ */
 
@@ -77,11 +80,6 @@ static inline void exit_thread(void)
 extern unsigned long thread_saved_pc(struct task_struct *t);
 
 extern unsigned long get_wchan(struct task_struct *p);
-
-/*
- * create a kernel thread without removing it from tasklists
- */
-extern int kernel_thread(int (*fn)(void *), void *arg, unsigned long flags);
 
 # define KSTK_EIP(tsk)	(0)
 # define KSTK_ESP(tsk)	(0)
@@ -130,8 +128,6 @@ struct thread_struct {
 extern inline void release_thread(struct task_struct *dead_task)
 {
 }
-
-extern int kernel_thread(int (*fn)(void *), void *arg, unsigned long flags);
 
 /* Free current thread data structures etc.  */
 static inline void exit_thread(void)
