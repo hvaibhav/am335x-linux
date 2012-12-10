@@ -2646,7 +2646,7 @@ static bool task_numa_candidate(struct task_struct *p)
 
 	/* Don't disturb hard-bound tasks: */
 	if (sched_feat(NUMA_EXCLUDE_AFFINE)) {
-		if (p->nr_cpus_allowed != num_online_cpus())
+		if (p->nr_cpus_allowed != num_possible_cpus())
 			return false;
 	}
 
