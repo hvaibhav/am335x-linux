@@ -1195,11 +1195,9 @@ static int mirror_map(struct dm_target *ti, struct bio *bio,
 		return -EIO;
 
 	read_record = mempool_alloc(ms->read_record_pool, GFP_NOIO);
-	if (likely(read_record)) {
-		dm_bio_record(&read_record->details, bio);
-		map_context->ptr = read_record;
-		read_record->m = m;
-	}
+	dm_bio_record(&read_record->details, bio);
+	map_context->ptr = read_record;
+	read_record->m = m;
 
 	map_bio(m, bio);
 
@@ -1259,7 +1257,7 @@ static int mirror_end_io(struct dm_target *ti, struct bio *bio,
 			mempool_free(read_record, ms->read_record_pool);
 			map_context->ptr = NULL;
 			queue_bio(ms, bio, rw);
-			return 1;
+			return DM_ENDIO_INCOMPLETE;
 		}
 		DMERR("All replicated volumes dead, failing I/O");
 	}
