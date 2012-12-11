@@ -1002,14 +1002,25 @@ static void __loaded_vmcs_clear(void *arg)
 	if (per_cpu(current_vmcs, cpu) == loaded_vmcs->vmcs)
 		per_cpu(current_vmcs, cpu) = NULL;
 	list_del(&loaded_vmcs->loaded_vmcss_on_cpu_link);
+
+	/*
+	 * we should ensure updating loaded_vmcs->loaded_vmcss_on_cpu_link
+	 * is before setting loaded_vmcs->vcpu to -1 which is done in
+	 * loaded_vmcs_init. Otherwise, other cpu can see vcpu = -1 fist
+	 * then adds the vmcs into percpu list before it is deleted.
+	 */
+	smp_wmb();
+
 	loaded_vmcs_init(loaded_vmcs);
 }
 
 static void loaded_vmcs_clear(struct loaded_vmcs *loaded_vmcs)
 {
-	if (loaded_vmcs->cpu != -1)
-		smp_call_function_single(
-			loaded_vmcs->cpu, __loaded_vmcs_clear, loaded_vmcs, 1);
+	int cpu = loaded_vmcs->cpu;
+
+	if (cpu != -1)
+		smp_call_function_single(cpu,
+			 __loaded_vmcs_clear, loaded_vmcs, 1);
 }
 
 static inline void vpid_sync_vcpu_single(struct vcpu_vmx *vmx)
@@ -1535,6 +1546,14 @@ static void vmx_vcpu_load(struct kvm_vcpu *vcpu, int cpu)
 
 		kvm_make_request(KVM_REQ_TLB_FLUSH, vcpu);
 		local_irq_disable();
+
+		/*
+		 * Read loaded_vmcs->cpu should be before fetching
+		 * loaded_vmcs->loaded_vmcss_on_cpu_link.
+		 * See the comments in __loaded_vmcs_clear().
+		 */
+		smp_rmb();
+
 		list_add(&vmx->loaded_vmcs->loaded_vmcss_on_cpu_link,
 			 &per_cpu(loaded_vmcss_on_cpu, cpu));
 		local_irq_enable();
@@ -1839,11 +1858,10 @@ static u64 guest_read_tsc(void)
  * Like guest_read_tsc, but always returns L1's notion of the timestamp
  * counter, even if a nested guest (L2) is currently running.
  */
-u64 vmx_read_l1_tsc(struct kvm_vcpu *vcpu)
+u64 vmx_read_l1_tsc(struct kvm_vcpu *vcpu, u64 host_tsc)
 {
-	u64 host_tsc, tsc_offset;
+	u64 tsc_offset;
 
-	rdtscll(host_tsc);
 	tsc_offset = is_guest_mode(vcpu) ?
 		to_vmx(vcpu)->nested.vmcs01_tsc_offset :
 		vmcs_read64(TSC_OFFSET);
@@ -1864,6 +1882,11 @@ static void vmx_set_tsc_khz(struct kvm_vcpu *vcpu, u32 user_tsc_khz, bool scale)
 		vcpu->arch.tsc_always_catchup = 1;
 	} else
 		WARN(1, "user requested TSC rate below hardware speed\n");
+}
+
+static u64 vmx_read_tsc_offset(struct kvm_vcpu *vcpu)
+{
+	return vmcs_read64(TSC_OFFSET);
 }
 
 /*
@@ -2202,15 +2225,17 @@ static int vmx_get_msr(struct kvm_vcpu *vcpu, u32 msr_index, u64 *pdata)
  * Returns 0 on success, non-0 otherwise.
  * Assumes vcpu_load() was already called.
  */
-static int vmx_set_msr(struct kvm_vcpu *vcpu, u32 msr_index, u64 data)
+static int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
 {
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	struct shared_msr_entry *msr;
 	int ret = 0;
+	u32 msr_index = msr_info->index;
+	u64 data = msr_info->data;
 
 	switch (msr_index) {
 	case MSR_EFER:
-		ret = kvm_set_msr_common(vcpu, msr_index, data);
+		ret = kvm_set_msr_common(vcpu, msr_info);
 		break;
 #ifdef CONFIG_X86_64
 	case MSR_FS_BASE:
@@ -2236,7 +2261,7 @@ static int vmx_set_msr(struct kvm_vcpu *vcpu, u32 msr_index, u64 data)
 		vmcs_writel(GUEST_SYSENTER_ESP, data);
 		break;
 	case MSR_IA32_TSC:
-		kvm_write_tsc(vcpu, data);
+		kvm_write_tsc(vcpu, msr_info);
 		break;
 	case MSR_IA32_CR_PAT:
 		if (vmcs_config.vmentry_ctrl & VM_ENTRY_LOAD_IA32_PAT) {
@@ -2244,7 +2269,10 @@ static int vmx_set_msr(struct kvm_vcpu *vcpu, u32 msr_index, u64 data)
 			vcpu->arch.pat = data;
 			break;
 		}
-		ret = kvm_set_msr_common(vcpu, msr_index, data);
+		ret = kvm_set_msr_common(vcpu, msr_info);
+		break;
+	case MSR_IA32_TSC_ADJUST:
+		ret = kvm_set_msr_common(vcpu, msr_info);
 		break;
 	case MSR_TSC_AUX:
 		if (!vmx->rdtscp_enabled)
@@ -2267,7 +2295,7 @@ static int vmx_set_msr(struct kvm_vcpu *vcpu, u32 msr_index, u64 data)
 			}
 			break;
 		}
-		ret = kvm_set_msr_common(vcpu, msr_index, data);
+		ret = kvm_set_msr_common(vcpu, msr_info);
 	}
 
 	return ret;
@@ -3897,8 +3925,6 @@ static int vmx_vcpu_setup(struct vcpu_vmx *vmx)
 	vmcs_writel(CR0_GUEST_HOST_MASK, ~0UL);
 	set_cr4_guest_host_mask(vmx);
 
-	kvm_write_tsc(&vmx->vcpu, 0);
-
 	return 0;
 }
 
@@ -4287,16 +4313,6 @@ static int handle_exception(struct kvm_vcpu *vcpu)
 	if (is_machine_check(intr_info))
 		return handle_machine_check(vcpu);
 
-	if ((vect_info & VECTORING_INFO_VALID_MASK) &&
-	    !is_page_fault(intr_info)) {
-		vcpu->run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
-		vcpu->run->internal.suberror = KVM_INTERNAL_ERROR_SIMUL_EX;
-		vcpu->run->internal.ndata = 2;
-		vcpu->run->internal.data[0] = vect_info;
-		vcpu->run->internal.data[1] = intr_info;
-		return 0;
-	}
-
 	if ((intr_info & INTR_INFO_INTR_TYPE_MASK) == INTR_TYPE_NMI_INTR)
 		return 1;  /* already handled by vmx_vcpu_run() */
 
@@ -4315,6 +4331,22 @@ static int handle_exception(struct kvm_vcpu *vcpu)
 	error_code = 0;
 	if (intr_info & INTR_INFO_DELIVER_CODE_MASK)
 		error_code = vmcs_read32(VM_EXIT_INTR_ERROR_CODE);
+
+	/*
+	 * The #PF with PFEC.RSVD = 1 indicates the guest is accessing
+	 * MMIO, it is better to report an internal error.
+	 * See the comments in vmx_handle_exit.
+	 */
+	if ((vect_info & VECTORING_INFO_VALID_MASK) &&
+	    !(is_page_fault(intr_info) && !(error_code & PFERR_RSVD_MASK))) {
+		vcpu->run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
+		vcpu->run->internal.suberror = KVM_INTERNAL_ERROR_SIMUL_EX;
+		vcpu->run->internal.ndata = 2;
+		vcpu->run->internal.data[0] = vect_info;
+		vcpu->run->internal.data[1] = intr_info;
+		return 0;
+	}
+
 	if (is_page_fault(intr_info)) {
 		/* EPT won't cause page fault directly */
 		BUG_ON(enable_ept);
@@ -4626,11 +4658,15 @@ static int handle_rdmsr(struct kvm_vcpu *vcpu)
 
 static int handle_wrmsr(struct kvm_vcpu *vcpu)
 {
+	struct msr_data msr;
 	u32 ecx = vcpu->arch.regs[VCPU_REGS_RCX];
 	u64 data = (vcpu->arch.regs[VCPU_REGS_RAX] & -1u)
 		| ((u64)(vcpu->arch.regs[VCPU_REGS_RDX] & -1u) << 32);
 
-	if (vmx_set_msr(vcpu, ecx, data) != 0) {
+	msr.data = data;
+	msr.index = ecx;
+	msr.host_initiated = false;
+	if (vmx_set_msr(vcpu, &msr) != 0) {
 		trace_kvm_msr_write_ex(ecx, data);
 		kvm_inject_gp(vcpu, 0);
 		return 1;
@@ -5979,13 +6015,24 @@ static int vmx_handle_exit(struct kvm_vcpu *vcpu)
 		return 0;
 	}
 
+	/*
+	 * Note:
+	 * Do not try to fix EXIT_REASON_EPT_MISCONFIG if it caused by
+	 * delivery event since it indicates guest is accessing MMIO.
+	 * The vm-exit can be triggered again after return to guest that
+	 * will cause infinite loop.
+	 */
 	if ((vectoring_info & VECTORING_INFO_VALID_MASK) &&
 			(exit_reason != EXIT_REASON_EXCEPTION_NMI &&
 			exit_reason != EXIT_REASON_EPT_VIOLATION &&
-			exit_reason != EXIT_REASON_TASK_SWITCH))
-		printk(KERN_WARNING "%s: unexpected, valid vectoring info "
-		       "(0x%x) and exit reason is 0x%x\n",
-		       __func__, vectoring_info, exit_reason);
+			exit_reason != EXIT_REASON_TASK_SWITCH)) {
+		vcpu->run->exit_reason = KVM_EXIT_INTERNAL_ERROR;
+		vcpu->run->internal.suberror = KVM_INTERNAL_ERROR_DELIVERY_EV;
+		vcpu->run->internal.ndata = 2;
+		vcpu->run->internal.data[0] = vectoring_info;
+		vcpu->run->internal.data[1] = exit_reason;
+		return 0;
+	}
 
 	if (unlikely(!cpu_has_virtual_nmis() && vmx->soft_vnmi_blocked &&
 	    !(is_guest_mode(vcpu) && nested_cpu_has_virtual_nmis(
@@ -7309,6 +7356,7 @@ static struct kvm_x86_ops vmx_x86_ops = {
 	.has_wbinvd_exit = cpu_has_vmx_wbinvd_exit,
 
 	.set_tsc_khz = vmx_set_tsc_khz,
+	.read_tsc_offset = vmx_read_tsc_offset,
 	.write_tsc_offset = vmx_write_tsc_offset,
 	.adjust_tsc_offset = vmx_adjust_tsc_offset,
 	.compute_tsc_offset = vmx_compute_tsc_offset,

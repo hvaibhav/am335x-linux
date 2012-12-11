@@ -630,15 +630,12 @@ static int svm_hardware_enable(void *garbage)
 		return -EBUSY;
 
 	if (!has_svm()) {
-		printk(KERN_ERR "svm_hardware_enable: err EOPNOTSUPP on %d\n",
-		       me);
+		pr_err("%s: err EOPNOTSUPP on %d\n", __func__, me);
 		return -EINVAL;
 	}
 	sd = per_cpu(svm_data, me);
-
 	if (!sd) {
-		printk(KERN_ERR "svm_hardware_enable: svm_data is NULL on %d\n",
-		       me);
+		pr_err("%s: svm_data is NULL on %d\n", __func__, me);
 		return -EINVAL;
 	}
 
@@ -1012,6 +1009,13 @@ static void svm_set_tsc_khz(struct kvm_vcpu *vcpu, u32 user_tsc_khz, bool scale)
 	svm->tsc_ratio             = ratio;
 }
 
+static u64 svm_read_tsc_offset(struct kvm_vcpu *vcpu)
+{
+	struct vcpu_svm *svm = to_svm(vcpu);
+
+	return svm->vmcb->control.tsc_offset;
+}
+
 static void svm_write_tsc_offset(struct kvm_vcpu *vcpu, u64 offset)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
@@ -1254,7 +1258,6 @@ static struct kvm_vcpu *svm_create_vcpu(struct kvm *kvm, unsigned int id)
 	svm->vmcb_pa = page_to_pfn(page) << PAGE_SHIFT;
 	svm->asid_generation = 0;
 	init_vmcb(svm);
-	kvm_write_tsc(&svm->vcpu, 0);
 
 	err = fx_init(&svm->vcpu);
 	if (err)
@@ -3008,11 +3011,11 @@ static int cr8_write_interception(struct vcpu_svm *svm)
 	return 0;
 }
 
-u64 svm_read_l1_tsc(struct kvm_vcpu *vcpu)
+u64 svm_read_l1_tsc(struct kvm_vcpu *vcpu, u64 host_tsc)
 {
 	struct vmcb *vmcb = get_host_vmcb(to_svm(vcpu));
 	return vmcb->control.tsc_offset +
-		svm_scale_tsc(vcpu, native_read_tsc());
+		svm_scale_tsc(vcpu, host_tsc);
 }
 
 static int svm_get_msr(struct kvm_vcpu *vcpu, unsigned ecx, u64 *data)
@@ -3131,13 +3134,15 @@ static int svm_set_vm_cr(struct kvm_vcpu *vcpu, u64 data)
 	return 0;
 }
 
-static int svm_set_msr(struct kvm_vcpu *vcpu, unsigned ecx, u64 data)
+static int svm_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr)
 {
 	struct vcpu_svm *svm = to_svm(vcpu);
 
+	u32 ecx = msr->index;
+	u64 data = msr->data;
 	switch (ecx) {
 	case MSR_IA32_TSC:
-		kvm_write_tsc(vcpu, data);
+		kvm_write_tsc(vcpu, msr);
 		break;
 	case MSR_STAR:
 		svm->vmcb->save.star = data;
@@ -3192,20 +3197,24 @@ static int svm_set_msr(struct kvm_vcpu *vcpu, unsigned ecx, u64 data)
 		vcpu_unimpl(vcpu, "unimplemented wrmsr: 0x%x data 0x%llx\n", ecx, data);
 		break;
 	default:
-		return kvm_set_msr_common(vcpu, ecx, data);
+		return kvm_set_msr_common(vcpu, msr);
 	}
 	return 0;
 }
 
 static int wrmsr_interception(struct vcpu_svm *svm)
 {
+	struct msr_data msr;
 	u32 ecx = svm->vcpu.arch.regs[VCPU_REGS_RCX];
 	u64 data = (svm->vcpu.arch.regs[VCPU_REGS_RAX] & -1u)
 		| ((u64)(svm->vcpu.arch.regs[VCPU_REGS_RDX] & -1u) << 32);
 
+	msr.data = data;
+	msr.index = ecx;
+	msr.host_initiated = false;
 
 	svm->next_rip = kvm_rip_read(&svm->vcpu) + 2;
-	if (svm_set_msr(&svm->vcpu, ecx, data)) {
+	if (svm_set_msr(&svm->vcpu, &msr)) {
 		trace_kvm_msr_write_ex(ecx, data);
 		kvm_inject_gp(&svm->vcpu, 0);
 	} else {
@@ -4302,6 +4311,7 @@ static struct kvm_x86_ops svm_x86_ops = {
 	.has_wbinvd_exit = svm_has_wbinvd_exit,
 
 	.set_tsc_khz = svm_set_tsc_khz,
+	.read_tsc_offset = svm_read_tsc_offset,
 	.write_tsc_offset = svm_write_tsc_offset,
 	.adjust_tsc_offset = svm_adjust_tsc_offset,
 	.compute_tsc_offset = svm_compute_tsc_offset,
