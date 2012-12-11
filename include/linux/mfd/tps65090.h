@@ -44,14 +44,49 @@ enum {
 	TPS65090_IRQ_OVERLOAD_FET7,
 };
 
+/* TPS65090 Regulator ID */
+enum {
+	TPS65090_REGULATOR_DCDC1,
+	TPS65090_REGULATOR_DCDC2,
+	TPS65090_REGULATOR_DCDC3,
+	TPS65090_REGULATOR_FET1,
+	TPS65090_REGULATOR_FET2,
+	TPS65090_REGULATOR_FET3,
+	TPS65090_REGULATOR_FET4,
+	TPS65090_REGULATOR_FET5,
+	TPS65090_REGULATOR_FET6,
+	TPS65090_REGULATOR_FET7,
+	TPS65090_REGULATOR_LDO1,
+	TPS65090_REGULATOR_LDO2,
+
+	/* Last entry for maximum ID */
+	TPS65090_REGULATOR_MAX,
+};
+
 struct tps65090 {
 	struct device		*dev;
 	struct regmap		*rmap;
 	struct regmap_irq_chip_data *irq_data;
 };
 
+/*
+ * struct tps65090_regulator_plat_data
+ *
+ * @reg_init_data: The regulator init data.
+ * @enable_ext_control: Enable extrenal control or not. Only available for
+ *     DCDC1, DCDC2 and DCDC3.
+ * @gpio: Gpio number if external control is enabled and controlled through
+ *     gpio.
+ */
+struct tps65090_regulator_plat_data {
+	struct regulator_init_data *reg_init_data;
+	bool enable_ext_control;
+	int gpio;
+};
+
 struct tps65090_platform_data {
 	int irq_base;
+	struct tps65090_regulator_plat_data *reg_pdata[TPS65090_REGULATOR_MAX];
 };
 
 /*
