@@ -40,6 +40,7 @@
 #include "xdr4.h"
 #include "vfs.h"
 #include "current_stateid.h"
+#include "netns.h"
 
 #define NFSDDBG_FACILITY		NFSDDBG_PROC
 
@@ -304,6 +305,8 @@ nfsd4_open(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 {
 	__be32 status;
 	struct nfsd4_compoundres *resp;
+	struct net *net = SVC_NET(rqstp);
+	struct nfsd_net *nn = net_generic(net, nfsd_net_id);
 
 	dprintk("NFSD: nfsd4_open filename %.*s op_openowner %p\n",
 		(int)open->op_fname.len, open->op_fname.data,
@@ -331,7 +334,7 @@ nfsd4_open(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 
 	/* check seqid for replay. set nfs4_owner */
 	resp = rqstp->rq_resp;
-	status = nfsd4_process_open1(&resp->cstate, open);
+	status = nfsd4_process_open1(&resp->cstate, open, nn);
 	if (status == nfserr_replay_me) {
 		struct nfs4_replay *rp = &open->op_openowner->oo_owner.so_replay;
 		fh_put(&cstate->current_fh);
@@ -354,10 +357,10 @@ nfsd4_open(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	/* Openowner is now set, so sequence id will get bumped.  Now we need
 	 * these checks before we do any creates: */
 	status = nfserr_grace;
-	if (locks_in_grace(SVC_NET(rqstp)) && open->op_claim_type != NFS4_OPEN_CLAIM_PREVIOUS)
+	if (locks_in_grace(net) && open->op_claim_type != NFS4_OPEN_CLAIM_PREVIOUS)
 		goto out;
 	status = nfserr_no_grace;
-	if (!locks_in_grace(SVC_NET(rqstp)) && open->op_claim_type == NFS4_OPEN_CLAIM_PREVIOUS)
+	if (!locks_in_grace(net) && open->op_claim_type == NFS4_OPEN_CLAIM_PREVIOUS)
 		goto out;
 
 	switch (open->op_claim_type) {
@@ -370,7 +373,9 @@ nfsd4_open(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 			break;
 		case NFS4_OPEN_CLAIM_PREVIOUS:
 			open->op_openowner->oo_flags |= NFS4_OO_CONFIRMED;
-			status = nfs4_check_open_reclaim(&open->op_clientid, cstate->minorversion);
+			status = nfs4_check_open_reclaim(&open->op_clientid,
+							 cstate->minorversion,
+							 nn);
 			if (status)
 				goto out;
 		case NFS4_OPEN_CLAIM_FH:
@@ -876,6 +881,24 @@ out:
 	return status;
 }
 
+static int fill_in_write_vector(struct kvec *vec, struct nfsd4_write *write)
+{
+        int i = 1;
+        int buflen = write->wr_buflen;
+
+        vec[0].iov_base = write->wr_head.iov_base;
+        vec[0].iov_len = min_t(int, buflen, write->wr_head.iov_len);
+        buflen -= vec[0].iov_len;
+
+        while (buflen) {
+                vec[i].iov_base = page_address(write->wr_pagelist[i - 1]);
+                vec[i].iov_len = min_t(int, PAGE_SIZE, buflen);
+                buflen -= vec[i].iov_len;
+                i++;
+        }
+        return i;
+}
+
 static __be32
 nfsd4_write(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	    struct nfsd4_write *write)
@@ -884,6 +907,7 @@ nfsd4_write(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	struct file *filp = NULL;
 	__be32 status = nfs_ok;
 	unsigned long cnt;
+	int nvecs;
 
 	/* no need to check permission - this will be done in nfsd_write() */
 
@@ -906,8 +930,11 @@ nfsd4_write(struct svc_rqst *rqstp, struct nfsd4_compound_state *cstate,
 	write->wr_how_written = write->wr_stable_how;
 	gen_boot_verifier(&write->wr_verifier);
 
+	nvecs = fill_in_write_vector(rqstp->rq_vec, write);
+	WARN_ON_ONCE(nvecs > ARRAY_SIZE(rqstp->rq_vec));
+
 	status =  nfsd_write(rqstp, &cstate->current_fh, filp,
-			     write->wr_offset, rqstp->rq_vec, write->wr_vlen,
+			     write->wr_offset, rqstp->rq_vec, nvecs,
 			     &cnt, &write->wr_how_written);
 	if (filp)
 		fput(filp);
@@ -1665,6 +1692,12 @@ static struct nfsd4_operation nfsd4_ops[] = {
 				| OP_MODIFIES_SOMETHING,
 		.op_name = "OP_EXCHANGE_ID",
 		.op_rsize_bop = (nfsd4op_rsize)nfsd4_exchange_id_rsize,
+	},
+	[OP_BACKCHANNEL_CTL] = {
+		.op_func = (nfsd4op_func)nfsd4_backchannel_ctl,
+		.op_flags = ALLOWED_WITHOUT_FH | OP_MODIFIES_SOMETHING,
+		.op_name = "OP_BACKCHANNEL_CTL",
+		.op_rsize_bop = (nfsd4op_rsize)nfsd4_only_status_rsize,
 	},
 	[OP_BIND_CONN_TO_SESSION] = {
 		.op_func = (nfsd4op_func)nfsd4_bind_conn_to_session,
