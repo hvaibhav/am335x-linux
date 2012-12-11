@@ -92,6 +92,7 @@ EXPORT_SYMBOL_GPL(hid_register_report);
 static struct hid_field *hid_register_field(struct hid_report *report, unsigned usages, unsigned values)
 {
 	struct hid_field *field;
+	int i;
 
 	if (report->maxfield == HID_MAX_FIELDS) {
 		hid_err(report->device, "too many fields in report\n");
@@ -109,6 +110,9 @@ static struct hid_field *hid_register_field(struct hid_report *report, unsigned 
 	field->usage = (struct hid_usage *)(field + 1);
 	field->value = (s32 *)(field->usage + usages);
 	field->report = report;
+
+	for (i = 0; i < usages; i++)
+		field->usage[i].usage_index = i;
 
 	return field;
 }
@@ -315,6 +319,7 @@ static s32 item_sdata(struct hid_item *item)
 
 static int hid_parser_global(struct hid_parser *parser, struct hid_item *item)
 {
+	__u32 raw_value;
 	switch (item->tag) {
 	case HID_GLOBAL_ITEM_TAG_PUSH:
 
@@ -365,7 +370,14 @@ static int hid_parser_global(struct hid_parser *parser, struct hid_item *item)
 		return 0;
 
 	case HID_GLOBAL_ITEM_TAG_UNIT_EXPONENT:
-		parser->global.unit_exponent = item_sdata(item);
+		/* Units exponent negative numbers are given through a
+		 * two's complement.
+		 * See "6.2.2.7 Global Items" for more information. */
+		raw_value = item_udata(item);
+		if (!(raw_value & 0xfffffff0))
+			parser->global.unit_exponent = hid_snto32(raw_value, 4);
+		else
+			parser->global.unit_exponent = raw_value;
 		return 0;
 
 	case HID_GLOBAL_ITEM_TAG_UNIT:
@@ -864,6 +876,12 @@ static s32 snto32(__u32 value, unsigned n)
 	}
 	return value & (1 << (n - 1)) ? value | (-1 << n) : value;
 }
+
+s32 hid_snto32(__u32 value, unsigned n)
+{
+	return snto32(value, n);
+}
+EXPORT_SYMBOL_GPL(hid_snto32);
 
 /*
  * Convert a signed 32-bit integer to a signed n-bit integer.
@@ -1575,6 +1593,7 @@ static const struct hid_device_id hid_have_special_driver[] = {
 	{ HID_USB_DEVICE(USB_VENDOR_ID_INTEL_8086, USB_DEVICE_ID_SENSOR_HUB_09FA) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_INTEL_8087, USB_DEVICE_ID_SENSOR_HUB_1020) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_INTEL_8087, USB_DEVICE_ID_SENSOR_HUB_09FA) },
+	{ HID_BLUETOOTH_DEVICE(USB_VENDOR_ID_ION, USB_DEVICE_ID_ICADE) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_KENSINGTON, USB_DEVICE_ID_KS_SLIMBLADE) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_KEYTOUCH, USB_DEVICE_ID_KEYTOUCH_IEC) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_KYE, USB_DEVICE_ID_KYE_ERGO_525V) },
@@ -1658,6 +1677,7 @@ static const struct hid_device_id hid_have_special_driver[] = {
 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_ISKU) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_KONEPLUS) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_KOVAPLUS) },
+	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_LUA) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_PYRA_WIRED) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_PYRA_WIRELESS) },
 	{ HID_USB_DEVICE(USB_VENDOR_ID_ROCCAT, USB_DEVICE_ID_ROCCAT_SAVU) },
@@ -2150,8 +2170,13 @@ static const struct hid_device_id hid_mouse_ignore_list[] = {
 	{ }
 };
 
-static bool hid_ignore(struct hid_device *hdev)
+bool hid_ignore(struct hid_device *hdev)
 {
+	if (hdev->quirks & HID_QUIRK_NO_IGNORE)
+		return false;
+	if (hdev->quirks & HID_QUIRK_IGNORE)
+		return true;
+
 	switch (hdev->vendor) {
 	case USB_VENDOR_ID_CODEMERCS:
 		/* ignore all Code Mercenaries IOWarrior devices */
@@ -2188,7 +2213,16 @@ static bool hid_ignore(struct hid_device *hdev)
 		if (hdev->product == USB_DEVICE_ID_JESS_YUREX &&
 				hdev->type == HID_TYPE_USBNONE)
 			return true;
-	break;
+		break;
+	case USB_VENDOR_ID_DWAV:
+		/* These are handled by usbtouchscreen. hdev->type is probably
+		 * HID_TYPE_USBNONE, but we say !HID_TYPE_USBMOUSE to match
+		 * usbtouchscreen. */
+		if ((hdev->product == USB_DEVICE_ID_EGALAX_TOUCHCONTROLLER ||
+		     hdev->product == USB_DEVICE_ID_DWAV_TOUCHCONTROLLER) &&
+		    hdev->type != HID_TYPE_USBMOUSE)
+			return true;
+		break;
 	}
 
 	if (hdev->type == HID_TYPE_USBMOUSE &&
@@ -2197,6 +2231,7 @@ static bool hid_ignore(struct hid_device *hdev)
 
 	return !!hid_match_id(hdev, hid_ignore_list);
 }
+EXPORT_SYMBOL_GPL(hid_ignore);
 
 int hid_add_device(struct hid_device *hdev)
 {
@@ -2208,8 +2243,7 @@ int hid_add_device(struct hid_device *hdev)
 
 	/* we need to kill them here, otherwise they will stay allocated to
 	 * wait for coming driver */
-	if (!(hdev->quirks & HID_QUIRK_NO_IGNORE)
-            && (hid_ignore(hdev) || (hdev->quirks & HID_QUIRK_IGNORE)))
+	if (hid_ignore(hdev))
 		return -ENODEV;
 
 	/*
