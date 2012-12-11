@@ -1,13 +1,11 @@
 /*
- * drivers/uio/uio_pdrv_genirq.c
+ * drivers/uio/uio_dmem_genirq.c
  *
  * Userspace I/O platform driver with generic IRQ handling code.
  *
- * Copyright (C) 2008 Magnus Damm
+ * Copyright (C) 2012 Damian Hobson-Garcia
  *
- * Based on uio_pdrv.c by Uwe Kleine-Koenig,
- * Copyright (C) 2008 by Digi International Inc.
- * All rights reserved.
+ * Based on uio_pdrv_genirq.c by Magnus Damm
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License version 2 as published by
@@ -20,44 +18,96 @@
 #include <linux/bitops.h>
 #include <linux/module.h>
 #include <linux/interrupt.h>
+#include <linux/platform_data/uio_dmem_genirq.h>
 #include <linux/stringify.h>
 #include <linux/pm_runtime.h>
+#include <linux/dma-mapping.h>
 #include <linux/slab.h>
 
 #include <linux/of.h>
 #include <linux/of_platform.h>
 #include <linux/of_address.h>
 
-#define DRIVER_NAME "uio_pdrv_genirq"
+#define DRIVER_NAME "uio_dmem_genirq"
+#define DMEM_MAP_ERROR (~0)
 
-struct uio_pdrv_genirq_platdata {
+struct uio_dmem_genirq_platdata {
 	struct uio_info *uioinfo;
 	spinlock_t lock;
 	unsigned long flags;
 	struct platform_device *pdev;
+	unsigned int dmem_region_start;
+	unsigned int num_dmem_regions;
+	void *dmem_region_vaddr[MAX_UIO_MAPS];
+	struct mutex alloc_lock;
+	unsigned int refcnt;
 };
 
-static int uio_pdrv_genirq_open(struct uio_info *info, struct inode *inode)
+static int uio_dmem_genirq_open(struct uio_info *info, struct inode *inode)
 {
-	struct uio_pdrv_genirq_platdata *priv = info->priv;
+	struct uio_dmem_genirq_platdata *priv = info->priv;
+	struct uio_mem *uiomem;
+	int ret = 0;
+	int dmem_region = priv->dmem_region_start;
 
+	uiomem = &priv->uioinfo->mem[priv->dmem_region_start];
+
+	mutex_lock(&priv->alloc_lock);
+	while (!priv->refcnt && uiomem < &priv->uioinfo->mem[MAX_UIO_MAPS]) {
+		void *addr;
+		if (!uiomem->size)
+			break;
+
+		addr = dma_alloc_coherent(&priv->pdev->dev, uiomem->size,
+				(dma_addr_t *)&uiomem->addr, GFP_KERNEL);
+		if (!addr) {
+			uiomem->addr = DMEM_MAP_ERROR;
+		}
+		priv->dmem_region_vaddr[dmem_region++] = addr;
+		++uiomem;
+	}
+	priv->refcnt++;
+
+	mutex_unlock(&priv->alloc_lock);
 	/* Wait until the Runtime PM code has woken up the device */
 	pm_runtime_get_sync(&priv->pdev->dev);
-	return 0;
+	return ret;
 }
 
-static int uio_pdrv_genirq_release(struct uio_info *info, struct inode *inode)
+static int uio_dmem_genirq_release(struct uio_info *info, struct inode *inode)
 {
-	struct uio_pdrv_genirq_platdata *priv = info->priv;
+	struct uio_dmem_genirq_platdata *priv = info->priv;
+	struct uio_mem *uiomem;
+	int dmem_region = priv->dmem_region_start;
 
 	/* Tell the Runtime PM code that the device has become idle */
 	pm_runtime_put_sync(&priv->pdev->dev);
+
+	uiomem = &priv->uioinfo->mem[priv->dmem_region_start];
+
+	mutex_lock(&priv->alloc_lock);
+
+	priv->refcnt--;
+	while (!priv->refcnt && uiomem < &priv->uioinfo->mem[MAX_UIO_MAPS]) {
+		if (!uiomem->size)
+			break;
+		if (priv->dmem_region_vaddr[dmem_region]) {
+			dma_free_coherent(&priv->pdev->dev, uiomem->size,
+					priv->dmem_region_vaddr[dmem_region],
+					uiomem->addr);
+		}
+		uiomem->addr = DMEM_MAP_ERROR;
+		++dmem_region;
+		++uiomem;
+	}
+
+	mutex_unlock(&priv->alloc_lock);
 	return 0;
 }
 
-static irqreturn_t uio_pdrv_genirq_handler(int irq, struct uio_info *dev_info)
+static irqreturn_t uio_dmem_genirq_handler(int irq, struct uio_info *dev_info)
 {
-	struct uio_pdrv_genirq_platdata *priv = dev_info->priv;
+	struct uio_dmem_genirq_platdata *priv = dev_info->priv;
 
 	/* Just disable the interrupt in the interrupt controller, and
 	 * remember the state so we can allow user space to enable it later.
@@ -69,9 +119,9 @@ static irqreturn_t uio_pdrv_genirq_handler(int irq, struct uio_info *dev_info)
 	return IRQ_HANDLED;
 }
 
-static int uio_pdrv_genirq_irqcontrol(struct uio_info *dev_info, s32 irq_on)
+static int uio_dmem_genirq_irqcontrol(struct uio_info *dev_info, s32 irq_on)
 {
-	struct uio_pdrv_genirq_platdata *priv = dev_info->priv;
+	struct uio_dmem_genirq_platdata *priv = dev_info->priv;
 	unsigned long flags;
 
 	/* Allow user space to enable and disable the interrupt
@@ -94,10 +144,11 @@ static int uio_pdrv_genirq_irqcontrol(struct uio_info *dev_info, s32 irq_on)
 	return 0;
 }
 
-static int uio_pdrv_genirq_probe(struct platform_device *pdev)
+static int uio_dmem_genirq_probe(struct platform_device *pdev)
 {
-	struct uio_info *uioinfo = pdev->dev.platform_data;
-	struct uio_pdrv_genirq_platdata *priv;
+	struct uio_dmem_genirq_pdata *pdata = pdev->dev.platform_data;
+	struct uio_info *uioinfo = &pdata->uioinfo;
+	struct uio_dmem_genirq_platdata *priv;
 	struct uio_mem *uiomem;
 	int ret = -EINVAL;
 	int i;
@@ -141,10 +192,13 @@ static int uio_pdrv_genirq_probe(struct platform_device *pdev)
 		goto bad0;
 	}
 
+	dma_set_coherent_mask(&pdev->dev, DMA_BIT_MASK(32));
+
 	priv->uioinfo = uioinfo;
 	spin_lock_init(&priv->lock);
 	priv->flags = 0; /* interrupt is enabled to begin with */
 	priv->pdev = pdev;
+	mutex_init(&priv->alloc_lock);
 
 	if (!uioinfo->irq) {
 		ret = platform_get_irq(pdev, 0);
@@ -172,7 +226,22 @@ static int uio_pdrv_genirq_probe(struct platform_device *pdev)
 		uiomem->memtype = UIO_MEM_PHYS;
 		uiomem->addr = r->start;
 		uiomem->size = resource_size(r);
-		uiomem->name = r->name;
+		++uiomem;
+	}
+
+	priv->dmem_region_start = i;
+	priv->num_dmem_regions = pdata->num_dynamic_regions;
+
+	for (i = 0; i < pdata->num_dynamic_regions; ++i) {
+		if (uiomem >= &uioinfo->mem[MAX_UIO_MAPS]) {
+			dev_warn(&pdev->dev, "device has more than "
+					__stringify(MAX_UIO_MAPS)
+					" dynamic and fixed memory regions.\n");
+			break;
+		}
+		uiomem->memtype = UIO_MEM_PHYS;
+		uiomem->addr = DMEM_MAP_ERROR;
+		uiomem->size = pdata->dynamic_region_sizes[i];
 		++uiomem;
 	}
 
@@ -190,10 +259,10 @@ static int uio_pdrv_genirq_probe(struct platform_device *pdev)
 	 * Interrupt sharing is not supported.
 	 */
 
-	uioinfo->handler = uio_pdrv_genirq_handler;
-	uioinfo->irqcontrol = uio_pdrv_genirq_irqcontrol;
-	uioinfo->open = uio_pdrv_genirq_open;
-	uioinfo->release = uio_pdrv_genirq_release;
+	uioinfo->handler = uio_dmem_genirq_handler;
+	uioinfo->irqcontrol = uio_dmem_genirq_irqcontrol;
+	uioinfo->open = uio_dmem_genirq_open;
+	uioinfo->release = uio_dmem_genirq_release;
 	uioinfo->priv = priv;
 
 	/* Enable Runtime PM for this device:
@@ -222,9 +291,9 @@ static int uio_pdrv_genirq_probe(struct platform_device *pdev)
 	return ret;
 }
 
-static int uio_pdrv_genirq_remove(struct platform_device *pdev)
+static int uio_dmem_genirq_remove(struct platform_device *pdev)
 {
-	struct uio_pdrv_genirq_platdata *priv = platform_get_drvdata(pdev);
+	struct uio_dmem_genirq_platdata *priv = platform_get_drvdata(pdev);
 
 	uio_unregister_device(priv->uioinfo);
 	pm_runtime_disable(&pdev->dev);
@@ -240,7 +309,7 @@ static int uio_pdrv_genirq_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static int uio_pdrv_genirq_runtime_nop(struct device *dev)
+static int uio_dmem_genirq_runtime_nop(struct device *dev)
 {
 	/* Runtime PM callback shared between ->runtime_suspend()
 	 * and ->runtime_resume(). Simply returns success.
@@ -257,9 +326,9 @@ static int uio_pdrv_genirq_runtime_nop(struct device *dev)
 	return 0;
 }
 
-static const struct dev_pm_ops uio_pdrv_genirq_dev_pm_ops = {
-	.runtime_suspend = uio_pdrv_genirq_runtime_nop,
-	.runtime_resume = uio_pdrv_genirq_runtime_nop,
+static const struct dev_pm_ops uio_dmem_genirq_dev_pm_ops = {
+	.runtime_suspend = uio_dmem_genirq_runtime_nop,
+	.runtime_resume = uio_dmem_genirq_runtime_nop,
 };
 
 #ifdef CONFIG_OF
@@ -271,20 +340,20 @@ MODULE_DEVICE_TABLE(of, uio_of_genirq_match);
 # define uio_of_genirq_match NULL
 #endif
 
-static struct platform_driver uio_pdrv_genirq = {
-	.probe = uio_pdrv_genirq_probe,
-	.remove = uio_pdrv_genirq_remove,
+static struct platform_driver uio_dmem_genirq = {
+	.probe = uio_dmem_genirq_probe,
+	.remove = uio_dmem_genirq_remove,
 	.driver = {
 		.name = DRIVER_NAME,
 		.owner = THIS_MODULE,
-		.pm = &uio_pdrv_genirq_dev_pm_ops,
+		.pm = &uio_dmem_genirq_dev_pm_ops,
 		.of_match_table = uio_of_genirq_match,
 	},
 };
 
-module_platform_driver(uio_pdrv_genirq);
+module_platform_driver(uio_dmem_genirq);
 
-MODULE_AUTHOR("Magnus Damm");
-MODULE_DESCRIPTION("Userspace I/O platform driver with generic IRQ handling");
+MODULE_AUTHOR("Damian Hobson-Garcia");
+MODULE_DESCRIPTION("Userspace I/O platform driver with dynamic memory.");
 MODULE_LICENSE("GPL v2");
 MODULE_ALIAS("platform:" DRIVER_NAME);
