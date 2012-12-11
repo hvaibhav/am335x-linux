@@ -13,6 +13,7 @@
 #include <linux/pm.h>
 #include <linux/tick.h>
 #include <linux/bitops.h>
+#include <linux/ptrace.h>
 #include <asm/pgalloc.h>
 #include <asm/uaccess.h> /* for USER_DS macros */
 #include <asm/cacheflush.h>
@@ -119,8 +120,7 @@ void flush_thread(void)
 }
 
 int copy_thread(unsigned long clone_flags, unsigned long usp,
-		unsigned long arg,
-		struct task_struct *p, struct pt_regs *unused)
+		unsigned long arg, struct task_struct *p)
 {
 	struct pt_regs *childregs = task_pt_regs(p);
 	struct thread_info *ti = task_thread_info(p);
