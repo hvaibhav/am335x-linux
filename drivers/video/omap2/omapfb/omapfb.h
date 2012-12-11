@@ -28,6 +28,8 @@
 #endif
 
 #include <linux/rwsem.h>
+#include <linux/dma-attrs.h>
+#include <linux/dma-mapping.h>
 
 #include <video/omapdss.h>
 
@@ -49,6 +51,9 @@ extern bool omapfb_debug;
 
 struct omapfb2_mem_region {
 	int             id;
+	struct dma_attrs attrs;
+	void		*token;
+	dma_addr_t	dma_handle;
 	u32		paddr;
 	void __iomem	*vaddr;
 	struct vrfb	vrfb;
@@ -57,8 +62,6 @@ struct omapfb2_mem_region {
 	bool		alloc;		/* allocated by the driver */
 	bool		map;		/* kernel mapped by the driver */
 	atomic_t	map_count;
-	struct rw_semaphore lock;
-	atomic_t	lock_count;
 };
 
 /* appended to fb_info */
@@ -124,9 +127,6 @@ void omapfb_remove_sysfs(struct omapfb2_device *fbdev);
 
 int omapfb_ioctl(struct fb_info *fbi, unsigned int cmd, unsigned long arg);
 
-int omapfb_update_window(struct fb_info *fbi,
-		u32 x, u32 y, u32 w, u32 h);
-
 int dss_mode_to_fb_mode(enum omap_color_mode dssmode,
 			struct fb_var_screeninfo *var);
 
@@ -187,20 +187,6 @@ static inline int omapfb_overlay_enable(struct omap_overlay *ovl,
 		return ovl->enable(ovl);
 	else
 		return ovl->disable(ovl);
-}
-
-static inline struct omapfb2_mem_region *
-omapfb_get_mem_region(struct omapfb2_mem_region *rg)
-{
-	down_read_nested(&rg->lock, rg->id);
-	atomic_inc(&rg->lock_count);
-	return rg;
-}
-
-static inline void omapfb_put_mem_region(struct omapfb2_mem_region *rg)
-{
-	atomic_dec(&rg->lock_count);
-	up_read(&rg->lock);
 }
 
 #endif
