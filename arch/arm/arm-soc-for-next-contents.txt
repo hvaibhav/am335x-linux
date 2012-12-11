@@ -1,0 +1,194 @@
+arm-soc for-next contents for 3.8:
+
+External dependencies:
+depends/tty             gregkh's tty tree @54ec52b6dd3b0ba4bc4eb97e7e1b2534705b326c
+depends/omap-cleanup-headers-usb        git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-usb
+depends/omap-cleanup-headers-menelaus   git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-menelaus
+depends/clk:		common clock tree
+depends/asoc		renesas bits of the asoc tree
+depends/gpio-devel	gpio/devel branch @tag  gpio-for-grant-v3.8 (b53bc2819a71099ecfc3d61ba0796b3dcc6be321)
+depends/pinctrl-devel	pinctrl/devel branch @06763c741b0a1
+depends/pinctrl-devel2  pinctrl/devel branch @4ddb1c2
+
+next/fixes-non-critical:
+vexpress/fixes		git://git.linaro.org/people/pawelmoll/linux.git vexpress-fixes
+davinci/fixes		git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-for-v3.8/fixes
++patch <201211081405.23202.arnd@arndb.de>
+omap/fixes		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/fixes-non-critical-v4-signed
+pxa/fixes		git://github.com/hzhuang1/linux.git armsoc/fix
+				refetched @ d90cb69
++patch <1353855220-5238-1-git-send-email-shc_work@mail.ru>
+ixp4xx/fixes		git://git.infradead.org/users/jcooper/linux ixp4xx_fixes_for_3.7
+renesas/maintainers	git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git maintainers
+
+
+next/headers:
+omap/headers		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap omap-for-v3.8/cleanup-headers-signed
+omap/cleanup-headers-3  git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-headers-part3-signed
+			depends on depends/tty and depends/omap-cleanup*
+omap/cleanup-prcm	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-prcm-part1-take2-signed
+at91/header		git://github.com/at91linux/linux-at91.git tags/for-3.8-at91_header_clean
+			+ re-pull from git://github.com/at91linux/linux-at91.git tags/at91-header
+omap/cleanup-headers-4  git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-headers-prepare-multiplatform-v3-signed
++patch <1352970366-7154-1-git-send-email-haojian.zhuang@gmail.com>
+omap/cleanup-headers-iommu git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-headers-iommu-signed
+
+
+next/cleanup:
+imx/multiplatform	git://git.linaro.org/people/shawnguo/linux-2.6.git imx/multi-platform
+			(pulled twice)
+vt8500/cleanup		git://server.prisktech.co.nz/git/linuxwmt.git/ tags/cleanup-for-3.8
++ cherry-pick of "ARM: pxa: use module_platform_driver macro"
+zynq/cleanup		git://git.xilinx.com/linux-xlnx.git arm-next
+cleanups/dma		<1352360783-17523-1-git-send-email-m.szyprowski@samsung.com>
+omap/cleanup-fixes	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-fixes-signed
+				depends on omap/headers4
+omap/cleanup-prcm-part2	  git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-prcm-part2-signed
+				depends on omap/headers4
+omap/cleanup-fixes-2	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-fixes-part2-v2-signed
+				depends on omap/cleanup-fixes
+at91/cleanup		git://github.com/at91linux/linux-at91.git tags/at91-for-next-cleanup
+tegra/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-cleanup
+bcm2835/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-rpi.git bcm2835-for-3.8-cleanup
+samsung/cleanup		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung-2
+orion/cleanup		git://git.infradead.org/users/jcooper/linux.git tags/orion_cleanup_for_3.8
+integrator/cleanup	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator.git tags/integrator-for-arm-soc
+omap/cleanup-timer	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/cleanup-timer-signed
++patch "ARM: omap: fix typo on timer cleanup"
+samsung/cleanup-3	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cleanup-samsung-3
+
+next/soc:
+ux500/core		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git ux500-core
+clps711x/soc           patches from Alexander Shiyan <shc_work@mail.ru>
+renesas/soc		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas soc
+calxeda/ecx-2000	git://sources.calxeda.com/kernel/linux.git tags/calxeda-ecx-2000
+integrator/irq		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-integrator.git tags/integrator-irq
+			+patch "irq: versatile: delete dangling variable"
++ patch "ARM: highbank: add ifdef guards to core.h"
++ patch <201211062208.47390.arnd@arndb.de>
+lpc32xx/soc		git://git.antcom.de/linux-2.6.git lpc32xx/core
+renesas/soc2		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git soc
+imx/soc			git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-soc
+				depends on imx/multiplatform
+davinci/soc		git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-for-v3.8/soc
++patch <1353347170-10257-1-git-send-email-csd@broadcom.com> "[PATCH V6] Add support for generic BCM SoC chipsets"
+sunxi/soc		git://github.com/mripard/linux.git tags/tags/sunxi-support-for-3.8
+tegra/soc		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-soc
+tegra/cpuidle		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-cpuidle
+tegra/defconfig		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-defconfig
+bcm2835/soc		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-rpi.git bcm2835-for-3.8-soc
+bcm2835/defconfig	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-rpi.git bcm2835-for-3.8-defconfig
+vexpress/soc		git://git.linaro.org/people/pawelmoll/linux.git vexpress-clk-soc
+				depends on depends/clk
+				+patch
+calxeda/debug_ll	git://sources.calxeda.com/kernel/linux.git tags/highbank-debugll-cleanup
+calxeda/cpuidle		git://sources.calxeda.com/kernel/linux.git tags/highbank-cpuidle
+clps711x/soc2		Patch series from email <1353160644-22446-1-git-send-email-shc_work@mail.ru>
+samsung/pinctrl		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/pinctrl-samsung
+sunxi/soc2		git://github.com/mripard/linux.git tags/tags/sun4i-support-for-3.8
+			+patch "ARM: sunxi: add missing include for mdelay()
+imx/soc2		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-soc-1
+samsung/exynos5440	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/soc-exynos5440
++ patch  "ARM: EXYNOS: Avoid early use of of_machine_is_compatible()"
+samsung/cam		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/cam-samsung
+samsung/pinctrl-2	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/pinctrl-samsung-2
+samsung/devel-soc	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung-3
+sunxi/soc-fixes		git://github.com/mripard/linux.git tags/sunxi-fixes-for-3.8
++patch <1353332344-16754-1-git-send-email-pawel.moll@arm.com> "[PATCH] mfd: vexpress-sysreg: Remove LEDs code"
+
+next/boards:
+renesas/boards		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards
+renesas/defconfig	git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git defconfig
+omap/board		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/board-v2-signed
+davinci/board		git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-for-v3.8/board
+				depends on davinci/soc
+davinci/defconfig	git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-for-v3.8/defconfig
+pxa/board		git://github.com/hzhuang1/linux.git armsoc/board
+samsung/boards		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/board-samsung
+imx/board		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-board
+imx/defconfig		git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-defconfig
+orion/boards		git://git.infradead.org/users/jcooper/linux.git tags/orion_boards_for_3.8
+samsung/boards-2	git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/board-samsung-2
+
+next/dt:
+ux500/dt		git://git.linaro.org/people/ljones/linux-3.0-ux500.git ste-dt-for-next
+				(pulled three times)
+omap/dt			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/dt-signed
+                                depends on omap/headers4 and omap/cleanup-prcm
+imx/dt			git://git.pengutronix.de/git/imx/linux-2.6.git tags/imx-dt
+zynq/dt			git://git.xilinx.com/linux-xlnx.git arm-next
+				depends on zynq/cleanup
+mxs/dt			git://git.linaro.org/people/shawnguo/linux-2.6.git tags/mxs-dt-3.8
+				repulled at tags/mxs-dt-3.8-2
+imx/dt2			git://git.linaro.org/people/shawnguo/linux-2.6.git tags/imx-dt-3.8
+davinci/dt		git://gitorious.org/linux-davinci/linux-davinci.git tags/davinci-for-v3.8/dt
+				depends on davinci/soc
+				+ local patch to move dtb targets
+at91/dt			git://github.com/at91linux/linux-at91.git tags/at91-for-next-dt
+tegra/dt		git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-dt
+lpc32xx/dt		git://git.antcom.de/linux-2.6.git tags/lpc32xx-dts-for-3.7
+samsung/hdmi		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/hdmi-samsung
+samsung/dt		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/dt-samsung
+samsung/dt2		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/dt-samsung-2
+orion/dt		git://git.infradead.org/users/jcooper/linux.git tags/orion_dt_for_3.8
+
+next/multiplatform:
+vt8500/multiplatform	git://server.prisktech.co.nz/git/linuxwmt.git/ tags/armsoc-for-3.8
+devel/debug_ll_init     patch <1350927774-14020-1-git-send-email-swarren@wwwdotorg.org>
+nomadik/plat-removal	git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-pinctrl.git tags/kill-plat-sparse-irq
+ux500/mtu-clk		git://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git tags/mtu-clk-for-arm-soc
+tegra/single-zimage	git://git.kernel.org/pub/scm/linux/kernel/git/swarren/linux-tegra.git tegra-for-3.8-single-zimage
+zynq/multiplatform	git://git.monstr.eu/linux-2.6-microblaze.git zynq/multiplatform
+
+next/pm:
+omap/pm			git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/pm-signed
+omap/pm2		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/pm-part2-v3-signed
+samsung/pm		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/pm-samsung
+
+next/clock:
+omap/clock		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/clock-signed
+				depends on omap/pm
+
+next/pm2:
+omap/prcm		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/devel-prcm-signed
+				depends on omap/pm, omap/clock, next/cleanup and next/dt
+omap/late-cleanup	git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/tags/omap-for-v3.8/cleanup-multiplatform-no-clock-signed
+				depends on omap/pm, omap/clock and a bunch of cleanup branches
+
+next/smp:
+socfpga/smp		patch from Dinh Nguyen <dinguyen@altera.com>
++ patch <1351183299-17346-1-git-send-email-dinguyen@altera.com>
++ patch <20121029002724.GA27891@elf.ucw.cz>
++ patch <201211062219.43459.arnd@arndb.de>
+
+next/drivers:
+vexpress/drivers	git://git.linaro.org/people/pawelmoll/linux vexpress/drivers
+ux500/pins		http://git.kernel.org/pub/scm/linux/kernel/git/linusw/linux-stericsson.git tags/ux500-pins-for-arm-soc
++ patch <1352976439-24133-1-git-send-email-linus.walleij@stericsson.com>
+omap/gpmc		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/gpmc-signed
+				depends on omap/headers4
+omap/timer		git://git.kernel.org/pub/scm/linux/kernel/git/tmlind/linux-omap tags/omap-for-v3.8/timer-signed
+				depends on omap/dt
+samsung/gpio		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/gpio-samsung
+
+next/boards2:
+renesas/boards2		depends on renesas/soc, renesas/soc2, renesas/boards and depends/asoc
+renesas/boards3		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git boards3
+
+next/soc2:
+vexpress/soc		git://git.linaro.org/people/pawelmoll/linux vexpress-soc
+				depends on depends/clk
+renesas/soc3		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git soc2
+				depends on renesas/boards2
++patch <1352333341-9249-1-git-send-email-robherring2@gmail.com>
+			depends on calxeda/ecx-2000 and devel/debug_ll_init
+renesas/soc4		git://git.kernel.org/pub/scm/linux/kernel/git/horms/renesas.git soc4
+samsung/devel		git://git.kernel.org/pub/scm/linux/kernel/git/kgene/linux-samsung.git next/devel-samsung
+
+next/dt2:
+spear/dt2:		git://git.linaro.org/people/vireshk/linux.git spear-for-3.8
+				depends on depends/pinctrl2
+
+late/mvebu:
+mvebu/devel		git://git.infradead.org/users/jcooper/linux.git tags/mvebu_everything_for_3.8
+mvebu/cache		git://git.infradead.org/users/jcooper/linux.git tags/mvebu_cache_l2x0_for_3.8

@@ -1169,12 +1169,12 @@ int db8500_prcmu_get_ape_opp(void)
 }
 
 /**
- * prcmu_request_ape_opp_100_voltage - Request APE OPP 100% voltage
+ * db8500_prcmu_request_ape_opp_100_voltage - Request APE OPP 100% voltage
  * @enable: true to request the higher voltage, false to drop a request.
  *
  * Calls to this function to enable and disable requests must be balanced.
  */
-int prcmu_request_ape_opp_100_voltage(bool enable)
+int db8500_prcmu_request_ape_opp_100_voltage(bool enable)
 {
 	int r = 0;
 	u8 header;
@@ -2697,9 +2697,15 @@ static struct irq_domain_ops db8500_irq_ops = {
 
 static int db8500_irq_init(struct device_node *np)
 {
-	db8500_irq_domain = irq_domain_add_legacy(
-		np, NUM_PRCMU_WAKEUPS, IRQ_PRCMU_BASE,
-		0, &db8500_irq_ops, NULL);
+	int irq_base = -1;
+
+	/* In the device tree case, just take some IRQs */
+	if (!np)
+		irq_base = IRQ_PRCMU_BASE;
+
+	db8500_irq_domain = irq_domain_add_simple(
+		np, NUM_PRCMU_WAKEUPS, irq_base,
+		&db8500_irq_ops, NULL);
 
 	if (!db8500_irq_domain) {
 		pr_err("Failed to create irqdomain\n");

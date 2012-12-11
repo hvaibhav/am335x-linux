@@ -27,12 +27,10 @@
 
 /* ssp device registration */
 struct pl022_ssp_controller pl022_plat_data = {
-	.bus_id = 0,
 	.enable_dma = 1,
 	.dma_filter = dw_dma_generic_filter,
 	.dma_rx_param = "ssp0_rx",
 	.dma_tx_param = "ssp0_tx",
-	.num_chipselect = 3,
 };
 
 void __init spear13xx_l2x0_init(void)

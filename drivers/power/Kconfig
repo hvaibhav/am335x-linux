@@ -346,6 +346,8 @@ config AB8500_BM
 	help
 	  Say Y to include support for AB8500 battery management.
 
+source "drivers/power/reset/Kconfig"
+
 endif # POWER_SUPPLY
 
 source "drivers/power/avs/Kconfig"

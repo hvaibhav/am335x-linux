@@ -31,7 +31,6 @@
 #include <linux/omapfb.h>
 #include <linux/dma-mapping.h>
 
-#include <mach/hardware.h>
 #include <asm/mach/map.h>
 
 #include <plat/cpu.h>
