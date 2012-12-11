@@ -587,7 +587,7 @@ static int da9052_bat_irq_bits[] = {
 	DA9052_IRQ_CHGEND,
 };
 
-static s32 __devinit da9052_bat_probe(struct platform_device *pdev)
+static s32 da9052_bat_probe(struct platform_device *pdev)
 {
 	struct da9052_pdata *pdata;
 	struct da9052_battery *bat;
@@ -638,7 +638,7 @@ err:
 	kfree(bat);
 	return ret;
 }
-static int __devexit da9052_bat_remove(struct platform_device *pdev)
+static int da9052_bat_remove(struct platform_device *pdev)
 {
 	int i;
 	struct da9052_battery *bat = platform_get_drvdata(pdev);
@@ -654,7 +654,7 @@ static int __devexit da9052_bat_remove(struct platform_device *pdev)
 
 static struct platform_driver da9052_bat_driver = {
 	.probe = da9052_bat_probe,
-	.remove = __devexit_p(da9052_bat_remove),
+	.remove = da9052_bat_remove,
 	.driver = {
 		.name = "da9052-bat",
 		.owner = THIS_MODULE,

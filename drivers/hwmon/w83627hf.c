@@ -399,7 +399,7 @@ struct w83627hf_data {
 
 
 static int w83627hf_probe(struct platform_device *pdev);
-static int __devexit w83627hf_remove(struct platform_device *pdev);
+static int w83627hf_remove(struct platform_device *pdev);
 
 static int w83627hf_read_value(struct w83627hf_data *data, u16 reg);
 static int w83627hf_write_value(struct w83627hf_data *data, u16 reg, u16 value);
@@ -480,7 +480,7 @@ static struct platform_driver w83627hf_driver = {
 		.pm	= W83627HF_DEV_PM_OPS,
 	},
 	.probe		= w83627hf_probe,
-	.remove		= __devexit_p(w83627hf_remove),
+	.remove		= w83627hf_remove,
 };
 
 static ssize_t
@@ -1415,7 +1415,7 @@ static const struct attribute_group w83627hf_group_opt = {
 	.attrs = w83627hf_attributes_opt,
 };
 
-static int __devinit w83627hf_probe(struct platform_device *pdev)
+static int w83627hf_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct w83627hf_sio_data *sio_data = dev->platform_data;
@@ -1581,7 +1581,7 @@ static int __devinit w83627hf_probe(struct platform_device *pdev)
 	return err;
 }
 
-static int __devexit w83627hf_remove(struct platform_device *pdev)
+static int w83627hf_remove(struct platform_device *pdev)
 {
 	struct w83627hf_data *data = platform_get_drvdata(pdev);
 
@@ -1637,7 +1637,7 @@ static int w83627hf_read_value(struct w83627hf_data *data, u16 reg)
 	return res;
 }
 
-static int __devinit w83627thf_read_gpio5(struct platform_device *pdev)
+static int w83627thf_read_gpio5(struct platform_device *pdev)
 {
 	struct w83627hf_sio_data *sio_data = pdev->dev.platform_data;
 	int res = 0xff, sel;
@@ -1670,7 +1670,7 @@ exit:
 	return res;
 }
 
-static int __devinit w83687thf_read_vid(struct platform_device *pdev)
+static int w83687thf_read_vid(struct platform_device *pdev)
 {
 	struct w83627hf_sio_data *sio_data = pdev->dev.platform_data;
 	int res = 0xff;
@@ -1722,7 +1722,7 @@ static int w83627hf_write_value(struct w83627hf_data *data, u16 reg, u16 value)
 	return 0;
 }
 
-static void __devinit w83627hf_init_device(struct platform_device *pdev)
+static void w83627hf_init_device(struct platform_device *pdev)
 {
 	struct w83627hf_data *data = platform_get_drvdata(pdev);
 	int i;

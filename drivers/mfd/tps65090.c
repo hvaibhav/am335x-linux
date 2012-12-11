@@ -148,7 +148,7 @@ static const struct regmap_config tps65090_regmap_config = {
 	.volatile_reg = is_volatile_reg,
 };
 
-static int __devinit tps65090_i2c_probe(struct i2c_client *client,
+static int tps65090_i2c_probe(struct i2c_client *client,
 					const struct i2c_device_id *id)
 {
 	struct tps65090_platform_data *pdata = client->dev.platform_data;
@@ -204,7 +204,7 @@ err_irq_exit:
 	return ret;
 }
 
-static int __devexit tps65090_i2c_remove(struct i2c_client *client)
+static int tps65090_i2c_remove(struct i2c_client *client)
 {
 	struct tps65090 *tps65090 = i2c_get_clientdata(client);
 
@@ -250,7 +250,7 @@ static struct i2c_driver tps65090_driver = {
 		.pm	= &tps65090_pm_ops,
 	},
 	.probe		= tps65090_i2c_probe,
-	.remove		= __devexit_p(tps65090_i2c_remove),
+	.remove		= tps65090_i2c_remove,
 	.id_table	= tps65090_id_table,
 };
 

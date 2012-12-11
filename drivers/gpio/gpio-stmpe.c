@@ -267,7 +267,7 @@ static irqreturn_t stmpe_gpio_irq(int irq, void *dev)
 	return IRQ_HANDLED;
 }
 
-static int __devinit stmpe_gpio_irq_init(struct stmpe_gpio *stmpe_gpio)
+static int stmpe_gpio_irq_init(struct stmpe_gpio *stmpe_gpio)
 {
 	int base = stmpe_gpio->irq_base;
 	int irq;
@@ -301,7 +301,7 @@ static void stmpe_gpio_irq_remove(struct stmpe_gpio *stmpe_gpio)
 	}
 }
 
-static int __devinit stmpe_gpio_probe(struct platform_device *pdev)
+static int stmpe_gpio_probe(struct platform_device *pdev)
 {
 	struct stmpe *stmpe = dev_get_drvdata(pdev->dev.parent);
 	struct stmpe_gpio_platform_data *pdata;
@@ -378,7 +378,7 @@ out_free:
 	return ret;
 }
 
-static int __devexit stmpe_gpio_remove(struct platform_device *pdev)
+static int stmpe_gpio_remove(struct platform_device *pdev)
 {
 	struct stmpe_gpio *stmpe_gpio = platform_get_drvdata(pdev);
 	struct stmpe *stmpe = stmpe_gpio->stmpe;
@@ -412,7 +412,7 @@ static struct platform_driver stmpe_gpio_driver = {
 	.driver.name	= "stmpe-gpio",
 	.driver.owner	= THIS_MODULE,
 	.probe		= stmpe_gpio_probe,
-	.remove		= __devexit_p(stmpe_gpio_remove),
+	.remove		= stmpe_gpio_remove,
 };
 
 static int __init stmpe_gpio_init(void)
