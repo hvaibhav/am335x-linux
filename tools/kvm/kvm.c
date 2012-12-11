@@ -6,7 +6,9 @@
 #include "kvm/kvm-cpu.h"
 #include "kvm/kvm-ipc.h"
 
+#include <linux/kernel.h>
 #include <linux/kvm.h>
+#include <linux/list.h>
 #include <linux/err.h>
 
 #include <sys/un.h>
@@ -133,9 +135,16 @@ struct kvm *kvm__new(void)
 
 int kvm__exit(struct kvm *kvm)
 {
-	kvm__arch_delete_ram(kvm);
-	free(kvm);
+	struct kvm_mem_bank *bank, *tmp;
 
+	kvm__arch_delete_ram(kvm);
+
+	list_for_each_entry_safe(bank, tmp, &kvm->mem_banks, list) {
+		list_del(&bank->list);
+		free(bank);
+	}
+
+	free(kvm);
 	return 0;
 }
 core_exit(kvm__exit);
@@ -148,7 +157,17 @@ core_exit(kvm__exit);
 int kvm__register_mem(struct kvm *kvm, u64 guest_phys, u64 size, void *userspace_addr)
 {
 	struct kvm_userspace_memory_region mem;
+	struct kvm_mem_bank *bank;
 	int ret;
+
+	bank = malloc(sizeof(*bank));
+	if (!bank)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&bank->list);
+	bank->guest_phys_addr		= guest_phys;
+	bank->host_addr			= userspace_addr;
+	bank->size			= size;
 
 	mem = (struct kvm_userspace_memory_region) {
 		.slot			= kvm->mem_slots++,
@@ -161,6 +180,40 @@ int kvm__register_mem(struct kvm *kvm, u64 guest_phys, u64 size, void *userspace
 	if (ret < 0)
 		return -errno;
 
+	list_add(&bank->list, &kvm->mem_banks);
+	return 0;
+}
+
+void *guest_flat_to_host(struct kvm *kvm, u64 offset)
+{
+	struct kvm_mem_bank *bank;
+
+	list_for_each_entry(bank, &kvm->mem_banks, list) {
+		u64 bank_start = bank->guest_phys_addr;
+		u64 bank_end = bank_start + bank->size;
+
+		if (offset >= bank_start && offset < bank_end)
+			return bank->host_addr + (offset - bank_start);
+	}
+
+	pr_warning("unable to translate guest address 0x%llx to host",
+			(unsigned long long)offset);
+	return NULL;
+}
+
+u64 host_to_guest_flat(struct kvm *kvm, void *ptr)
+{
+	struct kvm_mem_bank *bank;
+
+	list_for_each_entry(bank, &kvm->mem_banks, list) {
+		void *bank_start = bank->host_addr;
+		void *bank_end = bank_start + bank->size;
+
+		if (ptr >= bank_start && ptr < bank_end)
+			return bank->guest_phys_addr + (ptr - bank_start);
+	}
+
+	pr_warning("unable to translate host address %p to guest", ptr);
 	return 0;
 }
 
@@ -245,11 +298,12 @@ int kvm__init(struct kvm *kvm)
 
 	kvm__arch_init(kvm, kvm->cfg.hugetlbfs_path, kvm->cfg.ram_size);
 
+	INIT_LIST_HEAD(&kvm->mem_banks);
 	kvm__init_ram(kvm);
 
 	if (!kvm->cfg.firmware_filename) {
 		if (!kvm__load_kernel(kvm, kvm->cfg.kernel_filename,
-				kvm->cfg.initrd_filename, kvm->cfg.real_cmdline, kvm->cfg.vidmode))
+				kvm->cfg.initrd_filename, kvm->cfg.real_cmdline))
 			die("unable to load kernel %s", kvm->cfg.kernel_filename);
 	}
 
@@ -295,7 +349,7 @@ static bool initrd_check(int fd)
 }
 
 bool kvm__load_kernel(struct kvm *kvm, const char *kernel_filename,
-		const char *initrd_filename, const char *kernel_cmdline, u16 vidmode)
+		const char *initrd_filename, const char *kernel_cmdline)
 {
 	bool ret;
 	int fd_kernel = -1, fd_initrd = -1;
@@ -313,7 +367,7 @@ bool kvm__load_kernel(struct kvm *kvm, const char *kernel_filename,
 			die("%s is not an initrd", initrd_filename);
 	}
 
-	ret = load_bzimage(kvm, fd_kernel, fd_initrd, kernel_cmdline, vidmode);
+	ret = load_bzimage(kvm, fd_kernel, fd_initrd, kernel_cmdline);
 
 	if (ret)
 		goto found_kernel;

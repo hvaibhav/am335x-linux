@@ -11,9 +11,9 @@
  * by the Free Software Foundation.
  */
 
+#include "kvm/fdt.h"
 #include "kvm/kvm.h"
 #include "kvm/util.h"
-#include "libfdt.h"
 #include "cpu_info.h"
 
 #include "spapr.h"
@@ -204,8 +204,8 @@ int load_flat_binary(struct kvm *kvm, int fd_kernel, int fd_initrd, const char *
 	return true;
 }
 
-bool load_bzimage(struct kvm *kvm, int fd_kernel,
-		  int fd_initrd, const char *kernel_cmdline, u16 vidmode)
+bool load_bzimage(struct kvm *kvm, int fd_kernel, int fd_initrd,
+		  const char *kernel_cmdline)
 {
 	/* We don't support bzImages. */
 	return false;

@@ -29,7 +29,7 @@
 #define VIRTIO_CONSOLE_TX_QUEUE		1
 
 struct con_dev {
-	pthread_mutex_t			mutex;
+	struct mutex			mutex;
 
 	struct virtio_device		vdev;
 	struct virt_queue		vqs[VIRTIO_CONSOLE_NUM_QUEUES];
@@ -40,7 +40,7 @@ struct con_dev {
 };
 
 static struct con_dev cdev = {
-	.mutex				= PTHREAD_MUTEX_INITIALIZER,
+	.mutex				= MUTEX_INITIALIZER,
 
 	.config = {
 		.cols			= 80,
@@ -172,6 +172,12 @@ static int get_size_vq(struct kvm *kvm, void *dev, u32 vq)
 	return VIRTIO_CONSOLE_QUEUE_SIZE;
 }
 
+static int set_size_vq(struct kvm *kvm, void *dev, u32 vq, int size)
+{
+	/* FIXME: dynamic */
+	return size;
+}
+
 static struct virtio_ops con_dev_virtio_ops = (struct virtio_ops) {
 	.get_config		= get_config,
 	.get_host_features	= get_host_features,
@@ -180,6 +186,7 @@ static struct virtio_ops con_dev_virtio_ops = (struct virtio_ops) {
 	.notify_vq		= notify_vq,
 	.get_pfn_vq		= get_pfn_vq,
 	.get_size_vq		= get_size_vq,
+	.set_size_vq		= set_size_vq,
 };
 
 int virtio_console__init(struct kvm *kvm)
@@ -188,7 +195,8 @@ int virtio_console__init(struct kvm *kvm)
 		return 0;
 
 	virtio_init(kvm, &cdev, &cdev.vdev, &con_dev_virtio_ops,
-		    VIRTIO_PCI, PCI_DEVICE_ID_VIRTIO_CONSOLE, VIRTIO_ID_CONSOLE, PCI_CLASS_CONSOLE);
+		    VIRTIO_DEFAULT_TRANS, PCI_DEVICE_ID_VIRTIO_CONSOLE,
+		    VIRTIO_ID_CONSOLE, PCI_CLASS_CONSOLE);
 	if (compat_id == -1)
 		compat_id = virtio_compat_add_message("virtio-console", "CONFIG_VIRTIO_CONSOLE");
 

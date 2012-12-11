@@ -1,3 +1,4 @@
+#include "kvm/devices.h"
 #include "kvm/virtio-mmio.h"
 #include "kvm/ioeventfd.h"
 #include "kvm/ioport.h"
@@ -218,7 +219,7 @@ int virtio_mmio_init(struct kvm *kvm, void *dev, struct virtio_device *vdev,
 		     int device_id, int subsys_id, int class)
 {
 	struct virtio_mmio *vmmio = vdev->virtio;
-	u8 device, pin, line;
+	u8 pin, line;
 
 	vmmio->addr	= virtio_mmio_get_io_space_block(VIRTIO_MMIO_IO_SIZE);
 	vmmio->kvm	= kvm;
@@ -230,14 +231,20 @@ int virtio_mmio_init(struct kvm *kvm, void *dev, struct virtio_device *vdev,
 	vmmio->hdr = (struct virtio_mmio_hdr) {
 		.magic		= {'v', 'i', 'r', 't'},
 		.version	= 1,
-		.device_id	= device_id - 0x1000 + 1,
+		.device_id	= subsys_id,
 		.vendor_id	= 0x4d564b4c , /* 'LKVM' */
 		.queue_num_max	= 256,
 	};
 
-	if (irq__register_device(subsys_id, &device, &pin, &line) < 0)
+	if (irq__register_device(subsys_id, &pin, &line) < 0)
 		return -1;
 	vmmio->irq = line;
+	vmmio->dev_hdr = (struct device_header) {
+		.bus_type	= DEVICE_BUS_MMIO,
+		.data		= vmmio,
+	};
+
+	device__register(&vmmio->dev_hdr);
 
 	/*
 	 * Instantiate guest virtio-mmio devices using kernel command line

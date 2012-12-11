@@ -232,6 +232,12 @@ static int get_size_vq(struct kvm *kvm, void *dev, u32 vq)
 	return VIRTIO_BLN_QUEUE_SIZE;
 }
 
+static int set_size_vq(struct kvm *kvm, void *dev, u32 vq, int size)
+{
+	/* FIXME: dynamic */
+	return size;
+}
+
 struct virtio_ops bln_dev_virtio_ops = (struct virtio_ops) {
 	.get_config		= get_config,
 	.get_host_features	= get_host_features,
@@ -240,6 +246,7 @@ struct virtio_ops bln_dev_virtio_ops = (struct virtio_ops) {
 	.notify_vq		= notify_vq,
 	.get_pfn_vq		= get_pfn_vq,
 	.get_size_vq		= get_size_vq,
+	.set_size_vq            = set_size_vq,
 };
 
 int virtio_bln__init(struct kvm *kvm)
@@ -254,7 +261,8 @@ int virtio_bln__init(struct kvm *kvm)
 	memset(&bdev.config, 0, sizeof(struct virtio_balloon_config));
 
 	virtio_init(kvm, &bdev, &bdev.vdev, &bln_dev_virtio_ops,
-		    VIRTIO_PCI, PCI_DEVICE_ID_VIRTIO_BLN, VIRTIO_ID_BALLOON, PCI_CLASS_BLN);
+		    VIRTIO_DEFAULT_TRANS, PCI_DEVICE_ID_VIRTIO_BLN,
+		    VIRTIO_ID_BALLOON, PCI_CLASS_BLN);
 
 	if (compat_id == -1)
 		compat_id = virtio_compat_add_message("virtio-balloon", "CONFIG_VIRTIO_BALLOON");

@@ -10,6 +10,7 @@
 #include <linux/types.h>
 #include <time.h>
 #include <signal.h>
+#include <sys/prctl.h>
 
 #define SIGKVMEXIT		(SIGRTMIN + 0)
 #define SIGKVMPAUSE		(SIGRTMIN + 1)
@@ -34,6 +35,13 @@ struct kvm_ext {
 	int code;
 };
 
+struct kvm_mem_bank {
+	struct list_head	list;
+	u64			guest_phys_addr;
+	void			*host_addr;
+	u64			size;
+};
+
 struct kvm {
 	struct kvm_arch		arch;
 	struct kvm_config	cfg;
@@ -48,6 +56,7 @@ struct kvm {
 	u64			ram_size;
 	void			*ram_start;
 	u64			ram_pagesize;
+	struct list_head	mem_banks;
 
 	bool			nmi_disabled;
 
@@ -69,7 +78,7 @@ void kvm__init_ram(struct kvm *kvm);
 int kvm__exit(struct kvm *kvm);
 bool kvm__load_firmware(struct kvm *kvm, const char *firmware_filename);
 bool kvm__load_kernel(struct kvm *kvm, const char *kernel_filename,
-			const char *initrd_filename, const char *kernel_cmdline, u16 vidmode);
+			const char *initrd_filename, const char *kernel_cmdline);
 int kvm_timer__init(struct kvm *kvm);
 int kvm_timer__exit(struct kvm *kvm);
 void kvm__irq_line(struct kvm *kvm, int irq, int level);
@@ -96,8 +105,11 @@ int kvm__arch_free_firmware(struct kvm *kvm);
 bool kvm__arch_cpu_supports_vm(void);
 void kvm__arch_periodic_poll(struct kvm *kvm);
 
+void *guest_flat_to_host(struct kvm *kvm, u64 offset);
+u64 host_to_guest_flat(struct kvm *kvm, void *ptr);
+
 int load_flat_binary(struct kvm *kvm, int fd_kernel, int fd_initrd, const char *kernel_cmdline);
-bool load_bzimage(struct kvm *kvm, int fd_kernel, int fd_initrd, const char *kernel_cmdline, u16 vidmode);
+bool load_bzimage(struct kvm *kvm, int fd_kernel, int fd_initrd, const char *kernel_cmdline);
 
 /*
  * Debugging
@@ -111,11 +123,11 @@ static inline bool host_ptr_in_ram(struct kvm *kvm, void *p)
 	return kvm->ram_start <= p && p < (kvm->ram_start + kvm->ram_size);
 }
 
-static inline void *guest_flat_to_host(struct kvm *kvm, unsigned long offset)
-{
-	return kvm->ram_start + offset;
-}
-
 bool kvm__supports_extension(struct kvm *kvm, unsigned int extension);
+
+static inline void kvm__set_thread_name(const char *name)
+{
+	prctl(PR_SET_NAME, name);
+}
 
 #endif /* KVM__KVM_H */

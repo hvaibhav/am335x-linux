@@ -15,9 +15,10 @@
 
 #include "spapr.h"
 #include "spapr_pci.h"
+#include "kvm/devices.h"
+#include "kvm/fdt.h"
 #include "kvm/util.h"
 #include "kvm/pci.h"
-#include "libfdt.h"
 
 #include <linux/pci_regs.h>
 #include <linux/byteorder.h>
@@ -248,6 +249,7 @@ int spapr_populate_pci_devices(struct kvm *kvm,
 			       void *fdt)
 {
 	int bus_off, node_off = 0, devid, fn, i, n, devices;
+	struct device_header *dev_hdr;
 	char nodename[256];
 	struct {
 		uint32_t hi;
@@ -301,14 +303,15 @@ int spapr_populate_pci_devices(struct kvm *kvm,
 
 	/* Populate PCI devices and allocate IRQs */
 	devices = 0;
-
-	for (devid = 0; devid < PCI_MAX_DEVICES; devid++) {
+	dev_hdr = device__first_dev(DEVICE_BUS_PCI);
+	while (dev_hdr) {
 		uint32_t *irqmap = interrupt_map[devices];
-		struct pci_device_header *hdr = pci__find_dev(devid);
+		struct pci_device_header *hdr = dev_hdr->data;
 
 		if (!hdr)
 			continue;
 
+		devid = dev_hdr->dev_num;
 		fn = 0; /* kvmtool doesn't yet do multifunction devices */
 
 		sprintf(nodename, "pci@%u,%u", devid, fn);
@@ -413,6 +416,7 @@ int spapr_populate_pci_devices(struct kvm *kvm,
 		/* We don't set ibm,dma-window property as we don't have an IOMMU. */
 
 		++devices;
+		dev_hdr = device__next_dev(dev_hdr);
 	}
 
 	/* Write interrupt map */

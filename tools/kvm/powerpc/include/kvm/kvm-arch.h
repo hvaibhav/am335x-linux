@@ -27,7 +27,6 @@
 #define KERNEL_SECONDARY_START_ADDR     0x0000000000000060
 #define INITRD_LOAD_ADDR        	0x0000000002800000
 
-#define FDT_MAX_SIZE            	0x10000
 #define RTAS_MAX_SIZE           	0x10000
 
 #define TIMEBASE_FREQ           	512000000ULL
@@ -40,6 +39,8 @@
  */
 #define KVM_PCI_MMIO_AREA		0x1000000
 #define KVM_VIRTIO_MMIO_AREA		0x2000000
+
+#define VIRTIO_DEFAULT_TRANS	VIRTIO_PCI
 
 struct spapr_phb;
 
@@ -54,15 +55,5 @@ struct kvm_arch {
 	struct icp_state	*icp;
 	struct spapr_phb	*phb;
 };
-
-/* Helper for the various bits of code that generate FDT nodes */
-#define _FDT(exp)							\
-	do {								\
-		int ret = (exp);					\
-		if (ret < 0) {						\
-			die("Error creating device tree: %s: %s\n",	\
-			    #exp, fdt_strerror(ret));			\
-		}							\
-	} while (0)
 
 #endif /* KVM__KVM_ARCH_H */

@@ -61,11 +61,13 @@ static void set_guest_features(struct kvm *kvm, void *dev, u32 features)
 static bool virtio_rng_do_io_request(struct kvm *kvm, struct rng_dev *rdev, struct virt_queue *queue)
 {
 	struct iovec iov[VIRTIO_RNG_QUEUE_SIZE];
-	unsigned int len = 0;
+	ssize_t len = 0;
 	u16 out, in, head;
 
 	head	= virt_queue__get_iov(queue, iov, &out, &in, kvm);
 	len	= readv(rdev->fd, iov, in);
+	if (len < 0 && errno == EAGAIN)
+		len = 0;
 
 	virt_queue__set_used_elem(queue, head, len);
 
@@ -132,6 +134,12 @@ static int get_size_vq(struct kvm *kvm, void *dev, u32 vq)
 	return VIRTIO_RNG_QUEUE_SIZE;
 }
 
+static int set_size_vq(struct kvm *kvm, void *dev, u32 vq, int size)
+{
+	/* FIXME: dynamic */
+	return size;
+}
+
 static struct virtio_ops rng_dev_virtio_ops = (struct virtio_ops) {
 	.get_config		= get_config,
 	.get_host_features	= get_host_features,
@@ -140,6 +148,7 @@ static struct virtio_ops rng_dev_virtio_ops = (struct virtio_ops) {
 	.notify_vq		= notify_vq,
 	.get_pfn_vq		= get_pfn_vq,
 	.get_size_vq		= get_size_vq,
+	.set_size_vq		= set_size_vq,
 };
 
 int virtio_rng__init(struct kvm *kvm)
@@ -154,14 +163,15 @@ int virtio_rng__init(struct kvm *kvm)
 	if (rdev == NULL)
 		return -ENOMEM;
 
-	rdev->fd = open("/dev/urandom", O_RDONLY);
+	rdev->fd = open("/dev/random", O_RDONLY | O_NONBLOCK);
 	if (rdev->fd < 0) {
 		r = rdev->fd;
 		goto cleanup;
 	}
 
 	r = virtio_init(kvm, rdev, &rdev->vdev, &rng_dev_virtio_ops,
-			VIRTIO_PCI, PCI_DEVICE_ID_VIRTIO_RNG, VIRTIO_ID_RNG, PCI_CLASS_RNG);
+			VIRTIO_DEFAULT_TRANS, PCI_DEVICE_ID_VIRTIO_RNG,
+			VIRTIO_ID_RNG, PCI_CLASS_RNG);
 	if (r < 0)
 		goto cleanup;
 
