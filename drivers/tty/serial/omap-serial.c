@@ -148,7 +148,7 @@ struct uart_omap_port {
 	unsigned char		msr_saved_flags;
 	char			name[20];
 	unsigned long		port_activity;
-	u32			context_loss_cnt;
+	int			context_loss_cnt;
 	u32			errata;
 	u8			wakeups_enabled;
 
@@ -1144,7 +1144,7 @@ out:
 
 #ifdef CONFIG_SERIAL_OMAP_CONSOLE
 
-static struct uart_omap_port *serial_omap_console_ports[4];
+static struct uart_omap_port *serial_omap_console_ports[OMAP_MAX_HSUART_PORTS];
 
 static struct uart_driver serial_omap_reg;
 
@@ -1307,7 +1307,7 @@ static int serial_omap_resume(struct device *dev)
 }
 #endif
 
-static void __devinit omap_serial_fill_features_erratas(struct uart_omap_port *up)
+static void omap_serial_fill_features_erratas(struct uart_omap_port *up)
 {
 	u32 mvr, scheme;
 	u16 revision, major, minor;
@@ -1360,7 +1360,7 @@ static void __devinit omap_serial_fill_features_erratas(struct uart_omap_port *u
 	}
 }
 
-static __devinit struct omap_uart_port_info *of_get_uart_port_info(struct device *dev)
+static struct omap_uart_port_info *of_get_uart_port_info(struct device *dev)
 {
 	struct omap_uart_port_info *omap_up_info;
 
@@ -1373,7 +1373,7 @@ static __devinit struct omap_uart_port_info *of_get_uart_port_info(struct device
 	return omap_up_info;
 }
 
-static int __devinit serial_omap_probe(struct platform_device *pdev)
+static int serial_omap_probe(struct platform_device *pdev)
 {
 	struct uart_omap_port	*up;
 	struct resource		*mem, *irq;
@@ -1510,7 +1510,7 @@ err_port_line:
 	return ret;
 }
 
-static int __devexit serial_omap_remove(struct platform_device *dev)
+static int serial_omap_remove(struct platform_device *dev)
 {
 	struct uart_omap_port *up = platform_get_drvdata(dev);
 
@@ -1621,11 +1621,15 @@ static int serial_omap_runtime_resume(struct device *dev)
 {
 	struct uart_omap_port *up = dev_get_drvdata(dev);
 
-	u32 loss_cnt = serial_omap_get_context_loss_count(up);
+	int loss_cnt = serial_omap_get_context_loss_count(up);
 
-	if (up->context_loss_cnt != loss_cnt)
+	if (loss_cnt < 0) {
+		dev_err(dev, "serial_omap_get_context_loss_count failed : %d\n",
+			loss_cnt);
 		serial_omap_restore_context(up);
-
+	} else if (up->context_loss_cnt != loss_cnt) {
+		serial_omap_restore_context(up);
+	}
 	up->latency = up->calc_latency;
 	schedule_work(&up->qos_work);
 
@@ -1651,7 +1655,7 @@ MODULE_DEVICE_TABLE(of, omap_serial_of_match);
 
 static struct platform_driver serial_omap_driver = {
 	.probe          = serial_omap_probe,
-	.remove         = __devexit_p(serial_omap_remove),
+	.remove         = serial_omap_remove,
 	.driver		= {
 		.name	= DRIVER_NAME,
 		.pm	= &serial_omap_dev_pm_ops,
