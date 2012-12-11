@@ -24,6 +24,7 @@
 
 #include <mach/map.h>
 #include <mach/regs-clock.h>
+#include <mach/regs-audss.h>
 #include <mach/sysmmu.h>
 
 #include "common.h"
@@ -166,6 +167,16 @@ static int exynos5_clk_block_ctrl(struct clk *clk, int enable)
 static int exynos5_clk_ip_gen_ctrl(struct clk *clk, int enable)
 {
 	return s5p_gatectrl(EXYNOS5_CLKGATE_IP_GEN, clk, enable);
+}
+
+static int exynos5_clksrc_mask_maudio_ctrl(struct clk *clk, int enable)
+{
+	return s5p_gatectrl(EXYNOS5_CLKSRC_MASK_MAUDIO, clk, enable);
+}
+
+static int exynos5_clk_audss_ctrl(struct clk *clk, int enable)
+{
+	return s5p_gatectrl(EXYNOS_CLKGATE_AUDSS, clk, enable);
 }
 
 static int exynos5_clk_ip_mfc_ctrl(struct clk *clk, int enable)
@@ -714,6 +725,11 @@ static struct clk exynos5_init_clocks_off[] = {
 		.ctrlbit	= (1 << 3),
 	}, {
 		.name		= "iis",
+		.devname	= "samsung-i2s.0",
+		.enable		= exynos5_clk_audss_ctrl,
+		.ctrlbit	= (3 << 2),
+	}, {
+		.name		= "iis",
 		.devname	= "samsung-i2s.1",
 		.enable		= exynos5_clk_ip_peric_ctrl,
 		.ctrlbit	= (1 << 20),
@@ -722,6 +738,11 @@ static struct clk exynos5_init_clocks_off[] = {
 		.devname	= "samsung-i2s.2",
 		.enable		= exynos5_clk_ip_peric_ctrl,
 		.ctrlbit	= (1 << 21),
+	}, {
+		.name		= "pcm",
+		.devname	= "samsung-pcm.0",
+		.enable		= exynos5_clk_audss_ctrl,
+		.ctrlbit	= (3 << 4),
 	}, {
 		.name		= "pcm",
 		.devname	= "samsung-pcm.1",
@@ -963,6 +984,95 @@ static struct clk exynos5_init_clocks_on[] = {
 		.enable		= exynos5_clk_ip_peric_ctrl,
 		.ctrlbit	= (1 << 5),
 	}
+};
+
+static struct clk *clkset_sclk_audio0_list[] = {
+	[0] = NULL,
+	[1] = &clk_ext_xtal_mux,
+	[2] = &exynos5_clk_sclk_hdmi27m,
+	[3] = &exynos5_clk_sclk_dptxphy,
+	[4] = &exynos5_clk_sclk_usbphy,
+	[5] = &exynos5_clk_sclk_hdmiphy,
+	[6] = &exynos5_clk_mout_mpll.clk,
+	[7] = &exynos5_clk_mout_epll.clk,
+	[8] = &exynos5_clk_sclk_vpll.clk,
+	[9] = &exynos5_clk_mout_cpll.clk,
+};
+
+static struct clksrc_sources exynos5_clkset_sclk_audio0 = {
+	.sources	= clkset_sclk_audio0_list,
+	.nr_sources	= ARRAY_SIZE(clkset_sclk_audio0_list),
+};
+
+static struct clksrc_clk exynos5_clk_sclk_audio0 = {
+	.clk	= {
+		.name		= "sclk-audio0",
+		.enable		= exynos5_clksrc_mask_maudio_ctrl,
+		.ctrlbit	= (1 << 0),
+	},
+	.sources = &exynos5_clkset_sclk_audio0,
+	.reg_src = { .reg = EXYNOS5_CLKSRC_MAUDIO, .shift = 0, .size = 4 },
+	.reg_div = { .reg = EXYNOS5_CLKDIV_MAUDIO, .shift = 0, .size = 4 },
+};
+
+static struct clk *exynos5_clkset_mout_audss_list[] = {
+	&clk_ext_xtal_mux,
+	&clk_fout_epll,
+};
+
+static struct clksrc_sources clkset_mout_audss = {
+	.sources	= exynos5_clkset_mout_audss_list,
+	.nr_sources	= ARRAY_SIZE(exynos5_clkset_mout_audss_list),
+};
+
+static struct clksrc_clk exynos5_clk_mout_audss = {
+	.clk	= {
+		.name		= "mout_audss",
+	},
+	.sources = &clkset_mout_audss,
+	.reg_src = { .reg = EXYNOS_CLKSRC_AUDSS, .shift = 0, .size = 1 },
+};
+
+static struct clk *exynos5_clkset_sclk_i2s_list[] = {
+	[0] = &exynos5_clk_mout_audss.clk,
+	[1] = NULL,
+	[2] = &exynos5_clk_sclk_audio0.clk,
+};
+
+static struct clksrc_sources exynos5_clkset_sclk_i2s = {
+	.sources	= exynos5_clkset_sclk_i2s_list,
+	.nr_sources	= ARRAY_SIZE(exynos5_clkset_sclk_i2s_list),
+};
+
+static struct clksrc_clk exynos5_clk_sclk_i2s = {
+	.clk		= {
+		.name		= "sclk-i2s",
+		.devname	= "samsung-i2s.0",
+		.enable		= exynos5_clk_audss_ctrl,
+		.ctrlbit	= (1 << 3),
+	},
+	.sources = &exynos5_clkset_sclk_i2s,
+	.reg_src = { .reg = EXYNOS_CLKSRC_AUDSS, .shift = 2, .size = 2 },
+	.reg_div = { .reg = EXYNOS_CLKDIV_AUDSS, .shift = 8, .size = 4 },
+};
+
+static struct clksrc_clk exynos5_clk_dout_srp = {
+	.clk	= {
+		.name		= "dout_srp",
+		.parent		= &exynos5_clk_mout_audss.clk,
+	},
+	.reg_div = { .reg = EXYNOS_CLKDIV_AUDSS, .shift = 0, .size = 4 },
+};
+
+static struct clksrc_clk exynos5_clk_i2s_bus = {
+	.clk	= {
+		.name		= "i2s-bus",
+		.devname	= "samsung-i2s.0",
+		.parent		= &exynos5_clk_dout_srp.clk,
+		.enable		= exynos5_clk_audss_ctrl,
+		.ctrlbit	= (1 << 2),
+	},
+	.reg_div = { .reg = EXYNOS_CLKDIV_AUDSS, .shift = 4, .size = 4 },
 };
 
 static struct clk exynos5_clk_pdma0 = {
@@ -1351,6 +1461,9 @@ static struct clksrc_clk *exynos5_sysclks[] = {
 	&exynos5_clk_mdout_spi1,
 	&exynos5_clk_mdout_spi2,
 	&exynos5_clk_sclk_fimd1,
+	&exynos5_clk_mout_audss,
+	&exynos5_clk_dout_srp,
+	&exynos5_clk_sclk_audio0,
 };
 
 static struct clk *exynos5_clk_cdev[] = {
@@ -1369,6 +1482,8 @@ static struct clksrc_clk *exynos5_clksrc_cdev[] = {
 	&exynos5_clk_sclk_mmc1,
 	&exynos5_clk_sclk_mmc2,
 	&exynos5_clk_sclk_mmc3,
+	&exynos5_clk_i2s_bus,
+	&exynos5_clk_sclk_i2s,
 };
 
 static struct clk_lookup exynos5_clk_lookup[] = {
@@ -1387,6 +1502,8 @@ static struct clk_lookup exynos5_clk_lookup[] = {
 	CLKDEV_INIT("dma-pl330.1", "apb_pclk", &exynos5_clk_pdma1),
 	CLKDEV_INIT("dma-pl330.2", "apb_pclk", &exynos5_clk_mdma1),
 	CLKDEV_INIT("exynos5-fb.1", "lcd", &exynos5_clk_fimd1),
+	CLKDEV_INIT("samsung-i2s.0", "i2s_opclk0", &exynos5_clk_sclk_i2s.clk),
+	CLKDEV_INIT("samsung-i2s.0", "i2s_opclk1", &exynos5_clk_i2s_bus.clk),
 };
 
 static unsigned long exynos5_epll_get_rate(struct clk *clk)
