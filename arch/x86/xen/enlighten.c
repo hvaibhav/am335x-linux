@@ -105,6 +105,9 @@ RESERVE_BRK(shared_info_page_brk, PAGE_SIZE);
 __read_mostly int xen_have_vector_callback;
 EXPORT_SYMBOL_GPL(xen_have_vector_callback);
 
+#define xen_pvh_domain() (xen_pv_domain() && \
+			  xen_feature(XENFEAT_auto_translated_physmap) && \
+			  xen_have_vector_callback)
 /*
  * Point at some empty memory to start with. We map the real shared_info
  * page as soon as fixmap is up and running.
@@ -217,11 +220,27 @@ static void __init xen_banner(void)
 	struct xen_extraversion extra;
 	HYPERVISOR_xen_version(XENVER_extraversion, &extra);
 
-	printk(KERN_INFO "Booting paravirtualized kernel on %s\n",
-	       pv_info.name);
+	pr_info("Booting paravirtualized kernel %son %s\n",
+		xen_feature(XENFEAT_auto_translated_physmap) ?
+			"with PVH extensions " : "", pv_info.name);
 	printk(KERN_INFO "Xen version: %d.%d%s%s\n",
 	       version >> 16, version & 0xffff, extra.extraversion,
 	       xen_feature(XENFEAT_mmu_pt_update_preserve_ad) ? " (preserve-AD)" : "");
+}
+/* Check if running on Xen version (major, minor) or later */
+bool
+xen_running_on_version_or_later(unsigned int major, unsigned int minor)
+{
+	unsigned int version;
+
+	if (!xen_domain())
+		return false;
+
+	version = HYPERVISOR_xen_version(XENVER_version, NULL);
+	if ((((version >> 16) == major) && ((version & 0xffff) >= minor)) ||
+		((version >> 16) > major))
+		return true;
+	return false;
 }
 
 #define CPUID_THERM_POWER_LEAF 6
@@ -271,12 +290,15 @@ static void xen_cpuid(unsigned int *ax, unsigned int *bx,
 		break;
 	}
 
-	asm(XEN_EMULATE_PREFIX "cpuid"
-		: "=a" (*ax),
-		  "=b" (*bx),
-		  "=c" (*cx),
-		  "=d" (*dx)
-		: "0" (*ax), "2" (*cx));
+	if (xen_pvh_domain())
+		native_cpuid(ax, bx, cx, dx);
+	else
+		asm(XEN_EMULATE_PREFIX "cpuid"
+			: "=a" (*ax),
+			"=b" (*bx),
+			"=c" (*cx),
+			"=d" (*dx)
+			: "0" (*ax), "2" (*cx));
 
 	*bx &= maskebx;
 	*cx &= maskecx;
@@ -287,8 +309,7 @@ static void xen_cpuid(unsigned int *ax, unsigned int *bx,
 
 static bool __init xen_check_mwait(void)
 {
-#if defined(CONFIG_ACPI) && !defined(CONFIG_ACPI_PROCESSOR_AGGREGATOR) && \
-	!defined(CONFIG_ACPI_PROCESSOR_AGGREGATOR_MODULE)
+#ifdef CONFIG_ACPI
 	struct xen_platform_op op = {
 		.cmd			= XENPF_set_processor_pminfo,
 		.u.set_pminfo.id	= -1,
@@ -307,6 +328,13 @@ static bool __init xen_check_mwait(void)
 	 * from the hardware and hypercall.
 	 */
 	if (!xen_initial_domain())
+		return false;
+
+	/*
+	 * When running under platform earlier than Xen4.2, do not expose
+	 * mwait, to avoid the risk of loading native acpi pad driver
+	 */
+	if (!xen_running_on_version_or_later(4, 2))
 		return false;
 
 	ax = 1;
@@ -1053,6 +1081,10 @@ void xen_setup_shared_info(void)
 		HYPERVISOR_shared_info =
 			(struct shared_info *)__va(xen_start_info->shared_info);
 
+	/* PVH TBD/FIXME: vcpu info placement in phase 2 */
+	if (xen_pvh_domain())
+		return;
+
 #ifndef CONFIG_SMP
 	/* In UP this is as good a place as any to set up shared info */
 	xen_setup_vcpu_info_placement();
@@ -1290,6 +1322,11 @@ static const struct machine_ops xen_machine_ops __initconst = {
  */
 static void __init xen_setup_stackprotector(void)
 {
+	/* PVH TBD/FIXME: investigate setup_stack_canary_segment */
+	if (xen_feature(XENFEAT_auto_translated_physmap)) {
+		switch_to_new_gdt(0);
+		return;
+	}
 	pv_cpu_ops.write_gdt_entry = xen_write_gdt_entry_boot;
 	pv_cpu_ops.load_gdt = xen_load_gdt_boot;
 
@@ -1298,6 +1335,19 @@ static void __init xen_setup_stackprotector(void)
 
 	pv_cpu_ops.write_gdt_entry = xen_write_gdt_entry;
 	pv_cpu_ops.load_gdt = xen_load_gdt;
+}
+
+static void __init xen_pvh_early_guest_init(void)
+{
+	if (xen_feature(XENFEAT_hvm_callback_vector))
+		xen_have_vector_callback = 1;
+
+#ifdef CONFIG_X86_32
+	if (xen_feature(XENFEAT_auto_translated_physmap)) {
+		xen_raw_printk("ERROR: 32bit PVH guests are not supported\n");
+		BUG();
+	}
+#endif
 }
 
 /* First C function to be called on Xen boot */
@@ -1311,13 +1361,18 @@ asmlinkage void __init xen_start_kernel(void)
 
 	xen_domain_type = XEN_PV_DOMAIN;
 
+	xen_setup_features();
+	xen_pvh_early_guest_init();
 	xen_setup_machphys_mapping();
 
 	/* Install Xen paravirt ops */
 	pv_info = xen_info;
 	pv_init_ops = xen_init_ops;
-	pv_cpu_ops = xen_cpu_ops;
 	pv_apic_ops = xen_apic_ops;
+	if (xen_pvh_domain())
+		pv_cpu_ops.cpuid = xen_cpuid;
+	else
+		pv_cpu_ops = xen_cpu_ops;
 
 	x86_init.resources.memory_setup = xen_memory_setup;
 	x86_init.oem.arch_setup = xen_arch_setup;
@@ -1348,8 +1403,6 @@ asmlinkage void __init xen_start_kernel(void)
 
 	/* Work out if we support NX */
 	x86_configure_nx();
-
-	xen_setup_features();
 
 	/* Get mfn list */
 	if (!xen_feature(XENFEAT_auto_translated_physmap))
@@ -1421,14 +1474,18 @@ asmlinkage void __init xen_start_kernel(void)
 	/* set the limit of our address space */
 	xen_reserve_top();
 
-	/* We used to do this in xen_arch_setup, but that is too late on AMD
-	 * were early_cpu_init (run before ->arch_setup()) calls early_amd_init
-	 * which pokes 0xcf8 port.
-	 */
-	set_iopl.iopl = 1;
-	rc = HYPERVISOR_physdev_op(PHYSDEVOP_set_iopl, &set_iopl);
-	if (rc != 0)
-		xen_raw_printk("physdev_op failed %d\n", rc);
+	/* PVH: runs at default kernel iopl of 0 */
+	if (!xen_pvh_domain()) {
+		/*
+		 * We used to do this in xen_arch_setup, but that is too late
+		 * on AMD were early_cpu_init (run before ->arch_setup()) calls
+		 * early_amd_init which pokes 0xcf8 port.
+		 */
+		set_iopl.iopl = 1;
+		rc = HYPERVISOR_physdev_op(PHYSDEVOP_set_iopl, &set_iopl);
+		if (rc != 0)
+			xen_raw_printk("physdev_op failed %d\n", rc);
+	}
 
 #ifdef CONFIG_X86_32
 	/* set up basic CPUID stuff */
@@ -1495,51 +1552,74 @@ asmlinkage void __init xen_start_kernel(void)
 #endif
 }
 
-void __ref xen_hvm_init_shared_info(void)
-{
-	int cpu;
-	struct xen_add_to_physmap xatp;
-	static struct shared_info *shared_info_page = 0;
+#ifdef CONFIG_XEN_PVHVM
+#define HVM_SHARED_INFO_ADDR 0xFE700000UL
+static struct shared_info *xen_hvm_shared_info;
+static unsigned long xen_hvm_sip_phys;
+static int xen_major, xen_minor;
 
-	if (!shared_info_page)
-		shared_info_page = (struct shared_info *)
-			extend_brk(PAGE_SIZE, PAGE_SIZE);
+/* Use a pfn in RAM, may move to MMIO before kexec.
+ * This function also called for PVH dom0 */
+static void xen_hvm_connect_shared_info(unsigned long pfn)
+{
+	struct xen_add_to_physmap xatp;
+
 	xatp.domid = DOMID_SELF;
 	xatp.idx = 0;
 	xatp.space = XENMAPSPACE_shared_info;
-	xatp.gpfn = __pa(shared_info_page) >> PAGE_SHIFT;
+	xatp.gpfn = pfn;
 	if (HYPERVISOR_memory_op(XENMEM_add_to_physmap, &xatp))
 		BUG();
 
-	HYPERVISOR_shared_info = (struct shared_info *)shared_info_page;
+}
+static void __init xen_hvm_set_shared_info(struct shared_info *sip)
+{
+	int cpu;
+
+	HYPERVISOR_shared_info = sip;
 
 	/* xen_vcpu is a pointer to the vcpu_info struct in the shared_info
 	 * page, we use it in the event channel upcall and in some pvclock
 	 * related functions. We don't need the vcpu_info placement
 	 * optimizations because we don't use any pv_mmu or pv_irq op on
-	 * HVM.
-	 * When xen_hvm_init_shared_info is run at boot time only vcpu 0 is
-	 * online but xen_hvm_init_shared_info is run at resume time too and
-	 * in that case multiple vcpus might be online. */
-	for_each_online_cpu(cpu) {
+	 * HVM. */
+	for_each_online_cpu(cpu)
 		per_cpu(xen_vcpu, cpu) = &HYPERVISOR_shared_info->vcpu_info[cpu];
-	}
 }
 
-#ifdef CONFIG_XEN_PVHVM
+/* Reconnect the shared_info pfn to a (new) mfn */
+void xen_hvm_resume_shared_info(void)
+{
+	xen_hvm_connect_shared_info(xen_hvm_sip_phys >> PAGE_SHIFT);
+}
+
+/* Xen tools prior to Xen 4 do not provide a E820_Reserved area for guest usage.
+ * On these old tools the shared info page will be placed in E820_Ram.
+ * Xen 4 provides a E820_Reserved area at 0xFC000000, and this code expects
+ * that nothing is mapped up to HVM_SHARED_INFO_ADDR.
+ * Xen 4.3+ provides an explicit 1MB area at HVM_SHARED_INFO_ADDR which is used
+ * here for the shared info page. */
+static void __init xen_hvm_init_shared_info(void)
+{
+	if (xen_major < 4) {
+		xen_hvm_shared_info = extend_brk(PAGE_SIZE, PAGE_SIZE);
+		xen_hvm_sip_phys = __pa(xen_hvm_shared_info);
+	} else {
+		xen_hvm_sip_phys = HVM_SHARED_INFO_ADDR;
+		set_fixmap(FIX_PARAVIRT_BOOTMAP, xen_hvm_sip_phys);
+		xen_hvm_shared_info =
+		(struct shared_info *)fix_to_virt(FIX_PARAVIRT_BOOTMAP);
+	}
+	xen_hvm_connect_shared_info(xen_hvm_sip_phys >> PAGE_SHIFT);
+	xen_hvm_set_shared_info(xen_hvm_shared_info);
+}
+
 static void __init init_hvm_pv_info(void)
 {
-	int major, minor;
-	uint32_t eax, ebx, ecx, edx, pages, msr, base;
+	uint32_t ecx, edx, pages, msr, base;
 	u64 pfn;
 
 	base = xen_cpuid_base();
-	cpuid(base + 1, &eax, &ebx, &ecx, &edx);
-
-	major = eax >> 16;
-	minor = eax & 0xffff;
-	printk(KERN_INFO "Xen version %d.%d.\n", major, minor);
-
 	cpuid(base + 2, &pages, &msr, &ecx, &edx);
 
 	pfn = __pa(hypercall_page);
@@ -1590,11 +1670,21 @@ static void __init xen_hvm_guest_init(void)
 
 static bool __init xen_hvm_platform(void)
 {
+	uint32_t eax, ebx, ecx, edx, base;
+
 	if (xen_pv_domain())
 		return false;
 
-	if (!xen_cpuid_base())
+	base = xen_cpuid_base();
+	if (!base)
 		return false;
+
+	cpuid(base + 1, &eax, &ebx, &ecx, &edx);
+
+	xen_major = eax >> 16;
+	xen_minor = eax & 0xffff;
+
+	printk(KERN_INFO "Xen version %d.%d.\n", xen_major, xen_minor);
 
 	return true;
 }
