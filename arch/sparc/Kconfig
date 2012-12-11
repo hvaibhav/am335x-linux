@@ -21,6 +21,7 @@ config SPARC
 	select SYSCTL_EXCEPTION_TRACE
 	select ARCH_WANT_OPTIONAL_GPIOLIB
 	select ARCH_HAS_ATOMIC64_DEC_IF_POSITIVE
+	select ARCH_NO_VIRT_TO_BUS
 	select RTC_CLASS
 	select RTC_DRV_M48T59
 	select HAVE_DMA_ATTRS
@@ -143,9 +144,6 @@ config GENERIC_GPIO
 	bool
 	help
 	  Generic GPIO API support
-
-config ARCH_NO_VIRT_TO_BUS
-	def_bool y
 
 config ARCH_SUPPORTS_DEBUG_PAGEALLOC
 	def_bool y if SPARC64

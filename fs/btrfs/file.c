@@ -1346,8 +1346,7 @@ static noinline ssize_t __btrfs_buffered_write(struct file *file,
 
 		cond_resched();
 
-		balance_dirty_pages_ratelimited_nr(inode->i_mapping,
-						   dirty_pages);
+		balance_dirty_pages_ratelimited(inode->i_mapping);
 		if (dirty_pages < (root->leafsize >> PAGE_CACHE_SHIFT) + 1)
 			btrfs_btree_balance_dirty(root, 1);
 
@@ -2121,7 +2120,7 @@ out:
 	return ret;
 }
 
-static int find_desired_extent(struct inode *inode, loff_t *offset, int origin)
+static int find_desired_extent(struct inode *inode, loff_t *offset, int whence)
 {
 	struct btrfs_root *root = BTRFS_I(inode)->root;
 	struct extent_map *em;
@@ -2155,7 +2154,7 @@ static int find_desired_extent(struct inode *inode, loff_t *offset, int origin)
 	 * before the position we want in case there is outstanding delalloc
 	 * going on here.
 	 */
-	if (origin == SEEK_HOLE && start != 0) {
+	if (whence == SEEK_HOLE && start != 0) {
 		if (start <= root->sectorsize)
 			em = btrfs_get_extent_fiemap(inode, NULL, 0, 0,
 						     root->sectorsize, 0);
@@ -2189,13 +2188,13 @@ static int find_desired_extent(struct inode *inode, loff_t *offset, int origin)
 				}
 			}
 
-			if (origin == SEEK_HOLE) {
+			if (whence == SEEK_HOLE) {
 				*offset = start;
 				free_extent_map(em);
 				break;
 			}
 		} else {
-			if (origin == SEEK_DATA) {
+			if (whence == SEEK_DATA) {
 				if (em->block_start == EXTENT_MAP_DELALLOC) {
 					if (start >= inode->i_size) {
 						free_extent_map(em);
@@ -2232,16 +2231,16 @@ out:
 	return ret;
 }
 
-static loff_t btrfs_file_llseek(struct file *file, loff_t offset, int origin)
+static loff_t btrfs_file_llseek(struct file *file, loff_t offset, int whence)
 {
 	struct inode *inode = file->f_mapping->host;
 	int ret;
 
 	mutex_lock(&inode->i_mutex);
-	switch (origin) {
+	switch (whence) {
 	case SEEK_END:
 	case SEEK_CUR:
-		offset = generic_file_llseek(file, offset, origin);
+		offset = generic_file_llseek(file, offset, whence);
 		goto out;
 	case SEEK_DATA:
 	case SEEK_HOLE:
@@ -2250,7 +2249,7 @@ static loff_t btrfs_file_llseek(struct file *file, loff_t offset, int origin)
 			return -ENXIO;
 		}
 
-		ret = find_desired_extent(inode, &offset, origin);
+		ret = find_desired_extent(inode, &offset, whence);
 		if (ret) {
 			mutex_unlock(&inode->i_mutex);
 			return ret;

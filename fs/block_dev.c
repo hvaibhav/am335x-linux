@@ -321,7 +321,7 @@ static int blkdev_write_end(struct file *file, struct address_space *mapping,
  * for a block special file file->f_path.dentry->d_inode->i_size is zero
  * so we compute the size by hand (just as in block_read/write above)
  */
-static loff_t block_llseek(struct file *file, loff_t offset, int origin)
+static loff_t block_llseek(struct file *file, loff_t offset, int whence)
 {
 	struct inode *bd_inode = file->f_mapping->host;
 	loff_t size;
@@ -331,7 +331,7 @@ static loff_t block_llseek(struct file *file, loff_t offset, int origin)
 	size = i_size_read(bd_inode);
 
 	retval = -EINVAL;
-	switch (origin) {
+	switch (whence) {
 		case SEEK_END:
 			offset += size;
 			break;
@@ -616,11 +616,9 @@ void bd_forget(struct inode *inode)
 	struct block_device *bdev = NULL;
 
 	spin_lock(&bdev_lock);
-	if (inode->i_bdev) {
-		if (!sb_is_blkdev_sb(inode->i_sb))
-			bdev = inode->i_bdev;
-		__bd_forget(inode);
-	}
+	if (!sb_is_blkdev_sb(inode->i_sb))
+		bdev = inode->i_bdev;
+	__bd_forget(inode);
 	spin_unlock(&bdev_lock);
 
 	if (bdev)
@@ -994,6 +992,7 @@ int revalidate_disk(struct gendisk *disk)
 
 	mutex_lock(&bdev->bd_mutex);
 	check_disk_size_change(disk, bdev);
+	bdev->bd_invalidated = 0;
 	mutex_unlock(&bdev->bd_mutex);
 	bdput(bdev);
 	return ret;
