@@ -2614,10 +2614,6 @@ static int dgrp_tty_ioctl(struct tty_struct *tty, unsigned int cmd,
 		 */
 		return 0;
 
-	case TIOCGSOFTCAR:
-		return put_user(C_CLOCAL(tty) ? 1 : 0,
-				(unsigned long __user *) arg);
-
 	case TIOCMGET:
 		rc = access_ok(VERIFY_WRITE, (void __user *) arg,
 				 sizeof(unsigned int));

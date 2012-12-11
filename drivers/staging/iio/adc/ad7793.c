@@ -441,7 +441,7 @@ static const struct ad7793_chip_info ad7793_chip_info_tbl[] = {
 	},
 };
 
-static int __devinit ad7793_probe(struct spi_device *spi)
+static int ad7793_probe(struct spi_device *spi)
 {
 	const struct ad7793_platform_data *pdata = spi->dev.platform_data;
 	struct ad7793_state *st;
@@ -522,7 +522,7 @@ error_put_reg:
 	return ret;
 }
 
-static int __devexit ad7793_remove(struct spi_device *spi)
+static int ad7793_remove(struct spi_device *spi)
 {
 	struct iio_dev *indio_dev = spi_get_drvdata(spi);
 	struct ad7793_state *st = iio_priv(indio_dev);
@@ -556,7 +556,7 @@ static struct spi_driver ad7793_driver = {
 		.owner	= THIS_MODULE,
 	},
 	.probe		= ad7793_probe,
-	.remove		= __devexit_p(ad7793_remove),
+	.remove		= ad7793_remove,
 	.id_table	= ad7793_id,
 };
 module_spi_driver(ad7793_driver);
