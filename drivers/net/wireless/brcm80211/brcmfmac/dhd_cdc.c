@@ -23,8 +23,6 @@
 
 #include <linux/types.h>
 #include <linux/netdevice.h>
-#include <linux/sched.h>
-#include <defs.h>
 
 #include <brcmu_utils.h>
 #include <brcmu_wifi.h>
@@ -277,76 +275,6 @@ done:
 	return ret;
 }
 
-int
-brcmf_proto_dcmd(struct brcmf_pub *drvr, int ifidx, struct brcmf_dcmd *dcmd,
-		  int len)
-{
-	struct brcmf_proto *prot = drvr->prot;
-	int ret = -1;
-
-	if (drvr->bus_if->state == BRCMF_BUS_DOWN) {
-		brcmf_dbg(ERROR, "bus is down. we have nothing to do.\n");
-		return ret;
-	}
-	mutex_lock(&drvr->proto_block);
-
-	brcmf_dbg(TRACE, "Enter\n");
-
-	if (len > BRCMF_DCMD_MAXLEN)
-		goto done;
-
-	if (prot->pending == true) {
-		brcmf_dbg(TRACE, "CDC packet is pending!!!! cmd=0x%x (%lu) lastcmd=0x%x (%lu)\n",
-			  dcmd->cmd, (unsigned long)dcmd->cmd, prot->lastcmd,
-			  (unsigned long)prot->lastcmd);
-		if (dcmd->cmd == BRCMF_C_SET_VAR ||
-		    dcmd->cmd == BRCMF_C_GET_VAR)
-			brcmf_dbg(TRACE, "iovar cmd=%s\n", (char *)dcmd->buf);
-
-		goto done;
-	}
-
-	prot->pending = true;
-	prot->lastcmd = dcmd->cmd;
-	if (dcmd->set)
-		ret = brcmf_proto_cdc_set_dcmd(drvr, ifidx, dcmd->cmd,
-						   dcmd->buf, len);
-	else {
-		ret = brcmf_proto_cdc_query_dcmd(drvr, ifidx, dcmd->cmd,
-						     dcmd->buf, len);
-		if (ret > 0)
-			dcmd->used = ret -
-					sizeof(struct brcmf_proto_cdc_dcmd);
-	}
-
-	if (ret >= 0)
-		ret = 0;
-	else {
-		struct brcmf_proto_cdc_dcmd *msg = &prot->msg;
-		/* len == needed when set/query fails from dongle */
-		dcmd->needed = le32_to_cpu(msg->len);
-	}
-
-	/* Intercept the wme_dp dongle cmd here */
-	if (!ret && dcmd->cmd == BRCMF_C_SET_VAR &&
-	    !strcmp(dcmd->buf, "wme_dp")) {
-		int slen;
-		__le32 val = 0;
-
-		slen = strlen("wme_dp") + 1;
-		if (len >= (int)(slen + sizeof(int)))
-			memcpy(&val, (char *)dcmd->buf + slen, sizeof(int));
-		drvr->wme_dp = (u8) le32_to_cpu(val);
-	}
-
-	prot->pending = false;
-
-done:
-	mutex_unlock(&drvr->proto_block);
-
-	return ret;
-}
-
 static bool pkt_sum_needed(struct sk_buff *skb)
 {
 	return skb->ip_summed == CHECKSUM_PARTIAL;
@@ -456,35 +384,6 @@ void brcmf_proto_detach(struct brcmf_pub *drvr)
 {
 	kfree(drvr->prot);
 	drvr->prot = NULL;
-}
-
-int brcmf_proto_init(struct brcmf_pub *drvr)
-{
-	int ret = 0;
-	char buf[128];
-
-	brcmf_dbg(TRACE, "Enter\n");
-
-	mutex_lock(&drvr->proto_block);
-
-	/* Get the device MAC address */
-	strcpy(buf, "cur_etheraddr");
-	ret = brcmf_proto_cdc_query_dcmd(drvr, 0, BRCMF_C_GET_VAR,
-					  buf, sizeof(buf));
-	if (ret < 0) {
-		mutex_unlock(&drvr->proto_block);
-		return ret;
-	}
-	memcpy(drvr->mac, buf, ETH_ALEN);
-
-	mutex_unlock(&drvr->proto_block);
-
-	ret = brcmf_c_preinit_dcmds(drvr);
-
-	/* Always assumes wl for now */
-	drvr->iswl = true;
-
-	return ret;
 }
 
 void brcmf_proto_stop(struct brcmf_pub *drvr)

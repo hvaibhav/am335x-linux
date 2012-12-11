@@ -45,7 +45,6 @@ struct brcmf_bus_dcmd {
 
 /* interface structure between common and bus layer */
 struct brcmf_bus {
-	u8 type;		/* bus type */
 	union {
 		struct brcmf_sdio_dev *sdio;
 		struct brcmf_usbdev *usb;
@@ -85,7 +84,7 @@ extern bool brcmf_c_prec_enq(struct device *dev, struct pktq *q,
 			 struct sk_buff *pkt, int prec);
 
 /* Receive frame for delivery to OS.  Callee disposes of rxp. */
-extern void brcmf_rx_frame(struct device *dev, int ifidx,
+extern void brcmf_rx_frame(struct device *dev, u8 ifidx,
 			   struct sk_buff_head *rxlist);
 static inline void brcmf_rx_packet(struct device *dev, int ifidx,
 				   struct sk_buff *pkt)
@@ -110,9 +109,6 @@ extern void brcmf_txcomplete(struct device *dev, struct sk_buff *txp,
 			     bool success);
 
 extern int brcmf_bus_start(struct device *dev);
-
-extern int brcmf_add_if(struct device *dev, int ifidx,
-			char *name, u8 *mac_addr);
 
 #ifdef CONFIG_BRCMFMAC_SDIO
 extern void brcmf_sdio_exit(void);

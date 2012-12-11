@@ -2153,9 +2153,6 @@ static bool ath9k_hw_set_power_awake(struct ath_hw *ah)
 		    AR_RTC_FORCE_WAKE_EN);
 	udelay(50);
 
-	if (ath9k_hw_mci_is_enabled(ah))
-		ar9003_mci_set_power_awake(ah);
-
 	for (i = POWER_UP_TIME / 50; i > 0; i--) {
 		val = REG_READ(ah, AR_RTC_STATUS) & AR_RTC_STATUS_M;
 		if (val == AR_RTC_STATUS_ON)
@@ -2170,6 +2167,9 @@ static bool ath9k_hw_set_power_awake(struct ath_hw *ah)
 			POWER_UP_TIME / 20);
 		return false;
 	}
+
+	if (ath9k_hw_mci_is_enabled(ah))
+		ar9003_mci_set_power_awake(ah);
 
 	REG_CLR_BIT(ah, AR_STA_ID1, AR_STA_ID1_PWR_SAV);
 
@@ -2559,11 +2559,6 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah)
 		 */
 		if ((ant_div_ctl1 >> 0x6) == 0x3)
 			pCap->hw_caps |= ATH9K_HW_CAP_ANT_DIV_COMB;
-	}
-
-	if (AR_SREV_9485_10(ah)) {
-		pCap->pcie_lcr_extsync_en = true;
-		pCap->pcie_lcr_offset = 0x80;
 	}
 
 	if (ath9k_hw_dfs_tested(ah))

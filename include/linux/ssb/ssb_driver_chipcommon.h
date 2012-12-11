@@ -592,6 +592,8 @@ struct ssb_chipcommon {
 	u16 fast_pwrup_delay;
 	spinlock_t gpio_lock;
 	struct ssb_chipcommon_pmu pmu;
+	u32 ticks_per_ms;
+	u32 max_timer_ms;
 };
 
 static inline bool ssb_chipco_available(struct ssb_chipcommon *cc)
@@ -631,8 +633,7 @@ enum ssb_clkmode {
 extern void ssb_chipco_set_clockmode(struct ssb_chipcommon *cc,
 				     enum ssb_clkmode mode);
 
-extern void ssb_chipco_watchdog_timer_set(struct ssb_chipcommon *cc,
-					  u32 ticks);
+extern u32 ssb_chipco_watchdog_timer_set(struct ssb_chipcommon *cc, u32 ticks);
 
 void ssb_chipco_irq_mask(struct ssb_chipcommon *cc, u32 mask, u32 value);
 

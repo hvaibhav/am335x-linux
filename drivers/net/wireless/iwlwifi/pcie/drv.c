@@ -69,7 +69,6 @@
 
 #include "iwl-trans.h"
 #include "iwl-drv.h"
-#include "iwl-trans.h"
 
 #include "cfg.h"
 #include "internal.h"
@@ -294,7 +293,7 @@ out_free_trans:
 	return -EFAULT;
 }
 
-static void __devexit iwl_pci_remove(struct pci_dev *pdev)
+static void iwl_pci_remove(struct pci_dev *pdev)
 {
 	struct iwl_trans *trans = pci_get_drvdata(pdev);
 	struct iwl_trans_pcie *trans_pcie = IWL_TRANS_GET_PCIE_TRANS(trans);
@@ -353,7 +352,7 @@ static struct pci_driver iwl_pci_driver = {
 	.name = DRV_NAME,
 	.id_table = iwl_hw_card_ids,
 	.probe = iwl_pci_probe,
-	.remove = __devexit_p(iwl_pci_remove),
+	.remove = iwl_pci_remove,
 	.driver.pm = IWL_PM_OPS,
 };
 
