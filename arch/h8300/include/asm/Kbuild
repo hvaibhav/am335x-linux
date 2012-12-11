@@ -4,3 +4,4 @@ generic-y += clkdev.h
 generic-y += exec.h
 generic-y += mmu.h
 generic-y += module.h
+generic-y += trace_clock.h

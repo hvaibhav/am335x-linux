@@ -109,6 +109,8 @@ extern void update_cpu_load_nohz(void);
 
 extern unsigned long get_parent_ip(unsigned long addr);
 
+extern void dump_cpu_task(int cpu);
+
 struct seq_file;
 struct cfs_rq;
 struct task_group;
@@ -434,13 +436,28 @@ struct cpu_itimer {
 };
 
 /**
+ * struct cputime - snaphsot of system and user cputime
+ * @utime: time spent in user mode
+ * @stime: time spent in system mode
+ *
+ * Gathers a generic snapshot of user and system time.
+ */
+struct cputime {
+	cputime_t utime;
+	cputime_t stime;
+};
+
+/**
  * struct task_cputime - collected CPU time counts
  * @utime:		time spent in user mode, in &cputime_t units
  * @stime:		time spent in kernel mode, in &cputime_t units
  * @sum_exec_runtime:	total time spent on the CPU, in nanoseconds
  *
- * This structure groups together three kinds of CPU time that are
- * tracked for threads and thread groups.  Most things considering
+ * This is an extension of struct cputime that includes the total runtime
+ * spent by the task from the scheduler point of view.
+ *
+ * As a result, this structure groups together three kinds of CPU time
+ * that are tracked for threads and thread groups.  Most things considering
  * CPU time want to group these counts together and treat all three
  * of them in parallel.
  */
@@ -581,7 +598,7 @@ struct signal_struct {
 	cputime_t gtime;
 	cputime_t cgtime;
 #ifndef CONFIG_VIRT_CPU_ACCOUNTING
-	cputime_t prev_utime, prev_stime;
+	struct cputime prev_cputime;
 #endif
 	unsigned long nvcsw, nivcsw, cnvcsw, cnivcsw;
 	unsigned long min_flt, maj_flt, cmin_flt, cmaj_flt;
@@ -823,6 +840,7 @@ enum cpu_idle_type {
 #define SD_ASYM_PACKING		0x0800  /* Place busy groups earlier in the domain */
 #define SD_PREFER_SIBLING	0x1000	/* Prefer to place tasks in a sibling domain */
 #define SD_OVERLAP		0x2000	/* sched_domains of this level overlap */
+#define SD_NUMA			0x4000	/* cross-node balancing */
 
 extern int __weak arch_sd_sibiling_asym_packing(void);
 
@@ -1061,6 +1079,7 @@ struct sched_class {
 
 #ifdef CONFIG_SMP
 	int  (*select_task_rq)(struct task_struct *p, int sd_flag, int flags);
+	void (*migrate_task_rq)(struct task_struct *p, int next_cpu);
 
 	void (*pre_schedule) (struct rq *this_rq, struct task_struct *task);
 	void (*post_schedule) (struct rq *this_rq);
@@ -1093,6 +1112,18 @@ struct sched_class {
 
 struct load_weight {
 	unsigned long weight, inv_weight;
+};
+
+struct sched_avg {
+	/*
+	 * These sums represent an infinite geometric series and so are bound
+	 * above by 1024/(1-y).  Thus we only need a u32 to store them for for all
+	 * choices of y < 1-2^(-32)*1024.
+	 */
+	u32 runnable_avg_sum, runnable_avg_period;
+	u64 last_runnable_update;
+	s64 decay_count;
+	unsigned long load_avg_contrib;
 };
 
 #ifdef CONFIG_SCHEDSTATS
@@ -1154,6 +1185,15 @@ struct sched_entity {
 	struct cfs_rq		*cfs_rq;
 	/* rq "owned" by this entity/group: */
 	struct cfs_rq		*my_q;
+#endif
+/*
+ * Load-tracking only depends on SMP, FAIR_GROUP_SCHED dependency below may be
+ * removed when useful for applications beyond shares distribution (e.g.
+ * load-balance).
+ */
+#if defined(CONFIG_SMP) && defined(CONFIG_FAIR_GROUP_SCHED)
+	/* Per-entity load-tracking */
+	struct sched_avg	avg;
 #endif
 };
 
@@ -1318,7 +1358,7 @@ struct task_struct {
 	cputime_t utime, stime, utimescaled, stimescaled;
 	cputime_t gtime;
 #ifndef CONFIG_VIRT_CPU_ACCOUNTING
-	cputime_t prev_utime, prev_stime;
+	struct cputime prev_cputime;
 #endif
 	unsigned long nvcsw, nivcsw; /* context switch counts */
 	struct timespec start_time; 		/* monotonic time */
@@ -1479,6 +1519,31 @@ struct task_struct {
 	short il_next;
 	short pref_node_fork;
 #endif
+	int wake_cpu;
+#ifdef CONFIG_NUMA_BALANCING
+	int numa_shared;
+	int numa_shared_enqueue;
+	int numa_max_node;
+	int numa_scan_seq;
+	unsigned long numa_scan_ts_secs;
+	int numa_migrate_seq;
+	unsigned int numa_scan_period;
+	u64 node_stamp;			/* migration stamp  */
+	unsigned long convergence_strength;
+	int convergence_node;
+	unsigned long numa_weight;
+	unsigned long *numa_faults;
+	unsigned long *numa_faults_curr;
+	struct callback_head numa_scan_work;
+	struct callback_head numa_placement_work;
+
+	struct task_struct *shared_buddy, *shared_buddy_curr;
+	unsigned long shared_buddy_faults, shared_buddy_faults_curr;
+	int ideal_cpu, ideal_cpu_curr, ideal_cpu_candidate;
+	struct mempolicy numa_policy;
+
+#endif /* CONFIG_NUMA_BALANCING */
+
 	struct rcu_head rcu;
 
 	/*
@@ -1552,6 +1617,26 @@ struct task_struct {
 
 /* Future-safe accessor for struct task_struct's cpus_allowed. */
 #define tsk_cpus_allowed(tsk) (&(tsk)->cpus_allowed)
+
+#ifdef CONFIG_NUMA_BALANCING
+extern void task_numa_fault(unsigned long addr, int node, int cpupid, int pages, bool migrated);
+#else
+static inline void task_numa_fault(unsigned long addr, int node, int cpupid, int pages, bool migrated) { }
+#endif /* CONFIG_NUMA_BALANCING */
+
+/*
+ * -1: non-NUMA task
+ *  0: NUMA task with a dominantly 'private' working set
+ *  1: NUMA task with a dominantly 'shared' working set
+ */
+static inline int task_numa_shared(struct task_struct *p)
+{
+#ifdef CONFIG_NUMA_BALANCING
+	return p->numa_shared;
+#else
+	return -1;
+#endif
+}
 
 /*
  * Priority of a process goes from 0..MAX_PRIO-1, valid RT
@@ -1729,8 +1814,8 @@ static inline void put_task_struct(struct task_struct *t)
 		__put_task_struct(t);
 }
 
-extern void task_times(struct task_struct *p, cputime_t *ut, cputime_t *st);
-extern void thread_group_times(struct task_struct *p, cputime_t *ut, cputime_t *st);
+extern void task_cputime_adjusted(struct task_struct *p, cputime_t *ut, cputime_t *st);
+extern void thread_group_cputime_adjusted(struct task_struct *p, cputime_t *ut, cputime_t *st);
 
 /*
  * Per process flags
@@ -1843,14 +1928,6 @@ static inline void rcu_copy_process(struct task_struct *p)
 }
 
 #endif
-
-static inline void rcu_switch(struct task_struct *prev,
-			      struct task_struct *next)
-{
-#ifdef CONFIG_RCU_USER_QS
-	rcu_user_hooks_switch(prev, next);
-#endif
-}
 
 static inline void tsk_restore_flags(struct task_struct *task,
 				unsigned long orig_flags, unsigned long flags)
@@ -1990,6 +2067,15 @@ enum sched_tunable_scaling {
 };
 extern enum sched_tunable_scaling sysctl_sched_tunable_scaling;
 
+extern unsigned int sysctl_sched_numa_scan_delay;
+extern unsigned int sysctl_sched_numa_scan_period_min;
+extern unsigned int sysctl_sched_numa_scan_period_max;
+extern unsigned int sysctl_sched_numa_scan_size_min;
+extern unsigned int sysctl_sched_numa_scan_size_max;
+extern unsigned int sysctl_sched_numa_rss_threshold;
+extern unsigned int sysctl_sched_numa_settle_count;
+extern unsigned int sysctl_sched_numa_fault_weight;
+
 #ifdef CONFIG_SCHED_DEBUG
 extern unsigned int sysctl_sched_migration_cost;
 extern unsigned int sysctl_sched_nr_migrate;
@@ -2000,18 +2086,17 @@ extern unsigned int sysctl_sched_shares_window;
 int sched_proc_update_handler(struct ctl_table *table, int write,
 		void __user *buffer, size_t *length,
 		loff_t *ppos);
-#endif
-#ifdef CONFIG_SCHED_DEBUG
+
 static inline unsigned int get_sysctl_timer_migration(void)
 {
 	return sysctl_timer_migration;
 }
-#else
+#else /* CONFIG_SCHED_DEBUG */
 static inline unsigned int get_sysctl_timer_migration(void)
 {
 	return 1;
 }
-#endif
+#endif /* CONFIG_SCHED_DEBUG */
 extern unsigned int sysctl_sched_rt_period;
 extern int sysctl_sched_rt_runtime;
 

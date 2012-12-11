@@ -6,54 +6,17 @@
 #define _LINUX_MEMPOLICY_H 1
 
 
+#include <linux/mm_types.h>
 #include <linux/mmzone.h>
 #include <linux/slab.h>
 #include <linux/rbtree.h>
 #include <linux/spinlock.h>
-#include <linux/nodemask.h>
 #include <linux/pagemap.h>
 #include <uapi/linux/mempolicy.h>
 
 struct mm_struct;
 
 #ifdef CONFIG_NUMA
-
-/*
- * Describe a memory policy.
- *
- * A mempolicy can be either associated with a process or with a VMA.
- * For VMA related allocations the VMA policy is preferred, otherwise
- * the process policy is used. Interrupts ignore the memory policy
- * of the current process.
- *
- * Locking policy for interlave:
- * In process context there is no locking because only the process accesses
- * its own state. All vma manipulation is somewhat protected by a down_read on
- * mmap_sem.
- *
- * Freeing policy:
- * Mempolicy objects are reference counted.  A mempolicy will be freed when
- * mpol_put() decrements the reference count to zero.
- *
- * Duplicating policy objects:
- * mpol_dup() allocates a new mempolicy and copies the specified mempolicy
- * to the new storage.  The reference count of the new object is initialized
- * to 1, representing the caller of mpol_dup().
- */
-struct mempolicy {
-	atomic_t refcnt;
-	unsigned short mode; 	/* See MPOL_* above */
-	unsigned short flags;	/* See set_mempolicy() MPOL_F_* above */
-	union {
-		short 		 preferred_node; /* preferred */
-		nodemask_t	 nodes;		/* interleave/bind */
-		/* undefined for default */
-	} v;
-	union {
-		nodemask_t cpuset_mems_allowed;	/* relative to these nodes */
-		nodemask_t user_nodemask;	/* nodemask passed by user */
-	} w;
-};
 
 /*
  * Support for managing mempolicy data objects (clone, copy, destroy)
@@ -188,6 +151,8 @@ static inline int vma_migratable(struct vm_area_struct *vma)
 	return 1;
 }
 
+extern int mpol_misplaced(struct page *page, struct vm_area_struct *vma, unsigned long addr, int shift);
+
 #else
 
 struct mempolicy {};
@@ -305,6 +270,12 @@ static inline int mpol_to_str(char *buffer, int maxlen, struct mempolicy *pol,
 				int no_context)
 {
 	return 0;
+}
+
+static inline int mpol_misplaced(struct page *page, struct vm_area_struct *vma,
+				 unsigned long address, int shift)
+{
+	return -1; /* no node preference */
 }
 
 #endif /* CONFIG_NUMA */

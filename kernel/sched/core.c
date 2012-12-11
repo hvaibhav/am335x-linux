@@ -39,6 +39,7 @@
 #include <linux/kernel_stat.h>
 #include <linux/debug_locks.h>
 #include <linux/perf_event.h>
+#include <linux/task_work.h>
 #include <linux/security.h>
 #include <linux/notifier.h>
 #include <linux/profile.h>
@@ -72,6 +73,8 @@
 #include <linux/slab.h>
 #include <linux/init_task.h>
 #include <linux/binfmts.h>
+#include <uapi/linux/mempolicy.h>
+#include <linux/context_tracking.h>
 
 #include <asm/switch_to.h>
 #include <asm/tlb.h>
@@ -130,9 +133,9 @@ void update_rq_clock(struct rq *rq)
  */
 
 #define SCHED_FEAT(name, enabled)	\
-	(1UL << __SCHED_FEAT_##name) * enabled |
+	(1ULL << __SCHED_FEAT_##name) * enabled |
 
-const_debug unsigned int sysctl_sched_features =
+const_debug u64 sysctl_sched_features =
 #include "features.h"
 	0;
 
@@ -952,6 +955,8 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 	trace_sched_migrate_task(p, new_cpu);
 
 	if (task_cpu(p) != new_cpu) {
+		if (p->sched_class->migrate_task_rq)
+			p->sched_class->migrate_task_rq(p, new_cpu);
 		p->se.nr_migrations++;
 		perf_sw_event(PERF_COUNT_SW_CPU_MIGRATIONS, 1, NULL, 0);
 	}
@@ -960,8 +965,8 @@ void set_task_cpu(struct task_struct *p, unsigned int new_cpu)
 }
 
 struct migration_arg {
-	struct task_struct *task;
-	int dest_cpu;
+	struct task_struct	*task;
+	int			dest_cpu;
 };
 
 static int migration_cpu_stop(void *data);
@@ -1524,6 +1529,15 @@ static void __sched_fork(struct task_struct *p)
 	p->se.vruntime			= 0;
 	INIT_LIST_HEAD(&p->se.group_node);
 
+/*
+ * Load-tracking only depends on SMP, FAIR_GROUP_SCHED dependency below may be
+ * removed when useful for applications beyond shares distribution (e.g.
+ * load-balance).
+ */
+#if defined(CONFIG_SMP) && defined(CONFIG_FAIR_GROUP_SCHED)
+	p->se.avg.runnable_avg_period = 0;
+	p->se.avg.runnable_avg_sum = 0;
+#endif
 #ifdef CONFIG_SCHEDSTATS
 	memset(&p->se.statistics, 0, sizeof(p->se.statistics));
 #endif
@@ -1533,6 +1547,56 @@ static void __sched_fork(struct task_struct *p)
 #ifdef CONFIG_PREEMPT_NOTIFIERS
 	INIT_HLIST_HEAD(&p->preempt_notifiers);
 #endif
+	p->wake_cpu = -1;
+
+#ifdef CONFIG_NUMA_BALANCING
+	if (p->mm && atomic_read(&p->mm->mm_users) == 1) {
+		p->mm->numa_next_scan = jiffies;
+		p->mm->numa_scan_seq = 0;
+	}
+
+	p->numa_shared = -1;
+	p->numa_weight = 0;
+	p->numa_shared_enqueue = -1;
+	p->numa_max_node = -1;
+	p->node_stamp = 0ULL;
+	p->convergence_strength		= 0;
+	p->convergence_node		= -1;
+	p->numa_scan_seq = p->mm ? p->mm->numa_scan_seq : 0;
+	p->numa_migrate_seq = 2;
+	p->numa_faults = NULL;
+	p->numa_scan_period = sysctl_sched_numa_scan_delay;
+
+	p->shared_buddy = NULL;
+	p->shared_buddy_faults = 0;
+	p->ideal_cpu = -1;
+	p->ideal_cpu_curr = -1;
+	atomic_set(&p->numa_policy.refcnt, 1);
+	p->numa_policy.mode = MPOL_INTERLEAVE;
+	p->numa_policy.flags = MPOL_F_MOF;
+	p->numa_policy.v.preferred_node = 0;
+	p->numa_policy.v.nodes = node_online_map;
+
+	init_task_work(&p->numa_scan_work, task_numa_scan_work);
+	p->numa_scan_work.next = &p->numa_scan_work;
+
+	init_task_work(&p->numa_placement_work, task_numa_placement_work);
+	p->numa_placement_work.next = &p->numa_placement_work;
+
+	if (p->mm) {
+		int entries = 2*nr_node_ids;
+		int size = sizeof(*p->numa_faults) * entries;
+
+		/*
+		 * For efficiency reasons we allocate ->numa_faults[]
+		 * and ->numa_faults_curr[] at once and split the
+		 * buffer we get. They are separate otherwise.
+		 */
+		p->numa_faults = kzalloc(2*size, GFP_KERNEL);
+		if (p->numa_faults)
+			p->numa_faults_curr = p->numa_faults + entries;
+	}
+#endif /* CONFIG_NUMA_BALANCING */
 }
 
 /*
@@ -1541,9 +1605,11 @@ static void __sched_fork(struct task_struct *p)
 void sched_fork(struct task_struct *p)
 {
 	unsigned long flags;
-	int cpu = get_cpu();
+	int cpu;
 
 	__sched_fork(p);
+
+	cpu = get_cpu();
 	/*
 	 * We mark the process as running here. This guarantees that
 	 * nobody will actually run it, and a signal or other external
@@ -1774,6 +1840,7 @@ static void finish_task_switch(struct rq *rq, struct task_struct *prev)
 	if (mm)
 		mmdrop(mm);
 	if (unlikely(prev_state == TASK_DEAD)) {
+		task_numa_free(prev);
 		/*
 		 * Remove function-return probe instances associated with this
 		 * task and put them back on the free list.
@@ -1886,8 +1953,8 @@ context_switch(struct rq *rq, struct task_struct *prev,
 	spin_release(&rq->lock.dep_map, 1, _THIS_IP_);
 #endif
 
+	context_tracking_task_switch(prev, next);
 	/* Here we just switch the register state and the stack. */
-	rcu_switch(prev, next);
 	switch_to(prev, next, prev);
 
 	barrier();
@@ -2772,6 +2839,8 @@ pick_next_task(struct rq *rq)
 	}
 
 	BUG(); /* the idle class will always have a runnable task */
+
+	return NULL; /* if BUG() is a NOP then return NULL to crash the scheduler */
 }
 
 /*
@@ -2911,7 +2980,7 @@ asmlinkage void __sched schedule(void)
 }
 EXPORT_SYMBOL(schedule);
 
-#ifdef CONFIG_RCU_USER_QS
+#ifdef CONFIG_CONTEXT_TRACKING
 asmlinkage void __sched schedule_user(void)
 {
 	/*
@@ -2920,9 +2989,9 @@ asmlinkage void __sched schedule_user(void)
 	 * we haven't yet exited the RCU idle mode. Do it here manually until
 	 * we find a better solution.
 	 */
-	rcu_user_exit();
+	user_exit();
 	schedule();
-	rcu_user_enter();
+	user_enter();
 }
 #endif
 
@@ -3027,7 +3096,7 @@ asmlinkage void __sched preempt_schedule_irq(void)
 	/* Catch callers which need to be fixed */
 	BUG_ON(ti->preempt_count || !irqs_disabled());
 
-	rcu_user_exit();
+	user_exit();
 	do {
 		add_preempt_count(PREEMPT_ACTIVE);
 		local_irq_enable();
@@ -4474,6 +4543,7 @@ static const char stat_nam[] = TASK_STATE_TO_CHAR_STR;
 void sched_show_task(struct task_struct *p)
 {
 	unsigned long free = 0;
+	int ppid;
 	unsigned state;
 
 	state = p->state ? __ffs(p->state) + 1 : 0;
@@ -4493,8 +4563,11 @@ void sched_show_task(struct task_struct *p)
 #ifdef CONFIG_DEBUG_STACK_USAGE
 	free = stack_not_used(p);
 #endif
+	rcu_read_lock();
+	ppid = task_pid_nr(rcu_dereference(p->real_parent));
+	rcu_read_unlock();
 	printk(KERN_CONT "%5lu %5d %6d 0x%08lx\n", free,
-		task_pid_nr(p), task_pid_nr(rcu_dereference(p->real_parent)),
+		task_pid_nr(p), ppid,
 		(unsigned long)task_thread_info(p)->flags);
 
 	show_stack(p, NULL);
@@ -4601,6 +4674,12 @@ void do_set_cpus_allowed(struct task_struct *p, const struct cpumask *new_mask)
 
 	cpumask_copy(&p->cpus_allowed, new_mask);
 	p->nr_cpus_allowed = cpumask_weight(new_mask);
+
+#ifdef CONFIG_NUMA_BALANCING
+	/* Don't disturb hard-bound tasks: */
+	if (sched_feat(NUMA_EXCLUDE_AFFINE) && (p->nr_cpus_allowed != num_online_cpus()))
+		p->numa_shared = -1;
+#endif
 }
 
 /*
@@ -4710,6 +4789,8 @@ static int __migrate_task(struct task_struct *p, int src_cpu, int dest_cpu)
 		set_task_cpu(p, dest_cpu);
 		enqueue_task(rq_dest, p, 0);
 		check_preempt_curr(rq_dest, p, 0);
+	} else {
+		p->wake_cpu = dest_cpu;
 	}
 done:
 	ret = 1;
@@ -4717,6 +4798,54 @@ fail:
 	double_rq_unlock(rq_src, rq_dest);
 	raw_spin_unlock(&p->pi_lock);
 	return ret;
+}
+
+/*
+ * sched_rebalance_to()
+ *
+ * Active load-balance to a target CPU.
+ */
+void sched_rebalance_to(int dst_cpu, int flip_tasks)
+{
+	struct task_struct *p_src = current;
+	struct task_struct *p_dst;
+	int src_cpu = raw_smp_processor_id();
+	struct migration_arg arg = { p_src, dst_cpu };
+	struct rq *dst_rq;
+
+	if (!cpumask_test_cpu(dst_cpu, tsk_cpus_allowed(p_src)))
+		return;
+
+	if (flip_tasks) {
+		dst_rq = cpu_rq(dst_cpu);
+
+		local_irq_disable();
+		raw_spin_lock(&dst_rq->lock);
+
+		p_dst = dst_rq->curr;
+		get_task_struct(p_dst);
+
+		raw_spin_unlock(&dst_rq->lock);
+		local_irq_enable();
+	}
+
+	stop_one_cpu(src_cpu, migration_cpu_stop, &arg);
+	/*
+	 * Task-flipping.
+	 *
+	 * We are now on the new CPU - check whether we can migrate
+	 * the task we just preempted, to where we came from:
+	 */
+	if (flip_tasks) {
+		local_irq_disable();
+		if (raw_smp_processor_id() == dst_cpu) {
+ 			/* Note that the arguments flip: */
+			__migrate_task(p_dst, dst_cpu, src_cpu);
+		}
+		local_irq_enable();
+
+		put_task_struct(p_dst);
+	}
 }
 
 /*
@@ -5484,7 +5613,9 @@ static void destroy_sched_domains(struct sched_domain *sd, int cpu)
 DEFINE_PER_CPU(struct sched_domain *, sd_llc);
 DEFINE_PER_CPU(int, sd_llc_id);
 
-static void update_top_cache_domain(int cpu)
+DEFINE_PER_CPU(struct sched_domain *, sd_node);
+
+static void update_domain_cache(int cpu)
 {
 	struct sched_domain *sd;
 	int id = cpu;
@@ -5495,6 +5626,15 @@ static void update_top_cache_domain(int cpu)
 
 	rcu_assign_pointer(per_cpu(sd_llc, cpu), sd);
 	per_cpu(sd_llc_id, cpu) = id;
+
+	for_each_domain(cpu, sd) {
+		if (cpumask_equal(sched_domain_span(sd),
+				  cpumask_of_node(cpu_to_node(cpu))))
+			goto got_node;
+	}
+	sd = NULL;
+got_node:
+	rcu_assign_pointer(per_cpu(sd_node, cpu), sd);
 }
 
 /*
@@ -5537,7 +5677,7 @@ cpu_attach_domain(struct sched_domain *sd, struct root_domain *rd, int cpu)
 	rcu_assign_pointer(rq->sd, sd);
 	destroy_sched_domains(tmp, cpu);
 
-	update_top_cache_domain(cpu);
+	update_domain_cache(cpu);
 }
 
 /* cpus with isolated domains */
@@ -5959,6 +6099,57 @@ static struct sched_domain_topology_level default_topology[] = {
 
 static struct sched_domain_topology_level *sched_domain_topology = default_topology;
 
+#ifdef CONFIG_NUMA_BALANCING
+/*
+ * Change a task's NUMA state - called from the placement tick.
+ */
+void __sched_setnuma(struct rq *rq, struct task_struct *p, int node, int shared)
+{
+	int on_rq, running;
+
+	on_rq = p->on_rq;
+	running = task_current(rq, p);
+
+	if (on_rq)
+		dequeue_task(rq, p, 0);
+	if (running)
+		p->sched_class->put_prev_task(rq, p);
+
+	WARN_ON_ONCE(p->numa_shared_enqueue != -1);
+	WARN_ON_ONCE(p->numa_weight);
+
+	p->numa_shared = shared;
+	p->numa_max_node = node;
+
+	if (running)
+		p->sched_class->set_curr_task(rq);
+	if (on_rq)
+		enqueue_task(rq, p, 0);
+}
+
+/*
+ * Change a task's NUMA state - called from the placement tick.
+ */
+void sched_setnuma(struct task_struct *p, int node, int shared)
+{
+	unsigned long flags;
+	struct rq *rq;
+
+	rq = task_rq_lock(p, &flags);
+
+	__sched_setnuma(rq, p, node, shared);
+
+	task_rq_unlock(rq, p, &flags);
+
+	/*
+	 * Reset the scanning period. If the task converges
+	 * on this node then we'll back off again:
+	 */
+	p->numa_scan_period = sysctl_sched_numa_scan_period_min;
+}
+
+#endif /* CONFIG_NUMA_BALANCING */
+
 #ifdef CONFIG_NUMA
 
 static int sched_domains_numa_levels;
@@ -6004,6 +6195,7 @@ sd_numa_init(struct sched_domain_topology_level *tl, int cpu)
 					| 0*SD_SHARE_PKG_RESOURCES
 					| 1*SD_SERIALIZE
 					| 0*SD_PREFER_SIBLING
+					| 1*SD_NUMA
 					| sd_local_flags(level)
 					,
 		.last_balance		= jiffies,
@@ -6858,13 +7050,16 @@ void __init sched_init(void)
 		rq->post_schedule = 0;
 		rq->active_balance = 0;
 		rq->next_balance = jiffies;
-		rq->push_cpu = 0;
 		rq->cpu = i;
 		rq->online = 0;
 		rq->idle_stamp = 0;
 		rq->avg_idle = 2*sysctl_sched_migration_cost;
 
 		INIT_LIST_HEAD(&rq->cfs_tasks);
+
+#ifdef CONFIG_NUMA_BALANCING
+		rq->nr_shared_running = 0;
+#endif
 
 		rq_attach_root(rq, &def_root_domain);
 #ifdef CONFIG_NO_HZ
@@ -8076,3 +8271,9 @@ struct cgroup_subsys cpuacct_subsys = {
 	.base_cftypes = files,
 };
 #endif	/* CONFIG_CGROUP_CPUACCT */
+
+void dump_cpu_task(int cpu)
+{
+	pr_info("Task dump for CPU %d:\n", cpu);
+	sched_show_task(cpu_curr(cpu));
+}
