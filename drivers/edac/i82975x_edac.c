@@ -6,7 +6,17 @@
  * GNU General Public License.
  *
  * Written by Arvind R.
- *   Copied from i82875p_edac.c source:
+ *   Copied from i82875p_edac.c source,
+ *
+ * (c) 2012 Mauro Carvalho Chehab <mchehab@redhat.com>
+ *	Driver re-written in order to fix lots of issues on it:
+ *		- Fix Single Mode;
+ *		- Add support for Asymetrical mode
+ *		- Fix several issues with Interleaved mode
+ *		- Fix memory label logic
+ *
+ * Intel datasheet: Intel(R) 975X Express Chipset Datasheet
+ *	http://www.intel.com/assets/pdf/datasheet/310158.pdf
  */
 
 #include <linux/module.h>
@@ -29,8 +39,8 @@
 #define PCI_DEVICE_ID_INTEL_82975_0	0x277c
 #endif				/* PCI_DEVICE_ID_INTEL_82975_0 */
 
-#define I82975X_NR_DIMMS		8
-#define I82975X_NR_CSROWS(nr_chans)	(I82975X_NR_DIMMS / (nr_chans))
+#define DIMMS_PER_CHANNEL	4
+#define NUM_CHANNELS		2
 
 /* Intel 82975X register addresses - device 0 function 0 - DRAM Controller */
 #define I82975X_EAP		0x58	/* Dram Error Address Pointer (32b)
@@ -112,7 +122,7 @@ NOTE: Only ONE of the three must be enabled
 /* NOTE: Following addresses have to indexed using MCHBAR offset (44h, 32b) */
 /* Intel 82975x memory mapped register space */
 
-#define I82975X_DRB_SHIFT 25	/* fixed 32MiB grain */
+#define I82975X_DRB_SHIFT 25	/* fixed 2^25 = 32 MiB grain */
 
 #define I82975X_DRB		0x100	/* DRAM Row Boundary (8b x 8)
 					 *
@@ -151,6 +161,10 @@ NOTE: Only ONE of the three must be enabled
 #define I82975X_DRA_CH0R23		0x109
 #define I82975X_DRA_CH1R01		0x188
 #define I82975X_DRA_CH1R23		0x189
+
+/* Channels 0/1 DRAM Timing Register 1 */
+#define I82975X_C0DRT1			0x114
+#define I82975X_C1DRT1			0x194
 
 
 #define I82975X_BNKARC	0x10e /* Type of device in each rank - Bank Arch (16b)
@@ -206,8 +220,16 @@ enum i82975x_chips {
 	I82975X = 0,
 };
 
+struct mem_range {
+	u32 start, end;
+};
+
 struct i82975x_pvt {
-	void __iomem *mch_window;
+	void __iomem		*mch_window;
+	int 			num_channels;
+	bool			is_symetric;
+	u8			drb[DIMMS_PER_CHANNEL][NUM_CHANNELS];
+	struct mem_range	page[DIMMS_PER_CHANNEL][NUM_CHANNELS];
 };
 
 struct i82975x_dev_info {
@@ -278,8 +300,10 @@ static void i82975x_get_error_info(struct mem_ctl_info *mci,
 static int i82975x_process_error_info(struct mem_ctl_info *mci,
 		struct i82975x_error_info *info, int handle_errors)
 {
-	int row, chan;
-	unsigned long offst, page;
+	struct i82975x_pvt *pvt = mci->pvt_info;
+	struct mem_range	*range;
+	unsigned int		row, chan, grain;
+	unsigned long		offst, page;
 
 	if (!(info->errsts2 & 0x0003))
 		return 0;
@@ -293,36 +317,70 @@ static int i82975x_process_error_info(struct mem_ctl_info *mci,
 		info->errsts = info->errsts2;
 	}
 
+	/* Calculate page and offset of the error */
+
 	page = (unsigned long) info->eap;
 	page >>= 1;
+
 	if (info->xeap & 1)
 		page |= 0x80000000;
 	page >>= (PAGE_SHIFT - 1);
-	row = edac_mc_find_csrow_by_page(mci, page);
 
-	if (row == -1)	{
-		i82975x_mc_printk(mci, KERN_ERR, "error processing EAP:\n"
-			"\tXEAP=%u\n"
-			"\t EAP=0x%08x\n"
-			"\tPAGE=0x%08x\n",
-			(info->xeap & 1) ? 1 : 0, info->eap, (unsigned int) page);
-		return 0;
+	if (pvt->is_symetric)
+		grain = 1 << 7;
+	else
+		grain = 1 << 6;
+
+	offst = info->eap & ((1 << PAGE_SHIFT) - (1 << grain));
+
+	/*
+	 * Search for the DIMM chip that match the error page.
+	 *
+	 * On Symmetric mode, this will always return channel = 0, as
+	 * both channel A and B ranges are identical.
+	 * A latter logic will determinte the channel on symetric mode
+	 *
+	 * On asymetric mode or single mode, there will be just one match,
+	 * that will point to the csrow with the error.
+	 */
+	for (chan = 0; chan < pvt->num_channels; chan++) {
+		for (row = 0; row < DIMMS_PER_CHANNEL; row++) {
+			range = &pvt->page[row][chan];
+
+			if (page >= range->start && page <= range->end)
+				goto found;
+		}
 	}
-	chan = (mci->csrows[row]->nr_channels == 1) ? 0 : info->eap & 1;
-	offst = info->eap
-			& ((1 << PAGE_SHIFT) -
-			   (1 << mci->csrows[row]->channels[chan]->dimm->grain));
+	chan = -1;
+	row = -1;
 
-	if (info->errsts & 0x0002)
+found:
+	if (info->errsts & 0x0002) {
+		/*
+		 * On uncorrected error, ECC doesn't allow do determine the
+		 * channel where the error has occurred.
+		 */
 		edac_mc_handle_error(HW_EVENT_ERR_UNCORRECTED, mci, 1,
 				     page, offst, 0,
 				     row, -1, -1,
 				     "i82975x UE", "");
-	else
-		edac_mc_handle_error(HW_EVENT_ERR_CORRECTED, mci, 1,
-				     page, offst, info->derrsyn,
-				     row, chan ? chan : 0, -1,
-				     "i82975x CE", "");
+		return 1;
+	}
+
+	if (pvt->is_symetric && row >= 0) {
+		/*
+		 * On Symetric mode, the memory switch happens after each
+		 * cache line (64 byte boundary). Channel 0 goes first.
+		 */
+		if (info->eap & (1 << 6))
+			chan = 1;
+		else
+			chan = 0;
+	}
+	edac_mc_handle_error(HW_EVENT_ERR_CORRECTED, mci, 1,
+				page, offst, info->derrsyn,
+				row, chan, -1,
+				"i82975x CE", "");
 
 	return 1;
 }
@@ -331,159 +389,214 @@ static void i82975x_check(struct mem_ctl_info *mci)
 {
 	struct i82975x_error_info info;
 
-	edac_dbg(1, "MC%d\n", mci->mc_idx);
+	edac_dbg(4, "MC%d\n", mci->mc_idx);
 	i82975x_get_error_info(mci, &info);
 	i82975x_process_error_info(mci, &info, 1);
 }
 
-/* Return 1 if dual channel mode is active.  Else return 0. */
-static int dual_channel_active(void __iomem *mch_window)
+/**
+ * detect_memory_style - Detect on what mode the memory controller is programmed
+ *
+ * @pvt:		pointer to the private structure
+ *
+ * This function detects how many channels are in use, and if the memory
+ * controller is in symetric (interleaved) or asymetric mode. There's no
+ * need to distinguish between asymetric and single mode, as the routines
+ * that fill the csrows data and handle error are written in order to handle
+ * both at the same way.
+ */
+static void detect_memory_style(struct i82975x_pvt *pvt)
 {
-	/*
-	 * We treat interleaved-symmetric configuration as dual-channel - EAP's
-	 * bit-0 giving the channel of the error location.
-	 *
-	 * All other configurations are treated as single channel - the EAP's
-	 * bit-0 will resolve ok in symmetric area of mixed
-	 * (symmetric/asymmetric) configurations
-	 */
-	u8	drb[4][2];
 	int	row;
-	int    dualch;
+	bool has_chan_a = false;
+	bool has_chan_b = false;
 
-	for (dualch = 1, row = 0; dualch && (row < 4); row++) {
-		drb[row][0] = readb(mch_window + I82975X_DRB + row);
-		drb[row][1] = readb(mch_window + I82975X_DRB + row + 0x80);
-		dualch = dualch && (drb[row][0] == drb[row][1]);
+	pvt->is_symetric = true;
+	pvt->num_channels = 0;
+
+	for (row = 0; row < DIMMS_PER_CHANNEL; row++) {
+		pvt->drb[row][0] = readb(pvt->mch_window + I82975X_DRB + row);
+		pvt->drb[row][1] = readb(pvt->mch_window + I82975X_DRB + row + 0x80);
+
+		/* On symetric mode, both channels have the same boundaries */
+		if (pvt->drb[row][0] != pvt->drb[row][1])
+			pvt->is_symetric = false;
+
+		if (pvt->drb[row][0])
+			has_chan_a = true;
+		if (pvt->drb[row][1])
+			has_chan_b = true;
 	}
-	return dualch;
-}
 
-static enum dev_type i82975x_dram_type(void __iomem *mch_window, int rank)
-{
-	/*
-	 * ECC is possible on i92975x ONLY with DEV_X8
-	 */
-	return DEV_X8;
+	if (has_chan_a)
+		pvt->num_channels++;
+
+	if (has_chan_b)
+		pvt->num_channels++;
 }
 
 static void i82975x_init_csrows(struct mem_ctl_info *mci,
-		struct pci_dev *pdev, void __iomem *mch_window)
+				struct i82975x_pvt *pvt,
+				struct pci_dev *pdev)
 {
-	struct csrow_info *csrow;
-	unsigned long last_cumul_size;
-	u8 value;
-	u32 cumul_size, nr_pages;
-	int index, chan;
-	struct dimm_info *dimm;
-	enum dev_type dtype;
-
-	last_cumul_size = 0;
+	struct dimm_info	*dimm;
+	struct mem_range	*range;
+	u8			boundary;
+	u32			initial_page = 0, last_page;
+	int			row, chan;
 
 	/*
-	 * 82875 comment:
-	 * The dram row boundary (DRB) reg values are boundary address
-	 * for each DRAM row with a granularity of 32 or 64MB (single/dual
-	 * channel operation).  DRB regs are cumulative; therefore DRB7 will
-	 * contain the total memory contained in all rows.
-	 *
+	 * This chipset provides 3 address modes:
+	 * Single channel - either Channel A or channel B is filled
+	 * Dual channel, interleaved: Memory is organized in pairs,
+	 * 	where channel A gets the lower address for each pair
+	 * Dual channel, asymmetric: Channel A memory goes first.
+	 * In order to cover all modes, we need to start describing
+	 * memories considering the dual channel, asymmetric one.
 	 */
 
-	for (index = 0; index < mci->nr_csrows; index++) {
-		csrow = mci->csrows[index];
-
-		value = readb(mch_window + I82975X_DRB + index +
-					((index >= 4) ? 0x80 : 0));
-		cumul_size = value;
-		cumul_size <<= (I82975X_DRB_SHIFT - PAGE_SHIFT);
+	for (chan = 0; chan < pvt->num_channels; chan++) {
 		/*
-		 * Adjust cumul_size w.r.t number of channels
-		 *
+		 * On symetric mode, both channels start from address 0
 		 */
-		if (csrow->nr_channels > 1)
-			cumul_size <<= 1;
-		edac_dbg(3, "(%d) cumul_size 0x%x\n", index, cumul_size);
+		if (pvt->is_symetric)
+			initial_page = 0;
 
-		nr_pages = cumul_size - last_cumul_size;
-		if (!nr_pages)
-			continue;
+		for (row = 0; row < DIMMS_PER_CHANNEL; row++) {
+			boundary = pvt->drb[row][chan];
+			dimm = mci->csrows[row]->channels[chan]->dimm;
 
-		/*
-		 * Initialise dram labels
-		 * index values:
-		 *   [0-7] for single-channel; i.e. csrow->nr_channels = 1
-		 *   [0-3] for dual-channel; i.e. csrow->nr_channels = 2
-		 */
-		dtype = i82975x_dram_type(mch_window, index);
-		for (chan = 0; chan < csrow->nr_channels; chan++) {
-			dimm = mci->csrows[index]->channels[chan]->dimm;
+			last_page = boundary << (I82975X_DRB_SHIFT - PAGE_SHIFT);
+			dimm->nr_pages = last_page - initial_page;
+			if (!dimm->nr_pages)
+				continue;
 
-			dimm->nr_pages = nr_pages / csrow->nr_channels;
+			range = &pvt->page[row][chan];
+			range->start = initial_page;
+			range->end = range->start + dimm->nr_pages - 1;
 
-			snprintf(csrow->channels[chan]->dimm->label, EDAC_MC_LABEL_LEN, "DIMM %c%d",
-				 (chan == 0) ? 'A' : 'B',
-				 index);
-			dimm->grain = 1 << 7;	/* 128Byte cache-line resolution */
-			dimm->dtype = i82975x_dram_type(mch_window, index);
+			/*
+			 * Grain is one cache-line:
+			 * On dual symetric mode, it is 128 Bytes;
+			 * On single mode or asymetric, it is 64 bytes.
+			 */
+			if (pvt->is_symetric) {
+				dimm->grain = 1 << 7;
+
+				/*
+				 * In dual interleaved mode, the addresses
+				 * need to be multiplied by 2, as both
+				 * channels are interlaced, and the boundary
+				 * limit there actually match each DIMM size
+				 */
+				range->start <<= 1;
+				range->end <<= 1;
+			} else {
+				dimm->grain = 1 << 6;
+			}
+
+			snprintf(dimm->label,
+				 EDAC_MC_LABEL_LEN, "DIMM %c%d",
+				 (chan == 0) ? 'A' : 'B', row);
 			dimm->mtype = MEM_DDR2; /* I82975x supports only DDR2 */
 			dimm->edac_mode = EDAC_SECDED; /* only supported */
-		}
 
-		csrow->first_page = last_cumul_size;
-		csrow->last_page = cumul_size - 1;
-		last_cumul_size = cumul_size;
+			/*
+			 * This chipset supports both x8 and x16 memories,
+			 * but datasheet doesn't describe how to distinguish
+			 * between them.
+			 *
+			 * Also, the "Rank" comment at initial_page 17 says that
+			 * ECC is only available with x8 memories. As this
+			 * driver doesn't even initialize without ECC, better
+			 * to assume that everything is x8. This is not
+			 * actually true, on a mixed ECC/non-ECC scenario.
+			 */
+			dimm->dtype = DEV_X8;
+
+			edac_dbg(1,
+				 "%s: from page 0x%08x to 0x%08x (size: 0x%08x pages)\n",
+				 dimm->label,
+				 range->start, range->end,
+				 dimm->nr_pages);
+			initial_page = last_page;
+		}
 	}
 }
 
-/* #define  i82975x_DEBUG_IOMEM */
-
-#ifdef i82975x_DEBUG_IOMEM
-static void i82975x_print_dram_timings(void __iomem *mch_window)
+static void i82975x_print_dram_config(struct i82975x_pvt *pvt,
+				      u32 mchbar, u32 *drc)
 {
+#ifdef CONFIG_EDAC_DEBUG
 	/*
 	 * The register meanings are from Intel specs;
 	 * (shows 13-5-5-5 for 800-DDR2)
 	 * Asus P5W Bios reports 15-5-4-4
 	 * What's your religion?
 	 */
-	static const int caslats[4] = { 5, 4, 3, 6 };
-	u32	dtreg[2];
+	static const int	caslats[4] = { 5, 4, 3, 6 };
+	u32			dtreg[2];
+	int			row;
 
-	dtreg[0] = readl(mch_window + 0x114);
-	dtreg[1] = readl(mch_window + 0x194);
-	i82975x_printk(KERN_INFO, "DRAM Timings :     Ch0    Ch1\n"
-		"                RAS Active Min = %d     %d\n"
-		"                CAS latency    =  %d      %d\n"
-		"                RAS to CAS     =  %d      %d\n"
-		"                RAS precharge  =  %d      %d\n",
-		(dtreg[0] >> 19 ) & 0x0f,
-			(dtreg[1] >> 19) & 0x0f,
-		caslats[(dtreg[0] >> 8) & 0x03],
-			caslats[(dtreg[1] >> 8) & 0x03],
-		((dtreg[0] >> 4) & 0x07) + 2,
-			((dtreg[1] >> 4) & 0x07) + 2,
+	/* Show memory config if debug level is 1 or upper */
+	if (!edac_debug_level)
+		return;
+
+	i82975x_printk(KERN_INFO, "MCHBAR real = %0x, remapped = %p\n",
+		       mchbar, pvt->mch_window);
+
+	for (row = 0; row < DIMMS_PER_CHANNEL; row++) {
+		if (row)
+			/* Only show if at least one bank is filled */
+			if ((pvt->drb[row][0] == pvt->drb[row-1][0]) &&
+			    (pvt->drb[row][1] == pvt->drb[row-1][1]))
+				continue;
+
+		i82975x_printk(KERN_INFO,
+			       "DRAM%i Rank Boundary Address: Channel A: 0x%08x; Channel B: 0x%08x\n",
+			       row,
+			       pvt->drb[row][0],
+			       pvt->drb[row][1]);
+	}
+
+	i82975x_printk(KERN_INFO, "DRAM Controller mode Channel A: = 0x%08x (%s); Channel B: 0x%08x (%s)\n",
+		       drc[0],
+		       ((drc[0] >> 21) & 3) == 1 ?
+		       "ECC enabled" : "ECC disabled",
+		       drc[1],
+		       ((drc[1] >> 21) & 3) == 1 ?
+		       "ECC enabled" : "ECC disabled");
+
+	i82975x_printk(KERN_INFO, "Bank Architecture Channel A: 0x%08x, Channel B: 0x%08x\n",
+		       readw(pvt->mch_window + I82975X_C0BNKARC),
+		       readw(pvt->mch_window + I82975X_C1BNKARC));
+
+	dtreg[0] = readl(pvt->mch_window + I82975X_C0DRT1);
+	dtreg[1] = readl(pvt->mch_window + I82975X_C1DRT1);
+	i82975x_printk(KERN_INFO, "DRAM Timings :      ChA    ChB\n");
+	i82975x_printk(KERN_INFO, "  RAS Active Min =  %2d      %2d\n",
+		       (dtreg[0] >> 19 ) & 0x0f,(dtreg[1] >> 19) & 0x0f);
+	i82975x_printk(KERN_INFO, "  CAS latency    =  %2d      %2d\n",
+		       caslats[(dtreg[0] >> 8) & 0x03],
+		       caslats[(dtreg[1] >> 8) & 0x03]);
+	i82975x_printk(KERN_INFO, "  RAS to CAS     =  %2d      %2d\n",
+		       ((dtreg[0] >> 4) & 0x07) + 2,
+		       ((dtreg[1] >> 4) & 0x07) + 2);
+	i82975x_printk(KERN_INFO, "  RAS precharge  =  %2d      %2d\n",
 		(dtreg[0] & 0x07) + 2,
-			(dtreg[1] & 0x07) + 2
-	);
-
-}
+		(dtreg[1] & 0x07) + 2);
 #endif
+}
 
 static int i82975x_probe1(struct pci_dev *pdev, int dev_idx)
 {
 	int rc = -ENODEV;
 	struct mem_ctl_info *mci;
 	struct edac_mc_layer layers[2];
-	struct i82975x_pvt *pvt;
-	void __iomem *mch_window;
+	struct i82975x_pvt tmp_pvt, *pvt;
 	u32 mchbar;
 	u32 drc[2];
 	struct i82975x_error_info discard;
-	int	chans;
-#ifdef i82975x_DEBUG_IOMEM
-	u8 c0drb[4];
-	u8 c1drb[4];
-#endif
 
 	edac_dbg(0, "\n");
 
@@ -493,60 +606,35 @@ static int i82975x_probe1(struct pci_dev *pdev, int dev_idx)
 		goto fail0;
 	}
 	mchbar &= 0xffffc000;	/* bits 31:14 used for 16K window */
-	mch_window = ioremap_nocache(mchbar, 0x1000);
+	tmp_pvt.mch_window = ioremap_nocache(mchbar, 0x1000);
+	if (!tmp_pvt.mch_window) {
+		i82975x_printk(KERN_ERR, "Couldn't map MCHBAR registers.\n");
+		rc = -ENOMEM;
+		goto fail0;
+	}
 
-#ifdef i82975x_DEBUG_IOMEM
-	i82975x_printk(KERN_INFO, "MCHBAR real = %0x, remapped = %p\n",
-					mchbar, mch_window);
+	drc[0] = readl(tmp_pvt.mch_window + I82975X_DRC_CH0M0);
+	drc[1] = readl(tmp_pvt.mch_window + I82975X_DRC_CH1M0);
 
-	c0drb[0] = readb(mch_window + I82975X_DRB_CH0R0);
-	c0drb[1] = readb(mch_window + I82975X_DRB_CH0R1);
-	c0drb[2] = readb(mch_window + I82975X_DRB_CH0R2);
-	c0drb[3] = readb(mch_window + I82975X_DRB_CH0R3);
-	c1drb[0] = readb(mch_window + I82975X_DRB_CH1R0);
-	c1drb[1] = readb(mch_window + I82975X_DRB_CH1R1);
-	c1drb[2] = readb(mch_window + I82975X_DRB_CH1R2);
-	c1drb[3] = readb(mch_window + I82975X_DRB_CH1R3);
-	i82975x_printk(KERN_INFO, "DRBCH0R0 = 0x%02x\n", c0drb[0]);
-	i82975x_printk(KERN_INFO, "DRBCH0R1 = 0x%02x\n", c0drb[1]);
-	i82975x_printk(KERN_INFO, "DRBCH0R2 = 0x%02x\n", c0drb[2]);
-	i82975x_printk(KERN_INFO, "DRBCH0R3 = 0x%02x\n", c0drb[3]);
-	i82975x_printk(KERN_INFO, "DRBCH1R0 = 0x%02x\n", c1drb[0]);
-	i82975x_printk(KERN_INFO, "DRBCH1R1 = 0x%02x\n", c1drb[1]);
-	i82975x_printk(KERN_INFO, "DRBCH1R2 = 0x%02x\n", c1drb[2]);
-	i82975x_printk(KERN_INFO, "DRBCH1R3 = 0x%02x\n", c1drb[3]);
-#endif
+	detect_memory_style(&tmp_pvt);
+	if (!tmp_pvt.num_channels) {
+		edac_dbg(3, "No memories installed? This shouldn't be running!\n");
+		goto fail0;
+	}
 
-	drc[0] = readl(mch_window + I82975X_DRC_CH0M0);
-	drc[1] = readl(mch_window + I82975X_DRC_CH1M0);
-#ifdef i82975x_DEBUG_IOMEM
-	i82975x_printk(KERN_INFO, "DRC_CH0 = %0x, %s\n", drc[0],
-			((drc[0] >> 21) & 3) == 1 ?
-				"ECC enabled" : "ECC disabled");
-	i82975x_printk(KERN_INFO, "DRC_CH1 = %0x, %s\n", drc[1],
-			((drc[1] >> 21) & 3) == 1 ?
-				"ECC enabled" : "ECC disabled");
+	i82975x_print_dram_config(&tmp_pvt, mchbar, drc);
 
-	i82975x_printk(KERN_INFO, "C0 BNKARC = %0x\n",
-		readw(mch_window + I82975X_C0BNKARC));
-	i82975x_printk(KERN_INFO, "C1 BNKARC = %0x\n",
-		readw(mch_window + I82975X_C1BNKARC));
-	i82975x_print_dram_timings(mch_window);
-	goto fail1;
-#endif
 	if (!(((drc[0] >> 21) & 3) == 1 || ((drc[1] >> 21) & 3) == 1)) {
 		i82975x_printk(KERN_INFO, "ECC disabled on both channels.\n");
 		goto fail1;
 	}
 
-	chans = dual_channel_active(mch_window) + 1;
-
 	/* assuming only one controller, index thus is 0 */
 	layers[0].type = EDAC_MC_LAYER_CHIP_SELECT;
-	layers[0].size = I82975X_NR_DIMMS;
+	layers[0].size = DIMMS_PER_CHANNEL;
 	layers[0].is_virt_csrow = true;
 	layers[1].type = EDAC_MC_LAYER_CHANNEL;
-	layers[1].size = I82975X_NR_CSROWS(chans);
+	layers[1].size = tmp_pvt.num_channels;
 	layers[1].is_virt_csrow = false;
 	mci = edac_mc_alloc(0, ARRAY_SIZE(layers), layers, sizeof(*pvt));
 	if (!mci) {
@@ -565,10 +653,12 @@ static int i82975x_probe1(struct pci_dev *pdev, int dev_idx)
 	mci->dev_name = pci_name(pdev);
 	mci->edac_check = i82975x_check;
 	mci->ctl_page_to_phys = NULL;
+
 	edac_dbg(3, "init pvt\n");
 	pvt = (struct i82975x_pvt *) mci->pvt_info;
-	pvt->mch_window = mch_window;
-	i82975x_init_csrows(mci, pdev, mch_window);
+	*pvt = tmp_pvt;
+
+	i82975x_init_csrows(mci, pvt, pdev);
 	mci->scrub_mode = SCRUB_HW_SRC;
 	i82975x_get_error_info(mci, &discard);  /* clear counters */
 
@@ -586,7 +676,7 @@ fail2:
 	edac_mc_free(mci);
 
 fail1:
-	iounmap(mch_window);
+	iounmap(tmp_pvt.mch_window);
 fail0:
 	return rc;
 }
