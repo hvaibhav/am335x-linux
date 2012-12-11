@@ -307,6 +307,7 @@ struct mddev {
 	 * REQUEST:  user-space has requested a sync (used with SYNC)
 	 * CHECK:    user-space request for check-only, no repair
 	 * RESHAPE:  A reshape is happening
+	 * ERROR:    sync-action interrupted because io-error
 	 *
 	 * If neither SYNC or RESHAPE are set, then it is a recovery.
 	 */
@@ -320,6 +321,7 @@ struct mddev {
 #define	MD_RECOVERY_CHECK	7
 #define MD_RECOVERY_RESHAPE	8
 #define	MD_RECOVERY_FROZEN	9
+#define	MD_RECOVERY_ERROR	10
 
 	unsigned long			recovery;
 	/* If a RAID personality determines that recovery (of a particular
@@ -610,4 +612,12 @@ static inline int mddev_check_plugged(struct mddev *mddev)
 	return !!blk_check_plugged(md_unplug, mddev,
 				   sizeof(struct blk_plug_cb));
 }
+
+static inline int mddev_lock(struct mddev * mddev)
+{
+	return mutex_lock_interruptible(&mddev->reconfig_mutex);
+}
+extern void mddev_unlock(struct mddev *mddev);
+extern int md_queue_misc_work(struct work_struct *work);
+
 #endif /* _MD_MD_H */
