@@ -349,7 +349,7 @@ static struct port_buffer *alloc_buf(size_t buf_size)
 	buf = kmalloc(sizeof(*buf), GFP_KERNEL);
 	if (!buf)
 		goto fail;
-	buf->buf = kzalloc(buf_size, GFP_KERNEL);
+	buf->buf = kmalloc(buf_size, GFP_KERNEL);
 	if (!buf->buf)
 		goto free_buf;
 	buf->len = 0;
@@ -396,6 +396,8 @@ static int add_inbuf(struct virtqueue *vq, struct port_buffer *buf)
 
 	ret = virtqueue_add_buf(vq, sg, 0, 1, buf, GFP_ATOMIC);
 	virtqueue_kick(vq);
+	if (!ret)
+		ret = vq->num_free;
 	return ret;
 }
 
@@ -459,7 +461,7 @@ static ssize_t __send_control_msg(struct ports_device *portdev, u32 port_id,
 	vq = portdev->c_ovq;
 
 	sg_init_one(sg, &cpkt, sizeof(cpkt));
-	if (virtqueue_add_buf(vq, sg, 1, 0, &cpkt, GFP_ATOMIC) >= 0) {
+	if (virtqueue_add_buf(vq, sg, 1, 0, &cpkt, GFP_ATOMIC) == 0) {
 		virtqueue_kick(vq);
 		while (!virtqueue_get_buf(vq, &len))
 			cpu_relax();
@@ -524,7 +526,7 @@ static ssize_t __send_to_port(struct port *port, struct scatterlist *sg,
 			      struct buffer_token *tok, bool nonblock)
 {
 	struct virtqueue *out_vq;
-	ssize_t ret;
+	int err;
 	unsigned long flags;
 	unsigned int len;
 
@@ -534,17 +536,17 @@ static ssize_t __send_to_port(struct port *port, struct scatterlist *sg,
 
 	reclaim_consumed_buffers(port);
 
-	ret = virtqueue_add_buf(out_vq, sg, nents, 0, tok, GFP_ATOMIC);
+	err = virtqueue_add_buf(out_vq, sg, nents, 0, tok, GFP_ATOMIC);
 
 	/* Tell Host to go! */
 	virtqueue_kick(out_vq);
 
-	if (ret < 0) {
+	if (err) {
 		in_count = 0;
 		goto done;
 	}
 
-	if (ret == 0)
+	if (out_vq->num_free == 0)
 		port->outvq_full = true;
 
 	if (nonblock)
@@ -879,6 +881,8 @@ static ssize_t port_fops_splice_write(struct pipe_inode_info *pipe,
 	if (likely(ret > 0))
 		ret = send_pages(port, sgl.sg, sgl.n, sgl.len, true);
 
+	if (unlikely(ret <= 0))
+		kfree(sgl.sg);
 	return ret;
 }
 
@@ -1434,6 +1438,10 @@ static void remove_port_data(struct port *port)
 
 	/* Remove buffers we queued up for the Host to send us data in. */
 	while ((buf = virtqueue_detach_unused_buf(port->in_vq)))
+		free_buf(buf);
+
+	/* Free pending buffers from the out-queue. */
+	while ((buf = virtqueue_detach_unused_buf(port->out_vq)))
 		free_buf(buf);
 }
 
