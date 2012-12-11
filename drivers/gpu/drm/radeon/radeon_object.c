@@ -140,7 +140,7 @@ int radeon_bo_create(struct radeon_device *rdev,
 	/* Kernel allocation are uninterruptible */
 	down_read(&rdev->pm.mclk_lock);
 	r = ttm_bo_init(&rdev->mman.bdev, &bo->tbo, size, type,
-			&bo->placement, page_align, 0, !kernel, NULL,
+			&bo->placement, page_align, !kernel, NULL,
 			acc_size, sg, &radeon_ttm_bo_destroy);
 	up_read(&rdev->pm.mclk_lock);
 	if (unlikely(r != 0)) {
@@ -384,7 +384,7 @@ int radeon_bo_get_surface_reg(struct radeon_bo *bo)
 	int steal;
 	int i;
 
-	BUG_ON(!atomic_read(&bo->tbo.reserved));
+	BUG_ON(!radeon_bo_is_reserved(bo));
 
 	if (!bo->tiling_flags)
 		return 0;
@@ -510,7 +510,7 @@ void radeon_bo_get_tiling_flags(struct radeon_bo *bo,
 				uint32_t *tiling_flags,
 				uint32_t *pitch)
 {
-	BUG_ON(!atomic_read(&bo->tbo.reserved));
+	BUG_ON(!radeon_bo_is_reserved(bo));
 	if (tiling_flags)
 		*tiling_flags = bo->tiling_flags;
 	if (pitch)
@@ -520,7 +520,7 @@ void radeon_bo_get_tiling_flags(struct radeon_bo *bo,
 int radeon_bo_check_tiling(struct radeon_bo *bo, bool has_moved,
 				bool force_drop)
 {
-	BUG_ON(!atomic_read(&bo->tbo.reserved));
+	BUG_ON(!radeon_bo_is_reserved(bo));
 
 	if (!(bo->tiling_flags & RADEON_TILING_SURFACE))
 		return 0;

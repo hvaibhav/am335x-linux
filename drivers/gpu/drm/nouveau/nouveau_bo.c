@@ -225,7 +225,7 @@ nouveau_bo_new(struct drm_device *dev, int size, int align,
 
 	ret = ttm_bo_init(&drm->ttm.bdev, &nvbo->bo, size,
 			  type, &nvbo->placement,
-			  align >> PAGE_SHIFT, 0, false, NULL, acc_size, sg,
+			  align >> PAGE_SHIFT, false, NULL, acc_size, sg,
 			  nouveau_bo_del_ttm);
 	if (ret) {
 		/* ttm will call nouveau_bo_del_ttm if it fails.. */
@@ -566,7 +566,7 @@ nouveau_bo_move_accel_cleanup(struct nouveau_channel *chan,
 	if (ret)
 		return ret;
 
-	ret = ttm_bo_move_accel_cleanup(&nvbo->bo, fence, NULL, evict,
+	ret = ttm_bo_move_accel_cleanup(&nvbo->bo, fence, evict,
 					no_wait_reserve, no_wait_gpu, new_mem);
 	nouveau_fence_unref(&fence);
 	return ret;
@@ -1472,19 +1472,19 @@ nouveau_bo_fence_ref(void *sync_obj)
 }
 
 static bool
-nouveau_bo_fence_signalled(void *sync_obj, void *sync_arg)
+nouveau_bo_fence_signalled(void *sync_obj)
 {
 	return nouveau_fence_done(sync_obj);
 }
 
 static int
-nouveau_bo_fence_wait(void *sync_obj, void *sync_arg, bool lazy, bool intr)
+nouveau_bo_fence_wait(void *sync_obj, bool lazy, bool intr)
 {
 	return nouveau_fence_wait(sync_obj, lazy, intr);
 }
 
 static int
-nouveau_bo_fence_flush(void *sync_obj, void *sync_arg)
+nouveau_bo_fence_flush(void *sync_obj)
 {
 	return 0;
 }

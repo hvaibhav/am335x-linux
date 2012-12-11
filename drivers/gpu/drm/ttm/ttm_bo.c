@@ -162,9 +162,9 @@ int ttm_bo_wait_unreserved(struct ttm_buffer_object *bo, bool interruptible)
 {
 	if (interruptible) {
 		return wait_event_interruptible(bo->event_queue,
-					       atomic_read(&bo->reserved) == 0);
+					       !ttm_bo_is_reserved(bo));
 	} else {
-		wait_event(bo->event_queue, atomic_read(&bo->reserved) == 0);
+		wait_event(bo->event_queue, !ttm_bo_is_reserved(bo));
 		return 0;
 	}
 }
@@ -175,7 +175,7 @@ void ttm_bo_add_to_lru(struct ttm_buffer_object *bo)
 	struct ttm_bo_device *bdev = bo->bdev;
 	struct ttm_mem_type_manager *man;
 
-	BUG_ON(!atomic_read(&bo->reserved));
+	BUG_ON(!ttm_bo_is_reserved(bo));
 
 	if (!(bo->mem.placement & TTM_PL_FLAG_NO_EVICT)) {
 
@@ -220,7 +220,7 @@ int ttm_bo_reserve_locked(struct ttm_buffer_object *bo,
 	struct ttm_bo_global *glob = bo->glob;
 	int ret;
 
-	while (unlikely(atomic_cmpxchg(&bo->reserved, 0, 1) != 0)) {
+	while (unlikely(atomic_read(&bo->reserved) != 0)) {
 		/**
 		 * Deadlock avoidance for multi-bo reserving.
 		 */
@@ -249,6 +249,7 @@ int ttm_bo_reserve_locked(struct ttm_buffer_object *bo,
 			return ret;
 	}
 
+	atomic_set(&bo->reserved, 1);
 	if (use_sequence) {
 		/**
 		 * Wake up waiters that may need to recheck for deadlock,
@@ -501,7 +502,6 @@ static void ttm_bo_cleanup_refs_or_queue(struct ttm_buffer_object *bo)
 	struct ttm_bo_global *glob = bo->glob;
 	struct ttm_bo_driver *driver;
 	void *sync_obj = NULL;
-	void *sync_obj_arg;
 	int put_count;
 	int ret;
 
@@ -537,7 +537,6 @@ queue:
 	driver = bdev->driver;
 	if (bo->sync_obj)
 		sync_obj = driver->sync_obj_ref(bo->sync_obj);
-	sync_obj_arg = bo->sync_obj_arg;
 
 	kref_get(&bo->list_kref);
 	list_add_tail(&bo->ddestroy, &bdev->ddestroy);
@@ -545,7 +544,7 @@ queue:
 	spin_unlock(&bdev->fence_lock);
 
 	if (sync_obj) {
-		driver->sync_obj_flush(sync_obj, sync_obj_arg);
+		driver->sync_obj_flush(sync_obj);
 		driver->sync_obj_unref(&sync_obj);
 	}
 	schedule_delayed_work(&bdev->wq,
@@ -697,6 +696,7 @@ static void ttm_bo_release(struct kref *kref)
 	struct ttm_bo_device *bdev = bo->bdev;
 	struct ttm_mem_type_manager *man = &bdev->man[bo->mem.mem_type];
 
+	write_lock(&bdev->vm_lock);
 	if (likely(bo->vm_node != NULL)) {
 		rb_erase(&bo->vm_rb, &bdev->addr_space_rb);
 		drm_mm_put_block(bo->vm_node);
@@ -708,18 +708,14 @@ static void ttm_bo_release(struct kref *kref)
 	ttm_mem_io_unlock(man);
 	ttm_bo_cleanup_refs_or_queue(bo);
 	kref_put(&bo->list_kref, ttm_bo_release_list);
-	write_lock(&bdev->vm_lock);
 }
 
 void ttm_bo_unref(struct ttm_buffer_object **p_bo)
 {
 	struct ttm_buffer_object *bo = *p_bo;
-	struct ttm_bo_device *bdev = bo->bdev;
 
 	*p_bo = NULL;
-	write_lock(&bdev->vm_lock);
 	kref_put(&bo->kref, ttm_bo_release);
-	write_unlock(&bdev->vm_lock);
 }
 EXPORT_SYMBOL(ttm_bo_unref);
 
@@ -756,7 +752,7 @@ static int ttm_bo_evict(struct ttm_buffer_object *bo, bool interruptible,
 		goto out;
 	}
 
-	BUG_ON(!atomic_read(&bo->reserved));
+	BUG_ON(!ttm_bo_is_reserved(bo));
 
 	evict_mem = bo->mem;
 	evict_mem.mm_node = NULL;
@@ -1054,16 +1050,6 @@ int ttm_bo_mem_space(struct ttm_buffer_object *bo,
 }
 EXPORT_SYMBOL(ttm_bo_mem_space);
 
-int ttm_bo_wait_cpu(struct ttm_buffer_object *bo, bool no_wait)
-{
-	if ((atomic_read(&bo->cpu_writers) > 0) && no_wait)
-		return -EBUSY;
-
-	return wait_event_interruptible(bo->event_queue,
-					atomic_read(&bo->cpu_writers) == 0);
-}
-EXPORT_SYMBOL(ttm_bo_wait_cpu);
-
 int ttm_bo_move_buffer(struct ttm_buffer_object *bo,
 			struct ttm_placement *placement,
 			bool interruptible, bool no_wait_reserve,
@@ -1073,7 +1059,7 @@ int ttm_bo_move_buffer(struct ttm_buffer_object *bo,
 	struct ttm_mem_reg mem;
 	struct ttm_bo_device *bdev = bo->bdev;
 
-	BUG_ON(!atomic_read(&bo->reserved));
+	BUG_ON(!ttm_bo_is_reserved(bo));
 
 	/*
 	 * FIXME: It's possible to pipeline buffer moves.
@@ -1130,7 +1116,7 @@ int ttm_bo_validate(struct ttm_buffer_object *bo,
 {
 	int ret;
 
-	BUG_ON(!atomic_read(&bo->reserved));
+	BUG_ON(!ttm_bo_is_reserved(bo));
 	/* Check that range is valid */
 	if (placement->lpfn || placement->fpfn)
 		if (placement->fpfn > placement->lpfn ||
@@ -1179,7 +1165,6 @@ int ttm_bo_init(struct ttm_bo_device *bdev,
 		enum ttm_bo_type type,
 		struct ttm_placement *placement,
 		uint32_t page_alignment,
-		unsigned long buffer_start,
 		bool interruptible,
 		struct file *persistent_swap_storage,
 		size_t acc_size,
@@ -1200,7 +1185,6 @@ int ttm_bo_init(struct ttm_bo_device *bdev,
 		return -ENOMEM;
 	}
 
-	size += buffer_start & ~PAGE_MASK;
 	num_pages = (size + PAGE_SIZE - 1) >> PAGE_SHIFT;
 	if (num_pages == 0) {
 		pr_err("Illegal buffer object size\n");
@@ -1233,7 +1217,6 @@ int ttm_bo_init(struct ttm_bo_device *bdev,
 	bo->mem.page_alignment = page_alignment;
 	bo->mem.bus.io_reserved_vm = false;
 	bo->mem.bus.io_reserved_count = 0;
-	bo->buffer_start = buffer_start & PAGE_MASK;
 	bo->priv_flags = 0;
 	bo->mem.placement = (TTM_PL_FLAG_SYSTEM | TTM_PL_FLAG_CACHED);
 	bo->seq_valid = false;
@@ -1306,7 +1289,6 @@ int ttm_bo_create(struct ttm_bo_device *bdev,
 			enum ttm_bo_type type,
 			struct ttm_placement *placement,
 			uint32_t page_alignment,
-			unsigned long buffer_start,
 			bool interruptible,
 			struct file *persistent_swap_storage,
 			struct ttm_buffer_object **p_bo)
@@ -1321,8 +1303,8 @@ int ttm_bo_create(struct ttm_bo_device *bdev,
 
 	acc_size = ttm_bo_acc_size(bdev, size, sizeof(struct ttm_buffer_object));
 	ret = ttm_bo_init(bdev, bo, size, type, placement, page_alignment,
-				buffer_start, interruptible,
-			  persistent_swap_storage, acc_size, NULL, NULL);
+			  interruptible, persistent_swap_storage, acc_size,
+			  NULL, NULL);
 	if (likely(ret == 0))
 		*p_bo = bo;
 
@@ -1577,7 +1559,6 @@ int ttm_bo_device_init(struct ttm_bo_device *bdev,
 		goto out_no_addr_mm;
 
 	INIT_DELAYED_WORK(&bdev->wq, ttm_bo_delayed_workqueue);
-	bdev->nice_mode = true;
 	INIT_LIST_HEAD(&bdev->ddestroy);
 	bdev->dev_mapping = NULL;
 	bdev->glob = glob;
@@ -1721,7 +1702,6 @@ int ttm_bo_wait(struct ttm_buffer_object *bo,
 	struct ttm_bo_driver *driver = bo->bdev->driver;
 	struct ttm_bo_device *bdev = bo->bdev;
 	void *sync_obj;
-	void *sync_obj_arg;
 	int ret = 0;
 
 	if (likely(bo->sync_obj == NULL))
@@ -1729,7 +1709,7 @@ int ttm_bo_wait(struct ttm_buffer_object *bo,
 
 	while (bo->sync_obj) {
 
-		if (driver->sync_obj_signaled(bo->sync_obj, bo->sync_obj_arg)) {
+		if (driver->sync_obj_signaled(bo->sync_obj)) {
 			void *tmp_obj = bo->sync_obj;
 			bo->sync_obj = NULL;
 			clear_bit(TTM_BO_PRIV_FLAG_MOVING, &bo->priv_flags);
@@ -1743,9 +1723,8 @@ int ttm_bo_wait(struct ttm_buffer_object *bo,
 			return -EBUSY;
 
 		sync_obj = driver->sync_obj_ref(bo->sync_obj);
-		sync_obj_arg = bo->sync_obj_arg;
 		spin_unlock(&bdev->fence_lock);
-		ret = driver->sync_obj_wait(sync_obj, sync_obj_arg,
+		ret = driver->sync_obj_wait(sync_obj,
 					    lazy, interruptible);
 		if (unlikely(ret != 0)) {
 			driver->sync_obj_unref(&sync_obj);
@@ -1753,8 +1732,7 @@ int ttm_bo_wait(struct ttm_buffer_object *bo,
 			return ret;
 		}
 		spin_lock(&bdev->fence_lock);
-		if (likely(bo->sync_obj == sync_obj &&
-			   bo->sync_obj_arg == sync_obj_arg)) {
+		if (likely(bo->sync_obj == sync_obj)) {
 			void *tmp_obj = bo->sync_obj;
 			bo->sync_obj = NULL;
 			clear_bit(TTM_BO_PRIV_FLAG_MOVING,
@@ -1797,8 +1775,7 @@ EXPORT_SYMBOL(ttm_bo_synccpu_write_grab);
 
 void ttm_bo_synccpu_write_release(struct ttm_buffer_object *bo)
 {
-	if (atomic_dec_and_test(&bo->cpu_writers))
-		wake_up_all(&bo->event_queue);
+	atomic_dec(&bo->cpu_writers);
 }
 EXPORT_SYMBOL(ttm_bo_synccpu_write_release);
 
