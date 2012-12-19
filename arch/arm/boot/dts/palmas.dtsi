@@ -8,8 +8,8 @@
 		ti,ldo6_vibrator = <0>;
 
 		regulators {
-			smps12_reg: smps12 {
-				regulator-name = "smps12";
+			smps123_reg: smps123 {
+				regulator-name = "smps123";
 				regulator-min-microvolt = < 600000>;
 				regulator-max-microvolt = <1500000>;
 				regulator-always-on;
