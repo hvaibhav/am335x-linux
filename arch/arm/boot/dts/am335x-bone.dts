@@ -179,7 +179,14 @@
 
 		/* mapping between board names and dtb objects */
 		capemaps {
-
+			/* Weather cape */
+			cape@0 {
+				part-number = "BB-BONE-WTHR-01";
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-bone-weather-00A0.dtbo";
+				};
+			};
 		};
 	};
 };
