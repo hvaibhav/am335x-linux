@@ -459,6 +459,15 @@ config LEDS_BLINKM
 	  This option enables support for the BlinkM RGB LED connected
 	  through I2C. Say Y to enable support for the BlinkM LED.
 
+config LEDS_PALMAS
+	bool "LED support for the Palmas family of PMICs"
+	depends on LEDS_CLASS
+	depends on MFD_PALMAS
+	help
+	  This option enables the driver for LED1 & LED2 pins on Palmas PMIC
+	  if these pins are enabled in the mux configuration. The driver support
+	  ON/OFF and blinking with hardware control.
+
 config LEDS_TRIGGERS
 	bool "LED Trigger support"
 	depends on LEDS_CLASS
