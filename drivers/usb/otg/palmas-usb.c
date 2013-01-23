@@ -103,15 +103,6 @@ static ssize_t palmas_usb_vbus_show(struct device *dev,
 }
 static DEVICE_ATTR(vbus, 0444, palmas_usb_vbus_show, NULL);
 
-static irqreturn_t palmas_vbus_irq(int irq, void *_palmas_usb)
-{
-	struct palmas_usb *palmas_usb = _palmas_usb;
-
-	/* TODO: Do we need to do any work here? */
-
-	return IRQ_HANDLED;
-}
-
 static irqreturn_t palmas_vbus_wakeup_irq(int irq, void *_palmas_usb)
 {
 	struct palmas_usb *palmas_usb = _palmas_usb;
@@ -134,15 +125,6 @@ static irqreturn_t palmas_vbus_wakeup_irq(int irq, void *_palmas_usb)
 	}
 
 	palmas_usb->linkstat = status;
-
-	return IRQ_HANDLED;
-}
-
-static irqreturn_t palmas_id_irq(int irq, void *_palmas_usb)
-{
-	struct palmas_usb *palmas_usb = _palmas_usb;
-
-	/* TODO: Do we need to do any work here? */
 
 	return IRQ_HANDLED;
 }
@@ -329,16 +311,6 @@ static int palmas_usb_probe(struct platform_device *pdev)
 
 	INIT_WORK(&palmas_usb->set_vbus_work, palmas_set_vbus_work);
 
-	status = devm_request_threaded_irq(palmas_usb->dev, palmas_usb->irq1,
-				NULL, palmas_id_irq,
-				IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
-				"palmas_usb", palmas_usb);
-	if (status < 0) {
-		dev_err(&pdev->dev, "can't get IRQ %d, err %d\n",
-					palmas_usb->irq1, status);
-		goto fail_irq;
-	}
-
 	status = devm_request_threaded_irq(palmas_usb->dev, palmas_usb->irq2,
 			NULL, palmas_id_wakeup_irq,
 			IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
@@ -346,16 +318,6 @@ static int palmas_usb_probe(struct platform_device *pdev)
 	if (status < 0) {
 		dev_err(&pdev->dev, "can't get IRQ %d, err %d\n",
 					palmas_usb->irq2, status);
-		goto fail_irq;
-	}
-
-	status = devm_request_threaded_irq(palmas_usb->dev, palmas_usb->irq3,
-			NULL, palmas_vbus_irq,
-			IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
-			"palmas_usb", palmas_usb);
-	if (status < 0) {
-		dev_err(&pdev->dev, "can't get IRQ %d, err %d\n",
-					palmas_usb->irq3, status);
 		goto fail_irq;
 	}
 
