@@ -19,6 +19,7 @@
 #include <linux/leds.h>
 #include <linux/regmap.h>
 #include <linux/regulator/driver.h>
+#include <linux/usb/phy_companion.h>
 
 #define PALMAS_NUM_CLIENTS		3
 
@@ -342,6 +343,8 @@ struct palmas_resource {
 struct palmas_usb {
 	struct palmas *palmas;
 	struct device *dev;
+
+	struct phy_companion comparator;
 
 	/* for vbus reporting with irqs disabled */
 	spinlock_t lock;
