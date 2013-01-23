@@ -303,8 +303,7 @@ static int palmas_usb_probe(struct platform_device *pdev)
 	spin_lock_init(&palmas_usb->lock);
 
 	if (!pdata->no_control_vbus) {
-		palmas_usb->vbus_reg = devm_regulator_get(palmas->dev,
-								"vbus");
+		palmas_usb->vbus_reg = devm_regulator_get(&pdev->dev, "vbus");
 		if (IS_ERR(palmas_usb->vbus_reg)) {
 			dev_err(&pdev->dev, "vbus init failed\n");
 			return PTR_ERR(palmas_usb->vbus_reg);
