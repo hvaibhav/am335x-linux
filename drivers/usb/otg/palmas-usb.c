@@ -119,11 +119,13 @@ static irqreturn_t palmas_vbus_wakeup_irq(int irq, void *_palmas_usb)
 	regmap_read(palmas_usb->palmas->regmap[slave], addr, &vbus_line_state);
 
 	if (vbus_line_state & PALMAS_INT3_LINE_STATE_VBUS) {
-		regulator_enable(palmas_usb->vbus_reg);
+		if (!IS_ERR_OR_NULL(palmas_usb->vbus_reg))
+			regulator_enable(palmas_usb->vbus_reg);
 		status = OMAP_DWC3_VBUS_VALID;
 	} else {
 		status = OMAP_DWC3_VBUS_OFF;
-		regulator_disable(palmas_usb->vbus_reg);
+		if (!IS_ERR_OR_NULL(palmas_usb->vbus_reg))
+			regulator_disable(palmas_usb->vbus_reg);
 	}
 
 	palmas_usb->linkstat = status;
@@ -144,7 +146,8 @@ static irqreturn_t palmas_id_wakeup_irq(int irq, void *_palmas_usb)
 	palmas_usb_read(palmas_usb->palmas, PALMAS_USB_ID_INT_LATCH_SET, &set);
 
 	if (set & PALMAS_USB_ID_INT_SRC_ID_GND) {
-		regulator_enable(palmas_usb->vbus_reg);
+		if (!IS_ERR_OR_NULL(palmas_usb->vbus_reg))
+			regulator_enable(palmas_usb->vbus_reg);
 		palmas_usb_write(palmas_usb->palmas,
 					PALMAS_USB_ID_INT_EN_HI_SET,
 					PALMAS_USB_ID_INT_EN_HI_SET_ID_FLOAT);
@@ -159,7 +162,8 @@ static irqreturn_t palmas_id_wakeup_irq(int irq, void *_palmas_usb)
 		palmas_usb_write(palmas_usb->palmas,
 					PALMAS_USB_ID_INT_EN_HI_CLR,
 					PALMAS_USB_ID_INT_EN_HI_CLR_ID_FLOAT);
-		regulator_disable(palmas_usb->vbus_reg);
+		if (!IS_ERR_OR_NULL(palmas_usb->vbus_reg))
+			regulator_disable(palmas_usb->vbus_reg);
 		status = OMAP_DWC3_ID_FLOAT;
 	}
 
@@ -190,6 +194,11 @@ static void palmas_set_vbus_work(struct work_struct *data)
 {
 	struct palmas_usb *palmas_usb = container_of(data, struct palmas_usb,
 								set_vbus_work);
+
+	if (IS_ERR_OR_NULL(palmas_usb->vbus_reg)) {
+		dev_err(palmas_usb->dev, "invalid regulator\n");
+		return;
+	}
 
 	/*
 	 * Start driving VBUS. Set OPA_MODE bit in CHARGERUSB_CTRL1
