@@ -235,18 +235,9 @@ static int palmas_start_srp(struct phy_companion *comparator)
 static void palmas_dt_to_pdata(struct device_node *node,
 		struct palmas_usb_platform_data *pdata)
 {
-	int ret;
-	u32 prop;
-
-	ret = of_property_read_u32(node, "ti,no_control_vbus", &prop);
-	if (!ret) {
-		pdata->no_control_vbus = prop;
-	}
-
-	ret = of_property_read_u32(node, "ti,wakeup", &prop);
-	if (!ret) {
-		pdata->wakeup = prop;
-	}
+	pdata->no_control_vbus = of_property_read_bool(node,
+					"ti,no_control_vbus");
+	pdata->wakeup = of_property_read_bool(node, "ti,wakeup");
 }
 
 static int palmas_usb_probe(struct platform_device *pdev)
