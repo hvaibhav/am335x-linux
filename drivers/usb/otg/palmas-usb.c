@@ -31,6 +31,9 @@
 #include <linux/platform_device.h>
 #include <linux/io.h>
 #include <linux/usb/otg.h>
+#include <linux/usb/phy_companion.h>
+#include <linux/usb/omap_usb.h>
+#include <linux/usb/dwc3-omap.h>
 #include <linux/regulator/consumer.h>
 #include <linux/err.h>
 #include <linux/notifier.h>
@@ -83,13 +86,14 @@ static ssize_t palmas_usb_vbus_show(struct device *dev,
 	spin_lock_irqsave(&palmas_usb->lock, flags);
 
 	switch (palmas_usb->linkstat) {
-	case USB_EVENT_VBUS:
+	case OMAP_DWC3_VBUS_VALID:
 	       ret = snprintf(buf, PAGE_SIZE, "vbus\n");
 	       break;
-	case USB_EVENT_ID:
+	case OMAP_DWC3_ID_GROUND:
 	       ret = snprintf(buf, PAGE_SIZE, "id\n");
 	       break;
-	case USB_EVENT_NONE:
+	case OMAP_DWC3_ID_FLOAT:
+	case OMAP_DWC3_VBUS_OFF:
 	       ret = snprintf(buf, PAGE_SIZE, "none\n");
 	       break;
 	default:
@@ -101,19 +105,10 @@ static ssize_t palmas_usb_vbus_show(struct device *dev,
 }
 static DEVICE_ATTR(vbus, 0444, palmas_usb_vbus_show, NULL);
 
-static irqreturn_t palmas_vbus_irq(int irq, void *_palmas_usb)
-{
-	struct palmas_usb *palmas_usb = _palmas_usb;
-
-	/* TODO: Do we need to do any work here? */
-
-	return IRQ_HANDLED;
-}
-
 static irqreturn_t palmas_vbus_wakeup_irq(int irq, void *_palmas_usb)
 {
 	struct palmas_usb *palmas_usb = _palmas_usb;
-	int status = 0;
+	enum omap_dwc3_vbus_id_status status = OMAP_DWC3_UNKNOWN;
 	int slave;
 	unsigned int vbus_line_state, addr;
 
@@ -124,44 +119,42 @@ static irqreturn_t palmas_vbus_wakeup_irq(int irq, void *_palmas_usb)
 	regmap_read(palmas_usb->palmas->regmap[slave], addr, &vbus_line_state);
 
 	if (vbus_line_state & PALMAS_INT3_LINE_STATE_VBUS) {
-		regulator_enable(palmas_usb->vbus_reg);
-		status = USB_EVENT_VBUS;
+		if (!IS_ERR_OR_NULL(palmas_usb->vbus_reg))
+			regulator_enable(palmas_usb->vbus_reg);
+		status = OMAP_DWC3_VBUS_VALID;
 	} else {
-		status = USB_EVENT_NONE;
-		regulator_disable(palmas_usb->vbus_reg);
+		status = OMAP_DWC3_VBUS_OFF;
+		if (!IS_ERR_OR_NULL(palmas_usb->vbus_reg))
+			regulator_disable(palmas_usb->vbus_reg);
 	}
 
 	palmas_usb->linkstat = status;
+	if (status != OMAP_DWC3_UNKNOWN) {
+		dwc3_omap_mailbox(status);
+		return IRQ_HANDLED;
+	}
 
-	return IRQ_HANDLED;
-}
-
-static irqreturn_t palmas_id_irq(int irq, void *_palmas_usb)
-{
-	struct palmas_usb *palmas_usb = _palmas_usb;
-
-	/* TODO: Do we need to do any work here? */
-
-	return IRQ_HANDLED;
+	return IRQ_NONE;
 }
 
 static irqreturn_t palmas_id_wakeup_irq(int irq, void *_palmas_usb)
 {
-	int			status = 0;
+	enum omap_dwc3_vbus_id_status status = OMAP_DWC3_UNKNOWN;
 	unsigned int		set;
 	struct palmas_usb	*palmas_usb = _palmas_usb;
 
 	palmas_usb_read(palmas_usb->palmas, PALMAS_USB_ID_INT_LATCH_SET, &set);
 
 	if (set & PALMAS_USB_ID_INT_SRC_ID_GND) {
-		regulator_enable(palmas_usb->vbus_reg);
+		if (!IS_ERR_OR_NULL(palmas_usb->vbus_reg))
+			regulator_enable(palmas_usb->vbus_reg);
 		palmas_usb_write(palmas_usb->palmas,
 					PALMAS_USB_ID_INT_EN_HI_SET,
 					PALMAS_USB_ID_INT_EN_HI_SET_ID_FLOAT);
 		palmas_usb_write(palmas_usb->palmas,
 					PALMAS_USB_ID_INT_EN_HI_CLR,
 					PALMAS_USB_ID_INT_EN_HI_CLR_ID_GND);
-		status = USB_EVENT_ID;
+		status = OMAP_DWC3_ID_GROUND;
 	} else if (set & PALMAS_USB_ID_INT_SRC_ID_FLOAT) {
 		palmas_usb_write(palmas_usb->palmas,
 					PALMAS_USB_ID_INT_EN_HI_SET,
@@ -169,13 +162,18 @@ static irqreturn_t palmas_id_wakeup_irq(int irq, void *_palmas_usb)
 		palmas_usb_write(palmas_usb->palmas,
 					PALMAS_USB_ID_INT_EN_HI_CLR,
 					PALMAS_USB_ID_INT_EN_HI_CLR_ID_FLOAT);
-		regulator_disable(palmas_usb->vbus_reg);
-		status = USB_EVENT_NONE;
+		if (!IS_ERR_OR_NULL(palmas_usb->vbus_reg))
+			regulator_disable(palmas_usb->vbus_reg);
+		status = OMAP_DWC3_ID_FLOAT;
 	}
 
 	palmas_usb->linkstat = status;
+	if (status != OMAP_DWC3_UNKNOWN) {
+		dwc3_omap_mailbox(status);
+		return IRQ_HANDLED;
+	}
 
-	return IRQ_HANDLED;
+	return IRQ_NONE;
 }
 
 static int palmas_enable_irq(struct palmas_usb *palmas_usb)
@@ -189,6 +187,11 @@ static int palmas_enable_irq(struct palmas_usb *palmas_usb)
 	palmas_usb_write(palmas_usb->palmas, PALMAS_USB_ID_INT_EN_HI_SET,
 			PALMAS_USB_ID_INT_EN_HI_SET_ID_GND);
 
+	palmas_vbus_wakeup_irq(palmas_usb->irq4, palmas_usb);
+
+	if (palmas_usb->linkstat == OMAP_DWC3_UNKNOWN)
+		palmas_id_wakeup_irq(palmas_usb->irq2, palmas_usb);
+
 	return 0;
 }
 
@@ -196,6 +199,11 @@ static void palmas_set_vbus_work(struct work_struct *data)
 {
 	struct palmas_usb *palmas_usb = container_of(data, struct palmas_usb,
 								set_vbus_work);
+
+	if (IS_ERR_OR_NULL(palmas_usb->vbus_reg)) {
+		dev_err(palmas_usb->dev, "invalid regulator\n");
+		return;
+	}
 
 	/*
 	 * Start driving VBUS. Set OPA_MODE bit in CHARGERUSB_CTRL1
@@ -208,16 +216,20 @@ static void palmas_set_vbus_work(struct work_struct *data)
 		regulator_disable(palmas_usb->vbus_reg);
 }
 
-static int palmas_set_vbus(struct palmas_usb *palmas_usb, bool enabled)
+static int palmas_set_vbus(struct phy_companion *comparator, bool enabled)
 {
+	struct palmas_usb *palmas_usb = comparator_to_palmas(comparator);
+
 	palmas_usb->vbus_enable = enabled;
 	schedule_work(&palmas_usb->set_vbus_work);
 
 	return 0;
 }
 
-static int palmas_start_srp(struct palmas_usb *palmas_usb)
+static int palmas_start_srp(struct phy_companion *comparator)
 {
+	struct palmas_usb *palmas_usb = comparator_to_palmas(comparator);
+
 	palmas_usb_write(palmas_usb->palmas, PALMAS_USB_VBUS_CTRL_SET,
 			PALMAS_USB_VBUS_CTRL_SET_VBUS_DISCHRG |
 			PALMAS_USB_VBUS_CTRL_SET_VBUS_IADP_SINK);
@@ -237,22 +249,14 @@ static int palmas_start_srp(struct palmas_usb *palmas_usb)
 static void palmas_dt_to_pdata(struct device_node *node,
 		struct palmas_usb_platform_data *pdata)
 {
-	int ret;
-	u32 prop;
-
-	ret = of_property_read_u32(node, "ti,no_control_vbus", &prop);
-	if (!ret) {
-		pdata->no_control_vbus = prop;
-	}
-
-	ret = of_property_read_u32(node, "ti,wakeup", &prop);
-	if (!ret) {
-		pdata->wakeup = prop;
-	}
+	pdata->no_control_vbus = of_property_read_bool(node,
+					"ti,no_control_vbus");
+	pdata->wakeup = of_property_read_bool(node, "ti,wakeup");
 }
 
 static int palmas_usb_probe(struct platform_device *pdev)
 {
+	u32 ret;
 	struct palmas *palmas = dev_get_drvdata(pdev->dev.parent);
 	struct palmas_usb_platform_data	*pdata = pdev->dev.platform_data;
 	struct device_node *node = pdev->dev.of_node;
@@ -271,7 +275,7 @@ static int palmas_usb_probe(struct platform_device *pdev)
 	if (!pdata)
 		return -EINVAL;
 
-	palmas_usb = kzalloc(sizeof(*palmas_usb), GFP_KERNEL);
+	palmas_usb = devm_kzalloc(&pdev->dev, sizeof(*palmas_usb), GFP_KERNEL);
 	if (!palmas_usb)
 		return -ENOMEM;
 
@@ -289,17 +293,24 @@ static int palmas_usb_probe(struct platform_device *pdev)
 	palmas_usb->irq4 = regmap_irq_get_virq(palmas->irq_data,
 						PALMAS_VBUS_IRQ);
 
+	palmas_usb->comparator.set_vbus	= palmas_set_vbus;
+	palmas_usb->comparator.start_srp = palmas_start_srp;
+
+	ret = omap_usb2_set_comparator(&palmas_usb->comparator);
+	if (ret == -ENODEV) {
+		dev_info(&pdev->dev, "phy not ready, deferring probe");
+		return -EPROBE_DEFER;
+	}
+
 	palmas_usb_wakeup(palmas, pdata->wakeup);
 
 	/* init spinlock for workqueue */
 	spin_lock_init(&palmas_usb->lock);
 
 	if (!pdata->no_control_vbus) {
-		palmas_usb->vbus_reg = regulator_get(palmas->dev,
-								"vbus");
+		palmas_usb->vbus_reg = devm_regulator_get(&pdev->dev, "vbus");
 		if (IS_ERR(palmas_usb->vbus_reg)) {
 			dev_err(&pdev->dev, "vbus init failed\n");
-			kfree(palmas_usb);
 			return PTR_ERR(palmas_usb->vbus_reg);
 		}
 	}
@@ -314,44 +325,24 @@ static int palmas_usb_probe(struct platform_device *pdev)
 
 	INIT_WORK(&palmas_usb->set_vbus_work, palmas_set_vbus_work);
 
-	status = request_threaded_irq(palmas_usb->irq1, NULL,
-				palmas_id_irq,
-				IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
-				"palmas_usb", palmas_usb);
-	if (status < 0) {
-		dev_err(&pdev->dev, "can't get IRQ %d, err %d\n",
-					palmas_usb->irq1, status);
-		goto fail_irq1;
-	}
-
-	status = request_threaded_irq(palmas_usb->irq2, NULL,
-			palmas_id_wakeup_irq,
+	status = devm_request_threaded_irq(palmas_usb->dev, palmas_usb->irq2,
+			NULL, palmas_id_wakeup_irq,
 			IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
 			"palmas_usb", palmas_usb);
 	if (status < 0) {
 		dev_err(&pdev->dev, "can't get IRQ %d, err %d\n",
 					palmas_usb->irq2, status);
-		goto fail_irq2;
+		goto fail_irq;
 	}
 
-	status = request_threaded_irq(palmas_usb->irq3, NULL,
-			palmas_vbus_irq,
-			IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
-			"palmas_usb", palmas_usb);
-	if (status < 0) {
-		dev_err(&pdev->dev, "can't get IRQ %d, err %d\n",
-					palmas_usb->irq3, status);
-		goto fail_irq3;
-	}
-
-	status = request_threaded_irq(palmas_usb->irq4, NULL,
-			palmas_vbus_wakeup_irq,
+	status = devm_request_threaded_irq(palmas_usb->dev, palmas_usb->irq4,
+			NULL, palmas_vbus_wakeup_irq,
 			IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
 			"palmas_usb", palmas_usb);
 	if (status < 0) {
 		dev_err(&pdev->dev, "can't get IRQ %d, err %d\n",
 					palmas_usb->irq4, status);
-		goto fail_irq4;
+		goto fail_irq;
 	}
 
 	dev_info(&pdev->dev, "Initialized Palmas USB module\n");
@@ -360,19 +351,9 @@ static int palmas_usb_probe(struct platform_device *pdev)
 
 	return 0;
 
-fail_irq4:
-	free_irq(palmas_usb->irq3, palmas_usb);
-
-fail_irq3:
-	free_irq(palmas_usb->irq2, palmas_usb);
-
-fail_irq2:
-	free_irq(palmas_usb->irq1, palmas_usb);
-
-fail_irq1:
+fail_irq:
 	cancel_work_sync(&palmas_usb->set_vbus_work);
 	device_remove_file(palmas_usb->dev, &dev_attr_vbus);
-	kfree(palmas_usb);
 
 	return status;
 }
@@ -381,14 +362,8 @@ static int palmas_usb_remove(struct platform_device *pdev)
 {
 	struct palmas_usb *palmas_usb = platform_get_drvdata(pdev);
 
-	free_irq(palmas_usb->irq1, palmas_usb);
-	free_irq(palmas_usb->irq2, palmas_usb);
-	free_irq(palmas_usb->irq3, palmas_usb);
-	free_irq(palmas_usb->irq4, palmas_usb);
-	regulator_put(palmas_usb->vbus_reg);
 	device_remove_file(palmas_usb->dev, &dev_attr_vbus);
 	cancel_work_sync(&palmas_usb->set_vbus_work);
-	kfree(palmas_usb);
 
 	return 0;
 }
