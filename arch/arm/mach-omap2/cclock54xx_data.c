@@ -199,6 +199,12 @@ static struct clk_hw_omap dpll_abe_x2_ck_hw = {
 
 DEFINE_STRUCT_CLK(dpll_abe_x2_ck, dpll_abe_x2_ck_parents, dpll_abe_x2_ck_ops);
 
+static const struct clk_ops omap_hsdivider_ops = {
+	.set_rate	= &omap2_clksel_set_rate,
+	.recalc_rate	= &omap2_clksel_recalc,
+	.round_rate	= &omap2_clksel_round_rate,
+};
+
 DEFINE_CLK_OMAP_HSDIVIDER63(dpll_abe_m2x2_ck, "dpll_abe_x2_ck", &dpll_abe_x2_ck,
 			    0x0, OMAP54XX_CM_DIV_M2_DPLL_ABE,
 			    OMAP54XX_DIVHS_0_4_MASK);
@@ -1488,7 +1494,7 @@ static const struct clksel auxclk_src_sel[] = {
 };
 
 static const char *auxclk_src_ck_parents[] = {
-	"sys_clkin_ck", "dpll_core_m3x2_ck", "dpll_per_m3x2_ck",
+	"sys_clkin", "dpll_core_m3x2_ck", "dpll_per_m3x2_ck",
 };
 
 static const struct clk_ops auxclk_src_ck_ops = {
@@ -1754,17 +1760,17 @@ static struct omap_clk omap54xx_clks[] = {
 	CLK("omap_timer.9",	"32k_ck",		&sys_32k_ck,	CK_54XX),
 	CLK("omap_timer.10",	"32k_ck",		&sys_32k_ck,	CK_54XX),
 	CLK("omap_timer.11",	"32k_ck",		&sys_32k_ck,	CK_54XX),
-	CLK("omap_timer.1",	"sys_ck",		&sys_clkin_ck,	CK_54XX),
-	CLK("omap_timer.2",	"sys_ck",		&sys_clkin_ck,	CK_54XX),
-	CLK("omap_timer.3",	"sys_ck",		&sys_clkin_ck,	CK_54XX),
-	CLK("omap_timer.4",	"sys_ck",		&sys_clkin_ck,	CK_54XX),
-	CLK("omap_timer.9",	"sys_ck",		&sys_clkin_ck,	CK_54XX),
-	CLK("omap_timer.10",	"sys_ck",		&sys_clkin_ck,	CK_54XX),
-	CLK("omap_timer.11",	"sys_ck",		&sys_clkin_ck,	CK_54XX),
-	CLK("omap_timer.5",	"sys_ck",		&syc_clk_div_ck,	CK_54XX),
-	CLK("omap_timer.6",	"sys_ck",		&syc_clk_div_ck,	CK_54XX),
-	CLK("omap_timer.7",	"sys_ck",		&syc_clk_div_ck,	CK_54XX),
-	CLK("omap_timer.8",	"sys_ck",		&syc_clk_div_ck,	CK_54XX),
+	CLK("omap_timer.1",	"sys_ck",		&sys_clkin,	CK_54XX),
+	CLK("omap_timer.2",	"sys_ck",		&sys_clkin,	CK_54XX),
+	CLK("omap_timer.3",	"sys_ck",		&sys_clkin,	CK_54XX),
+	CLK("omap_timer.4",	"sys_ck",		&sys_clkin,	CK_54XX),
+	CLK("omap_timer.9",	"sys_ck",		&sys_clkin,	CK_54XX),
+	CLK("omap_timer.10",	"sys_ck",		&sys_clkin,	CK_54XX),
+	CLK("omap_timer.11",	"sys_ck",		&sys_clkin,	CK_54XX),
+	CLK("omap_timer.5",	"sys_ck",		&dss_syc_gfclk_div,	CK_54XX),
+	CLK("omap_timer.6",	"sys_ck",		&dss_syc_gfclk_div,	CK_54XX),
+	CLK("omap_timer.7",	"sys_ck",		&dss_syc_gfclk_div,	CK_54XX),
+	CLK("omap_timer.8",	"sys_ck",		&dss_syc_gfclk_div,	CK_54XX),
 };
 
 int __init omap5xxx_clk_init(void)
@@ -1794,9 +1800,6 @@ int __init omap5xxx_clk_init(void)
 	}
 
 	omap2_clk_disable_autoidle_all();
-
-	omap2_clk_enable_init_clocks(enable_init_clks,
-				     ARRAY_SIZE(enable_init_clks));
 
 	return 0;
 }

@@ -708,6 +708,7 @@ static struct omap_hwmod omap54xx_dss_dispc_hwmod = {
 	.main_clk	= "dss_dss_clk",
 	.prcm = {
 		.omap4 = {
+			.clkctrl_offs = OMAP54XX_CM_DSS_DSS_CLKCTRL_OFFSET,
 			.flags = HWMOD_OMAP4_NO_CONTEXT_LOSS_BIT,
 		},
 	},
@@ -761,6 +762,7 @@ static struct omap_hwmod omap54xx_dss_dsi1_a_hwmod = {
 	.main_clk	= "dss_dss_clk",
 	.prcm = {
 		.omap4 = {
+			.clkctrl_offs = OMAP54XX_CM_DSS_DSS_CLKCTRL_OFFSET,
 			.flags = HWMOD_OMAP4_NO_CONTEXT_LOSS_BIT,
 		},
 	},
@@ -776,6 +778,7 @@ static struct omap_hwmod omap54xx_dss_dsi1_b_hwmod = {
 	.main_clk	= "dss_dss_clk",
 	.prcm = {
 		.omap4 = {
+			.clkctrl_offs = OMAP54XX_CM_DSS_DSS_CLKCTRL_OFFSET,
 			.flags = HWMOD_OMAP4_NO_CONTEXT_LOSS_BIT,
 		},
 	},
@@ -805,6 +808,7 @@ static struct omap_hwmod omap54xx_dss_dsi1_c_hwmod = {
 	.main_clk	= "dss_dss_clk",
 	.prcm = {
 		.omap4 = {
+			.clkctrl_offs = OMAP54XX_CM_DSS_DSS_CLKCTRL_OFFSET,
 			.flags = HWMOD_OMAP4_NO_CONTEXT_LOSS_BIT,
 		},
 	},
@@ -856,6 +860,7 @@ static struct omap_hwmod omap54xx_dss_hdmi_hwmod = {
 	.main_clk	= "dss_48mhz_clk",
 	.prcm = {
 		.omap4 = {
+			.clkctrl_offs = OMAP54XX_CM_DSS_DSS_CLKCTRL_OFFSET,
 			.flags = HWMOD_OMAP4_NO_CONTEXT_LOSS_BIT,
 		},
 	},
@@ -900,6 +905,7 @@ static struct omap_hwmod omap54xx_dss_rfbi_hwmod = {
 	.sdma_reqs	= omap54xx_dss_rfbi_sdma_reqs,
 	.prcm = {
 		.omap4 = {
+			.clkctrl_offs = OMAP54XX_CM_DSS_DSS_CLKCTRL_OFFSET,
 			.flags = HWMOD_OMAP4_NO_CONTEXT_LOSS_BIT,
 		},
 	},
@@ -2033,7 +2039,7 @@ static struct omap_hwmod_dma_info omap54xx_mcbsp1_sdma_reqs[] = {
 };
 
 static struct omap_hwmod_opt_clk mcbsp1_opt_clks[] = {
-	{ .role = "pad_fck", .clk = "pad_clks" },
+	{ .role = "pad_fck", .clk = "pad_clks_ck" },
 	{ .role = "prcm_fck", .clk = "mcbsp1_sync_mux_ck" },
 };
 
@@ -2068,7 +2074,7 @@ static struct omap_hwmod_dma_info omap54xx_mcbsp2_sdma_reqs[] = {
 };
 
 static struct omap_hwmod_opt_clk mcbsp2_opt_clks[] = {
-	{ .role = "pad_fck", .clk = "pad_clks" },
+	{ .role = "pad_fck", .clk = "pad_clks_ck" },
 	{ .role = "prcm_fck", .clk = "mcbsp2_sync_mux_ck" },
 };
 
@@ -2103,7 +2109,7 @@ static struct omap_hwmod_dma_info omap54xx_mcbsp3_sdma_reqs[] = {
 };
 
 static struct omap_hwmod_opt_clk mcbsp3_opt_clks[] = {
-	{ .role = "pad_fck", .clk = "pad_clks" },
+	{ .role = "pad_fck", .clk = "pad_clks_ck" },
 	{ .role = "prcm_fck", .clk = "mcbsp3_sync_mux_ck" },
 };
 
@@ -2177,7 +2183,7 @@ static struct omap_hwmod omap54xx_mcpdm_hwmod = {
 	.flags		= HWMOD_EXT_OPT_MAIN_CLK,
 	.mpu_irqs	= omap54xx_mcpdm_irqs,
 	.sdma_reqs	= omap54xx_mcpdm_sdma_reqs,
-	.main_clk	= "pad_clks",
+	.main_clk	= "pad_clks_ck",
 	.prcm = {
 		.omap4 = {
 			.clkctrl_offs = OMAP54XX_CM_ABE_MCPDM_CLKCTRL_OFFSET,
