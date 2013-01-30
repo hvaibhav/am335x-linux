@@ -143,3 +143,8 @@
 	status = "okay";
 	vmmc-supply = <&ldo3_reg>;
 };
+
+&mmc2 {
+	status = "okay";
+	vmmc-supply = <&ldo3_reg>;
+};
