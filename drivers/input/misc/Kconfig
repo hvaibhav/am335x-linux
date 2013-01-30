@@ -627,4 +627,11 @@ config INPUT_XEN_KBDDEV_FRONTEND
 	  To compile this driver as a module, choose M here: the
 	  module will be called xen-kbdfront.
 
+config INPUT_PALMAS_PWRBUTTON
+	tristate "PALMAS Power Button Driver"
+	depends on MFD_PALMAS
+	help
+	  Say Y here if you want to eable power key reporting for the palmas
+	  familty of PMICs
+
 endif

@@ -63,6 +63,12 @@ config CLK_TWL6040
 	  McPDM. McPDM module is using the external bit clock on the McPDM bus
 	  as functional clock.
 
+config CLK_PALMAS
+	tristate "Palmas PMIC Clock Support"
+	depends on MFD_PALMAS
+	help
+	   Enable clock support for the two clocks on Palmas PMIC chips
+
 endmenu
 
 source "drivers/clk/mvebu/Kconfig"

@@ -38,3 +38,27 @@ twl4030-usb {
 	usb3v1-supply = <&vusb3v1>;
 	usb_mode = <1>;
 };
+
+PALMAS USB COMPARATOR
+Required Properties:
+ - compatible : Should be "ti,palmas-usb"
+ - interrupts : Four interrupt numbers to the cpu should be specified. First
+   interrupt number is the otg interrupt number that raises ID interrupts when
+   the controller has to act as host and the second interrupt number is the
+   ID wakeup interrupt number, third interrupt is VBUS interrupt and fourth
+   interrupt is VBUS wakeup interrupt.
+-  interrupt-name : the name corresponding to each interrupt populated in
+   interrupts property.
+ - vbus-supply : phandle to the regulator device tree node.
+
+Optional Properties:
+ - ti,wakeup : To enable the wakeup comparator in probe
+ - ti,no_control_vbus: if the platform wishes its own vbus control
+
+palmas-usb {
+	compatible = "ti,palmas-usb";
+	interrupts = <20 0>, <21 0>, <22 0>, <23 0>;
+	interrupt-names = "ID", "ID_WAKEUP", "VBUS", "VBUS_WAKEUP";
+	vbus-supply = <&smps10_reg>;
+	ti,wakeup;
+};

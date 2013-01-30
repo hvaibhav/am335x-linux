@@ -138,4 +138,11 @@ config USB_MV_OTG
 
 	  To compile this driver as a module, choose M here.
 
+config PALMAS_USB
+	tristate "Palmas USB Transceiver Driver"
+	depends on MFD_PALMAS
+	select USB_OTG_UTILS
+	help
+	  Enable this to support the Palmas OTG transceiver
+
 endif # USB || OTG

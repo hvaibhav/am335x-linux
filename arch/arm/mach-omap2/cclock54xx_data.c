@@ -752,6 +752,18 @@ static struct clk_hw_omap l3_iclk_div_hw = {
 
 DEFINE_STRUCT_CLK(l3_iclk_div, iva_dpll_hs_clk_div_parents, c2c_fclk_ops);
 
+static const char *gpu_core_gclk_mux_parents[] = {
+	"dpll_core_h14x2_ck", "dpll_per_h14x2_ck",
+};
+
+DEFINE_CLK_MUX(gpu_core_gclk_mux, gpu_core_gclk_mux_parents, NULL, 0x0,
+	       OMAP54XX_CM_GPU_GPU_CLKCTRL, OMAP54XX_CLKSEL_GPU_CORE_GCLK_SHIFT,
+	       OMAP54XX_CLKSEL_GPU_CORE_GCLK_WIDTH, 0x0, NULL);
+
+DEFINE_CLK_MUX(gpu_hyd_gclk_mux, gpu_core_gclk_mux_parents, NULL, 0x0,
+	       OMAP54XX_CM_GPU_GPU_CLKCTRL, OMAP54XX_CLKSEL_GPU_HYD_GCLK_SHIFT,
+	       OMAP54XX_CLKSEL_GPU_HYD_GCLK_WIDTH, 0x0, NULL);
+
 static const char *gpu_l3_iclk_parents[] = {
 	"l3_iclk_div",
 };
@@ -1346,18 +1358,6 @@ DEFINE_CLK_DIVIDER(fdif_fclk, "dpll_per_h11x2_ck", &dpll_per_h11x2_ck, 0x0,
 		   OMAP54XX_CM_CAM_FDIF_CLKCTRL, OMAP54XX_CLKSEL_FCLK_SHIFT,
 		   OMAP54XX_CLKSEL_FCLK_WIDTH, 0x0, NULL);
 
-static const char *gpu_core_gclk_mux_parents[] = {
-	"dpll_core_h14x2_ck", "dpll_per_h14x2_ck",
-};
-
-DEFINE_CLK_MUX(gpu_core_gclk_mux, gpu_core_gclk_mux_parents, NULL, 0x0,
-	       OMAP54XX_CM_GPU_GPU_CLKCTRL, OMAP54XX_CLKSEL_GPU_CORE_GCLK_SHIFT,
-	       OMAP54XX_CLKSEL_GPU_CORE_GCLK_WIDTH, 0x0, NULL);
-
-DEFINE_CLK_MUX(gpu_hyd_gclk_mux, gpu_core_gclk_mux_parents, NULL, 0x0,
-	       OMAP54XX_CM_GPU_GPU_CLKCTRL, OMAP54XX_CLKSEL_GPU_HYD_GCLK_SHIFT,
-	       OMAP54XX_CLKSEL_GPU_HYD_GCLK_WIDTH, 0x0, NULL);
-
 DEFINE_CLK_DIVIDER(hsi_fclk, "dpll_per_m2x2_ck", &dpll_per_m2x2_ck, 0x0,
 		   OMAP54XX_CM_L3INIT_HSI_CLKCTRL, OMAP54XX_CLKSEL_SHIFT,
 		   OMAP54XX_CLKSEL_WIDTH, 0x0, NULL);
@@ -1647,6 +1647,17 @@ static struct omap_clk omap54xx_clks[] = {
 	CLK(NULL,	"wkupaon_iclk_mux",		&wkupaon_iclk_mux,	CK_54XX),
 	CLK(NULL,	"l3instr_ts_gclk_div",		&l3instr_ts_gclk_div,	CK_54XX),
 	CLK(NULL,	"l4_root_clk_div",		&l4_root_clk_div,	CK_54XX),
+	CLK(NULL,	"timer10_gfclk_mux",		&timer10_gfclk_mux,	CK_54XX),
+	CLK(NULL,	"timer11_gfclk_mux",		&timer11_gfclk_mux,	CK_54XX),
+	CLK(NULL,	"timer1_gfclk_mux",		&timer1_gfclk_mux,	CK_54XX),
+	CLK(NULL,	"timer2_gfclk_mux",		&timer2_gfclk_mux,	CK_54XX),
+	CLK(NULL,	"timer3_gfclk_mux",		&timer3_gfclk_mux,	CK_54XX),
+	CLK(NULL,	"timer4_gfclk_mux",		&timer4_gfclk_mux,	CK_54XX),
+	CLK(NULL,	"timer5_gfclk_mux",		&timer5_gfclk_mux,	CK_54XX),
+	CLK(NULL,	"timer6_gfclk_mux",		&timer6_gfclk_mux,	CK_54XX),
+	CLK(NULL,	"timer7_gfclk_mux",		&timer7_gfclk_mux,	CK_54XX),
+	CLK(NULL,	"timer8_gfclk_mux",		&timer8_gfclk_mux,	CK_54XX),
+	CLK(NULL,	"timer9_gfclk_mux",		&timer9_gfclk_mux,	CK_54XX),
 	CLK(NULL,	"dss_32khz_clk",		&dss_32khz_clk,	CK_54XX),
 	CLK(NULL,	"dss_48mhz_clk",		&dss_48mhz_clk,	CK_54XX),
 	CLK(NULL,	"dss_dss_clk",			&dss_dss_clk,	CK_54XX),
@@ -1700,17 +1711,8 @@ static struct omap_clk omap54xx_clks[] = {
 	CLK(NULL,	"mmc1_fclk",			&mmc1_fclk,	CK_54XX),
 	CLK(NULL,	"mmc2_fclk_mux",		&mmc2_fclk_mux,	CK_54XX),
 	CLK(NULL,	"mmc2_fclk",			&mmc2_fclk,	CK_54XX),
-	CLK(NULL,	"timer10_gfclk_mux",		&timer10_gfclk_mux,	CK_54XX),
-	CLK(NULL,	"timer11_gfclk_mux",		&timer11_gfclk_mux,	CK_54XX),
-	CLK(NULL,	"timer1_gfclk_mux",		&timer1_gfclk_mux,	CK_54XX),
-	CLK(NULL,	"timer2_gfclk_mux",		&timer2_gfclk_mux,	CK_54XX),
-	CLK(NULL,	"timer3_gfclk_mux",		&timer3_gfclk_mux,	CK_54XX),
-	CLK(NULL,	"timer4_gfclk_mux",		&timer4_gfclk_mux,	CK_54XX),
-	CLK(NULL,	"timer5_gfclk_mux",		&timer5_gfclk_mux,	CK_54XX),
-	CLK(NULL,	"timer6_gfclk_mux",		&timer6_gfclk_mux,	CK_54XX),
-	CLK(NULL,	"timer7_gfclk_mux",		&timer7_gfclk_mux,	CK_54XX),
-	CLK(NULL,	"timer8_gfclk_mux",		&timer8_gfclk_mux,	CK_54XX),
-	CLK(NULL,	"timer9_gfclk_mux",		&timer9_gfclk_mux,	CK_54XX),
+	CLK(NULL,	"utmi_p1_gfclk",		&utmi_p1_gfclk,	CK_54XX),
+	CLK(NULL,	"utmi_p2_gfclk",		&utmi_p2_gfclk,	CK_54XX),
 	CLK(NULL,	"auxclk0_src_ck",		&auxclk0_src_ck,	CK_54XX),
 	CLK(NULL,	"auxclk0_ck",			&auxclk0_ck,	CK_54XX),
 	CLK(NULL,	"auxclkreq0_ck",		&auxclkreq0_ck,	CK_54XX),

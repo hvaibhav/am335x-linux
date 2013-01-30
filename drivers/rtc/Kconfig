@@ -436,6 +436,12 @@ config RTC_DRV_RV3029C2
 	  This driver can also be built as a module. If so, the module
 	  will be called rtc-rv3029c2.
 
+config RTC_DRV_PALMAS
+	tristate "Palmas RTC"
+	help
+	  If you say yes here you get support for the RTC on the Palmas
+	  series of PMICs from TI.
+
 endif # I2C
 
 comment "SPI RTC drivers"
