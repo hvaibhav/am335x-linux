@@ -143,3 +143,20 @@
 	status = "okay";
 	vmmc-supply = <&ldo3_reg>;
 };
+
+&mmc2 {
+	status = "okay";
+	vmmc-supply = <&ldo3_reg>;
+};
+
+&edma {
+	ti,edma-xbar-event-map = <32 12>;
+};
+
+&sham {
+	status = "okay";
+};
+
+&aes {
+	status = "okay";
+};

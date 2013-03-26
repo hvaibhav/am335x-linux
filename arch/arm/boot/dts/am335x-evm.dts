@@ -251,3 +251,11 @@
 	status = "okay";
 	vmmc-supply = <&vmmc_reg>;
 };
+
+&sham {
+	status = "okay";
+};
+
+&aes {
+	status = "okay";
+};

@@ -263,3 +263,11 @@
 &cpsw_emac1 {
 	phy_id = <&davinci_mdio>, <1>;
 };
+
+&sham {
+	status = "okay";
+};
+
+&aes {
+	status = "okay";
+};
