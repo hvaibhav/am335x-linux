@@ -177,3 +177,25 @@
 &cpsw_emac1 {
 	phy_id = <&davinci_mdio>, <1>;
 };
+
+&mmc1 {
+	status = "okay";
+	vmmc-supply = <&ldo3_reg>;
+};
+
+&mmc2 {
+	status = "okay";
+	vmmc-supply = <&ldo3_reg>;
+};
+
+&edma {
+	ti,edma-xbar-event-map = <32 12>;
+};
+
+&sham {
+	status = "okay";
+};
+
+&aes {
+	status = "okay";
+};
