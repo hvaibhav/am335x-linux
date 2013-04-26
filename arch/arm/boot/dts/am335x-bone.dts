@@ -26,7 +26,7 @@
 
 	am33xx_pinmux: pinmux@44e10800 {
 		pinctrl-names = "default";
-		pinctrl-0 = <&user_leds_s0>;
+		pinctrl-0 = <&clkout2_pin>;
 
 		user_leds_s0: user_leds_s0 {
 			pinctrl-single,pins = <
@@ -36,14 +36,40 @@
 				0x60 0x17	/* gpmc_a8.gpio1_24, OUTPUT_PULLUP | MODE7 */
 			>;
 		};
+
+		i2c0_pins: pinmux_i2c0_pins {
+			pinctrl-single,pins = <
+				0x188 0x30	/* i2c0_sda.i2c0_sda PULLUP | INPUTENABLE | MODE0 */
+				0x18c 0x30	/* i2c0_scl.i2c0_scl PULLUP | INPUTENABLE | MODE0 */
+			>;
+		};
+
+		uart0_pins: pinmux_uart0_pins {
+			pinctrl-single,pins = <
+				0x170 0x30	/* uart0_rxd.uart0_rxd PULLUP | INPUTENABLE | MODE0 */
+				0x174 0x00	/* uart0_txd.uart0_txd PULLDOWN | MODE0 */
+			>;
+		};
+
+		clkout2_pin: pinumx_clkout2_pin {
+			pinctrl-single,pins = <
+				0x1b4 0x03	/* xdma_event_intr1.clkout2 OMAP_MUX_MODE3 | AM33XX_PIN_OUTPUT */
+			>;
+		};
 	};
 
 	ocp {
-		uart1: serial@44e09000 {
+		uart0: serial@44e09000 {
+			pinctrl-names = "default";
+			pinctrl-0 = <&uart0_pins>;
+
 			status = "okay";
 		};
 
-		i2c1: i2c@44e0b000 {
+		i2c0: i2c@44e0b000 {
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2c0_pins>;
+
 			status = "okay";
 			clock-frequency = <400000>;
 
@@ -52,34 +78,41 @@
 			};
 
 		};
+
+		rtc@44e3e000 {
+			ti,system-power-controller;
+		};
 	};
 
 	leds {
+		pinctrl-names = "default";
+		pinctrl-0 = <&user_leds_s0>;
+
 		compatible = "gpio-leds";
 
 		led@2 {
 			label = "beaglebone:green:heartbeat";
-			gpios = <&gpio2 21 0>;
+			gpios = <&gpio1 21 0>;
 			linux,default-trigger = "heartbeat";
 			default-state = "off";
 		};
 
 		led@3 {
 			label = "beaglebone:green:mmc0";
-			gpios = <&gpio2 22 0>;
+			gpios = <&gpio1 22 0>;
 			linux,default-trigger = "mmc0";
 			default-state = "off";
 		};
 
 		led@4 {
 			label = "beaglebone:green:usr2";
-			gpios = <&gpio2 23 0>;
+			gpios = <&gpio1 23 0>;
 			default-state = "off";
 		};
 
 		led@5 {
 			label = "beaglebone:green:usr3";
-			gpios = <&gpio2 24 0>;
+			gpios = <&gpio1 24 0>;
 			default-state = "off";
 		};
 	};
@@ -88,6 +121,8 @@
 /include/ "tps65217.dtsi"
 
 &tps {
+	ti,pmic-shutdown-controller;
+
 	regulators {
 		dcdc1_reg: regulator@0 {
 			regulator-always-on;

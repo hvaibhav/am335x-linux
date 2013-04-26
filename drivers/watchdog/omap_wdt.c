@@ -63,7 +63,6 @@ struct omap_wdt_dev {
 	struct resource *mem;
 	int		wdt_trgr_pattern;
 	struct mutex	lock;		/* to avoid races with PM */
-	int		irq;
 };
 
 static void omap_wdt_reload(struct omap_wdt_dev *wdev)
@@ -171,7 +170,7 @@ static int omap_wdt_start(struct watchdog_device *wdog)
 	omap_wdt_reload(wdev); /* trigger loading of new timeout value */
 
 	/* Enable delay interrupt */
-	if (kernelpet && wdev->irq) {
+	if (kernelpet) {
 		__raw_writel(0x2, base + OMAP_WATCHDOG_WIRQENSET);
 		__raw_writel(0x2, base + OMAP_WATCHDOG_WIRQWAKEEN);
 	}
@@ -191,7 +190,7 @@ static int omap_wdt_stop(struct watchdog_device *wdog)
 	mutex_lock(&wdev->lock);
 	omap_wdt_disable(wdev);
 	/* Disable delay interrupt */
-	if (kernelpet && wdev->irq)
+	if (kernelpet)
 		__raw_writel(0x2, base + OMAP_WATCHDOG_WIRQENCLR);
 	pm_runtime_put_sync(wdev->dev);
 	wdev->omap_wdt_users = false;
@@ -249,11 +248,11 @@ static int omap_wdt_probe(struct platform_device *pdev)
 	struct omap_wd_timer_platform_data *pdata = pdev->dev.platform_data;
 	bool nowayout = WATCHDOG_NOWAYOUT;
 	struct watchdog_device *omap_wdt;
-	struct resource *res, *mem, *res_irq;
+	struct resource *res, *mem;
 	struct omap_wdt_dev *wdev;
 	struct device_node *np_wdt = pdev->dev.of_node;
 	u32 rs;
-	int ret;
+	int ret, irq;
 
 	omap_wdt = devm_kzalloc(&pdev->dev, sizeof(*omap_wdt), GFP_KERNEL);
 	if (!omap_wdt)
@@ -290,13 +289,15 @@ static int omap_wdt_probe(struct platform_device *pdev)
 		hw_pet = kernelpet;
 	}
 
-	if (kernelpet) {
-		res_irq = platform_get_resource(pdev, IORESOURCE_IRQ, 0);
-		if (res_irq) {
-			ret = request_irq(res_irq->start, omap_wdt_interrupt,
-					  0, dev_name(&pdev->dev), omap_wdt);
 
-			wdev->irq = res_irq->start;
+	if (kernelpet) {
+		irq = platform_get_irq(pdev, 0);
+		ret = devm_request_irq(&pdev->dev, irq, omap_wdt_interrupt, 0,
+				       dev_name(&pdev->dev), omap_wdt);
+		if (ret < 0) {
+			dev_err(&pdev->dev, "can't get irq %d, err %d\n",
+				irq, ret);
+			return ret;
 		}
 	}
 
@@ -340,7 +341,7 @@ static int omap_wdt_probe(struct platform_device *pdev)
 
 	pm_runtime_put_sync(wdev->dev);
 
-	if (kernelpet && wdev->irq)
+	if (kernelpet)
 		return omap_wdt_start(omap_wdt);
 
 	return 0;
@@ -363,6 +364,9 @@ static int omap_wdt_remove(struct platform_device *pdev)
 {
 	struct watchdog_device *wdog = platform_get_drvdata(pdev);
 	struct omap_wdt_dev *wdev = watchdog_get_drvdata(wdog);
+
+	if (kernelpet)
+		omap_wdt_stop(wdog);
 
 	pm_runtime_disable(wdev->dev);
 	watchdog_unregister_device(wdog);

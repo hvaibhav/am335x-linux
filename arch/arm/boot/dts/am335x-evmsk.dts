@@ -32,7 +32,7 @@
 
 	am33xx_pinmux: pinmux@44e10800 {
 		pinctrl-names = "default";
-		pinctrl-0 = <&user_leds_s0 &gpio_keys_s0>;
+		pinctrl-0 = <&gpio_keys_s0 &clkout2_pin>;
 
 		user_leds_s0: user_leds_s0 {
 			pinctrl-single,pins = <
@@ -51,14 +51,40 @@
 				0x9c 0x27	/* gpmc_ben0_cle.gpio2_5, INPUT | MODE7 */
 			>;
 		};
+
+		i2c0_pins: pinmux_i2c0_pins {
+			pinctrl-single,pins = <
+				0x188 0x30	/* i2c0_sda.i2c0_sda PULLUP | INPUTENABLE | MODE0 */
+				0x18c 0x30	/* i2c0_scl.i2c0_scl PULLUP | INPUTENABLE | MODE0 */
+			>;
+		};
+
+		uart0_pins: pinmux_uart0_pins {
+			pinctrl-single,pins = <
+				0x170 0x30	/* uart0_rxd.uart0_rxd PULLUP | INPUTENABLE | MODE0 */
+				0x174 0x00	/* uart0_txd.uart0_txd PULLDOWN | MODE0 */
+			>;
+		};
+
+		clkout2_pin: pinumx_clkout2_pin {
+			pinctrl-single,pins = <
+				0x1b4 0x03	/* xdma_event_intr1.clkout2 OMAP_MUX_MODE3 | AM33XX_PIN_OUTPUT */
+			>;
+		};
 	};
 
 	ocp {
-		uart1: serial@44e09000 {
+		uart0: serial@44e09000 {
+			pinctrl-names = "default";
+			pinctrl-0 = <&uart0_pins>;
+
 			status = "okay";
 		};
 
-		i2c1: i2c@44e0b000 {
+		i2c0: i2c@44e0b000 {
+			pinctrl-names = "default";
+			pinctrl-0 = <&i2c0_pins>;
+
 			status = "okay";
 			clock-frequency = <400000>;
 
@@ -111,30 +137,33 @@
 	};
 
 	leds {
+		pinctrl-names = "default";
+		pinctrl-0 = <&user_leds_s0>;
+
 		compatible = "gpio-leds";
 
 		led@1 {
 			label = "evmsk:green:usr0";
-			gpios = <&gpio2 4 0>;
+			gpios = <&gpio1 4 0>;
 			default-state = "off";
 		};
 
 		led@2 {
 			label = "evmsk:green:usr1";
-			gpios = <&gpio2 5 0>;
+			gpios = <&gpio1 5 0>;
 			default-state = "off";
 		};
 
 		led@3 {
 			label = "evmsk:green:mmc0";
-			gpios = <&gpio2 6 0>;
+			gpios = <&gpio1 6 0>;
 			linux,default-trigger = "mmc0";
 			default-state = "off";
 		};
 
 		led@4 {
 			label = "evmsk:green:heartbeat";
-			gpios = <&gpio2 7 0>;
+			gpios = <&gpio1 7 0>;
 			linux,default-trigger = "heartbeat";
 			default-state = "off";
 		};
@@ -148,26 +177,26 @@
 		switch@1 {
 			label = "button0";
 			linux,code = <0x100>;
-			gpios = <&gpio3 3 0>;
+			gpios = <&gpio2 3 0>;
 		};
 
 		switch@2 {
 			label = "button1";
 			linux,code = <0x101>;
-			gpios = <&gpio3 2 0>;
+			gpios = <&gpio2 2 0>;
 		};
 
 		switch@3 {
 			label = "button2";
 			linux,code = <0x102>;
-			gpios = <&gpio1 30 0>;
+			gpios = <&gpio0 30 0>;
 			gpio-key,wakeup;
 		};
 
 		switch@4 {
 			label = "button3";
 			linux,code = <0x103>;
-			gpios = <&gpio3 5 0>;
+			gpios = <&gpio2 5 0>;
 		};
 	};
 };

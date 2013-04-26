@@ -101,6 +101,7 @@ dtb-$(CONFIG_ARCH_MXS) += imx23-evk.dtb \
 	imx28-sps1.dtb \
 	imx28-tx28.dtb
 dtb-$(CONFIG_ARCH_OMAP2PLUS) += omap2420-h4.dtb \
+	omap3430-sdp.dtb \
 	omap3-beagle.dtb \
 	omap3-beagle-xm.dtb \
 	omap3-evm.dtb \
@@ -110,11 +111,12 @@ dtb-$(CONFIG_ARCH_OMAP2PLUS) += omap2420-h4.dtb \
 	omap4-panda-es.dtb \
 	omap4-var-som.dtb \
 	omap4-sdp.dtb \
-	omap5-evm.dtb \
-	omap5-panda.dtb \
+	omap5-uevm.dtb \
+	omap5-sevm.dtb \
 	am335x-evm.dtb \
 	am335x-evmsk.dtb \
-	am335x-bone.dtb
+	am335x-bone.dtb \
+	am335x-boneblack.dtb
 dtb-$(CONFIG_ARCH_ORION5X) += orion5x-lacie-ethernet-disk-mini-v2.dtb
 dtb-$(CONFIG_ARCH_PRIMA2) += prima2-evb.dtb
 dtb-$(CONFIG_ARCH_U8500) += snowball.dtb \

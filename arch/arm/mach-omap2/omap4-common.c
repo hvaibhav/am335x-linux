@@ -403,7 +403,7 @@ static int __init omap5_axi_err_init(void)
 
 	ret = request_threaded_irq(OMAP54XX_IRQ_AXI,
 			axi_error_handler, (irq_handler_t) 0,
-			IRQF_DISABLED, "axi-err-irq", 0);
+			IRQF_DISABLED, "axi-err-irq", NULL);
 
 	return ret;
 }

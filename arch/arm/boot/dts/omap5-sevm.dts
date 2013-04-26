@@ -11,8 +11,8 @@
 /include/ "samsung_k3pe0e000b.dtsi"
 
 / {
-	model = "TI OMAP5 EVM board";
-	compatible = "ti,omap5-evm", "ti,omap5";
+	model = "TI OMAP5 sEVM board";
+	compatible = "ti,omap5-sevm", "ti,omap5";
 
 	memory {
 		device_type = "memory";

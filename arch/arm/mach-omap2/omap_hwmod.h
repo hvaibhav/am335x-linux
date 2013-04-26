@@ -454,6 +454,8 @@ struct omap_hwmod_omap4_prcm {
  * HWMOD_SWSUP_SIDLE_ACT: omap_hwmod code should manually bring the module out of
  *     idle, but rely on smart-idle to the put it back in idle, so the wakeups
  *     are still functional (Only known case for now is UART)
+ * HWMOD_ACCESS_DISABLED: this module cannot be accessed and must remain
+ *     disabled.
  */
 #define HWMOD_SWSUP_SIDLE			(1 << 0)
 #define HWMOD_SWSUP_MSTANDBY			(1 << 1)
@@ -466,6 +468,7 @@ struct omap_hwmod_omap4_prcm {
 #define HWMOD_16BIT_REG				(1 << 8)
 #define HWMOD_EXT_OPT_MAIN_CLK			(1 << 9)
 #define HWMOD_SWSUP_SIDLE_ACT			(1 << 10)
+#define HWMOD_ACCESS_DISABLED			(1 << 11)
 
 /*
  * omap_hwmod._int_flags definitions
@@ -495,6 +498,8 @@ struct omap_hwmod_omap4_prcm {
 #define _HWMOD_STATE_ENABLED			4
 #define _HWMOD_STATE_IDLE			5
 #define _HWMOD_STATE_DISABLED			6
+/* count of possible states */
+#define _HWMOD_STATE_COUNT			(_HWMOD_STATE_DISABLED + 1)
 
 /**
  * struct omap_hwmod_class - the type of an IP block
@@ -612,6 +617,8 @@ struct omap_hwmod {
 	u8				_postsetup_state;
 };
 
+int omap_hwmod_register_flags(struct omap_hwmod **ohs,
+			      u32 set_flags, u32 clear_flags);
 struct omap_hwmod *omap_hwmod_lookup(const char *name);
 int omap_hwmod_for_each(int (*fn)(struct omap_hwmod *oh, void *data),
 			void *data);

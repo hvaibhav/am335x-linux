@@ -1,7 +1,7 @@
 /*
  * OMAP3 clock data
  *
- * Copyright (C) 2007-2012 Texas Instruments, Inc.
+ G* Copyright (C) 2007-2012 Texas Instruments, Inc.
  * Copyright (C) 2007-2011 Nokia Corporation
  *
  * Written by Paul Walmsley
@@ -3334,10 +3334,8 @@ static struct omap_clk omap3xxx_clks[] = {
 	CLK("omap_hsmmc.2",	"ick",	&mmchs3_ick,	CK_3430ES2PLUS | CK_AM35XX | CK_36XX),
 	CLK(NULL,	"mmchs3_ick",	&mmchs3_ick,	CK_3430ES2PLUS | CK_AM35XX | CK_36XX),
 	CLK(NULL,	"icr_ick",	&icr_ick,	CK_34XX | CK_36XX),
-	CLK("omap-aes",	"ick",		&aes2_ick,	CK_34XX | CK_36XX),
-	CLK(NULL,	"aes2_ick",	&aes2_ick,	CK_34XX | CK_36XX),
+	CLK("omap-aes",	"ick",	&aes2_ick,	CK_34XX | CK_36XX),
 	CLK("omap-sham",	"ick",	&sha12_ick,	CK_34XX | CK_36XX),
-	CLK(NULL,	"sha12_ick",	&sha12_ick,	CK_34XX | CK_36XX),
 	CLK(NULL,	"des2_ick",	&des2_ick,	CK_34XX | CK_36XX),
 	CLK("omap_hsmmc.1",	"ick",	&mmchs2_ick,	CK_3XXX),
 	CLK("omap_hsmmc.0",	"ick",	&mmchs1_ick,	CK_3XXX),
@@ -3504,10 +3502,16 @@ static const char *enable_init_clks[] = {
 	"omapctrl_ick",
 };
 
+static struct rate_init_clks rate_init_clks[] = {
+	{ .name = "dpll5_ck", .rate = 120000000 },
+	{ .name = "dpll5_m2_ck", .rate = 120000000 },
+};
+
 int __init omap3xxx_clk_init(void)
 {
 	struct omap_clk *c;
-	u32 cpu_clkflg = 0;
+	u32 cpu_clkflg = 0, num_rclks = 0;
+	struct rate_init_clks *rclks = NULL;
 
 	/*
 	 * 3505 must be tested before 3517, since 3517 returns true
@@ -3575,6 +3579,12 @@ int __init omap3xxx_clk_init(void)
 
 	omap2_clk_disable_autoidle_all();
 
+	if (!cpu_is_ti81xx() && (omap_rev() >= OMAP3430_REV_ES2_0)) {
+		rclks = rate_init_clks;
+		num_rclks = ARRAY_SIZE(rate_init_clks);
+	}
+
+	omap2_clk_rate_init_clocks(rclks, num_rclks);
 	omap2_clk_enable_init_clocks(enable_init_clks,
 				     ARRAY_SIZE(enable_init_clks));
 
@@ -3583,13 +3593,6 @@ int __init omap3xxx_clk_init(void)
 		(clk_get_rate(&osc_sys_ck) / 100000) % 10,
 		(clk_get_rate(&core_ck) / 1000000),
 		(clk_get_rate(&arm_fck) / 1000000));
-
-	/*
-	 * Lock DPLL5 -- here only until other device init code can
-	 * handle this
-	 */
-	if (!cpu_is_ti81xx() && (omap_rev() >= OMAP3430_REV_ES2_0))
-		omap3_clk_lock_dpll5();
 
 	/* Avoid sleeping during omap3_core_dpll_m2_set_rate() */
 	sdrc_ick_p = clk_get(NULL, "sdrc_ick");

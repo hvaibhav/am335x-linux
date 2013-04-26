@@ -2056,6 +2056,9 @@ bytes respectively. Such letter suffixes can also be entirely omitted.
 			For example, to override I2C bus2:
 			omap_mux=i2c2_scl.i2c2_scl=0x100,i2c2_sda.i2c2_sda=0x100
 
+	omap_debugss_en	[OMAP] Enable Debug Sub-System module required
+			for JTAG debugging.
+
 	oprofile.timer=	[HW]
 			Use timer interrupt instead of performance counters
 

@@ -284,9 +284,10 @@ DEFINE_STRUCT_CLK(dpll_disp_ck, dpll_core_ck_parents, dpll_ddr_ck_ops);
  * TODO: Add clksel here (sys_clkin, CORE_CLKOUTM6, PER_CLKOUTM2
  * and ALT_CLK1/2)
  */
-DEFINE_CLK_DIVIDER(dpll_disp_m2_ck, "dpll_disp_ck", &dpll_disp_ck, 0x0,
-		   AM33XX_CM_DIV_M2_DPLL_DISP, AM33XX_DPLL_CLKOUT_DIV_SHIFT,
-		   AM33XX_DPLL_CLKOUT_DIV_WIDTH, CLK_DIVIDER_ONE_BASED, NULL);
+DEFINE_CLK_DIVIDER(dpll_disp_m2_ck, "dpll_disp_ck", &dpll_disp_ck,
+		   CLK_SET_RATE_PARENT, AM33XX_CM_DIV_M2_DPLL_DISP,
+		   AM33XX_DPLL_CLKOUT_DIV_SHIFT, AM33XX_DPLL_CLKOUT_DIV_WIDTH,
+		   CLK_DIVIDER_ONE_BASED, NULL);
 
 /* DPLL_PER */
 static struct dpll_data dpll_per_dd = {
@@ -412,14 +413,6 @@ static struct clk smartreflex1_fck;
 DEFINE_STRUCT_CLK_HW_OMAP(smartreflex1_fck, NULL);
 DEFINE_STRUCT_CLK(smartreflex1_fck, dpll_core_ck_parents, clk_ops_null);
 
-static struct clk sha0_fck;
-DEFINE_STRUCT_CLK_HW_OMAP(sha0_fck, NULL);
-DEFINE_STRUCT_CLK(sha0_fck, dpll_core_ck_parents, clk_ops_null);
-
-static struct clk aes0_fck;
-DEFINE_STRUCT_CLK_HW_OMAP(aes0_fck, NULL);
-DEFINE_STRUCT_CLK(aes0_fck, dpll_core_ck_parents, clk_ops_null);
-
 /*
  * Modules clock nodes
  *
@@ -449,9 +442,29 @@ DEFINE_CLK_GATE(cefuse_fck, "sys_clkin_ck", &sys_clkin_ck, 0x0,
  */
 DEFINE_CLK_FIXED_FACTOR(clkdiv32k_ck, "clk_24mhz", &clk_24mhz, 0x0, 1, 732);
 
-DEFINE_CLK_GATE(clkdiv32k_ick, "clkdiv32k_ck", &clkdiv32k_ck, 0x0,
-		AM33XX_CM_PER_CLKDIV32K_CLKCTRL, AM33XX_MODULEMODE_SWCTRL_SHIFT,
-		0x0, NULL);
+static struct clk clkdiv32k_ick;
+
+static const char *clkdiv32k_ick_parent_names[] = {
+	"clkdiv32k_ck",
+};
+
+static const struct clk_ops clkdiv32k_ick_ops = {
+	.enable         = &omap2_dflt_clk_enable,
+	.disable        = &omap2_dflt_clk_disable,
+	.is_enabled     = &omap2_dflt_clk_is_enabled,
+	.init           = &omap2_init_clk_clkdm,
+};
+
+static struct clk_hw_omap clkdiv32k_ick_hw = {
+	.hw	= {
+		.clk	= &clkdiv32k_ick,
+	},
+	.enable_reg	= AM33XX_CM_PER_CLKDIV32K_CLKCTRL,
+	.enable_bit	= AM33XX_MODULEMODE_SWCTRL_SHIFT,
+	.clkdm_name	= "clk_24mhz_clkdm",
+};
+
+DEFINE_STRUCT_CLK(clkdiv32k_ick, clkdiv32k_ick_parent_names, clkdiv32k_ick_ops);
 
 /* "usbotg_fck" is an additional clock and not really a modulemode */
 DEFINE_CLK_GATE(usbotg_fck, "dpll_per_ck", &dpll_per_ck, 0x0,
@@ -727,7 +740,8 @@ static struct clk_hw_omap lcd_gclk_hw = {
 	.clksel_mask	= AM33XX_CLKSEL_0_1_MASK,
 };
 
-DEFINE_STRUCT_CLK(lcd_gclk, lcd_ck_parents, gpio_fck_ops);
+DEFINE_STRUCT_CLK_FLAGS(lcd_gclk, lcd_ck_parents,
+			gpio_fck_ops, CLK_SET_RATE_PARENT);
 
 DEFINE_CLK_FIXED_FACTOR(mmc_clk, "dpll_per_m2_ck", &dpll_per_m2_ck, 0x0, 1, 2);
 
@@ -915,8 +929,6 @@ static struct omap_clk am33xx_clks[] = {
 	CLK(NULL,	"mmu_fck",		&mmu_fck,	CK_AM33XX),
 	CLK(NULL,	"smartreflex0_fck",	&smartreflex0_fck,	CK_AM33XX),
 	CLK(NULL,	"smartreflex1_fck",	&smartreflex1_fck,	CK_AM33XX),
-	CLK(NULL,	"sha0_fck",		&sha0_fck,	CK_AM33XX),
-	CLK(NULL,	"aes0_fck",		&aes0_fck,	CK_AM33XX),
 	CLK(NULL,	"timer1_fck",		&timer1_fck,	CK_AM33XX),
 	CLK(NULL,	"timer2_fck",		&timer2_fck,	CK_AM33XX),
 	CLK(NULL,	"timer3_fck",		&timer3_fck,	CK_AM33XX),
@@ -957,6 +969,7 @@ static struct omap_clk am33xx_clks[] = {
 	CLK(NULL,	"trace_pmd_clk_mux_ck",	&trace_pmd_clk_mux_ck,	CK_AM33XX),
 	CLK(NULL,	"stm_clk_div_ck",	&stm_clk_div_ck,	CK_AM33XX),
 	CLK(NULL,	"trace_clk_div_ck",	&trace_clk_div_ck,	CK_AM33XX),
+	CLK(NULL,	"clkout2_ck",		&clkout2_ck,	CK_AM33XX),
 };
 
 
@@ -967,6 +980,28 @@ static const char *enable_init_clks[] = {
 	"l4hs_gclk",
 	"l4fw_gclk",
 	"l4ls_gclk",
+	"clkout2_ck",	/* Required for external peripherals like, Audio codecs */
+};
+
+static struct reparent_init_clks reparent_clks[] = {
+	/* TRM ERRATA: Timer 3 & 6 default parent (TCLKIN) may not be always
+	 *    physically present, in such a case HWMOD enabling of
+	 *    clock would be failure with default parent. And timer
+	 *    probe thinks clock is already enabled, this leads to
+	 *    crash upon accessing timer 3 & 6 registers in probe.
+	 *    Fix by setting parent of both these timers to master
+	 *    oscillator clock.
+	 */
+	{ .name = "timer3_fck", .parent = "sys_clkin_ck" },
+	{ .name = "timer6_fck", .parent = "sys_clkin_ck" },
+	/*
+	 * The On-Chip 32K RC Osc clock is not an accurate clock-source as per
+	 * the design/spec, so as a result, for example, timer which supposed
+	 * to get expired @60Sec, but will expire somewhere ~@40Sec, which is
+	 * not expected by any use-case, so change WDT1 clock source to PRCM
+	 * 32KHz clock.
+	 */
+	{ .name = "wdt1_fck", .parent = "clkdiv32k_ick" },
 };
 
 int __init am33xx_clk_init(void)
@@ -988,29 +1023,10 @@ int __init am33xx_clk_init(void)
 	}
 
 	omap2_clk_disable_autoidle_all();
-
+	omap2_clk_reparent_init_clocks(reparent_clks, ARRAY_SIZE(reparent_clks));
 	omap2_clk_enable_init_clocks(enable_init_clks,
 				     ARRAY_SIZE(enable_init_clks));
 
-	/* TRM ERRATA: Timer 3 & 6 default parent (TCLKIN) may not be always
-	 *    physically present, in such a case HWMOD enabling of
-	 *    clock would be failure with default parent. And timer
-	 *    probe thinks clock is already enabled, this leads to
-	 *    crash upon accessing timer 3 & 6 registers in probe.
-	 *    Fix by setting parent of both these timers to master
-	 *    oscillator clock.
-	 */
-
-	clk_set_parent(&timer3_fck, &sys_clkin_ck);
-	clk_set_parent(&timer6_fck, &sys_clkin_ck);
-	/*
-	 * The On-Chip 32K RC Osc clock is not an accurate clock-source as per
-	 * the design/spec, so as a result, for example, timer which supposed
-	 * to get expired @60Sec, but will expire somewhere ~@40Sec, which is
-	 * not expected by any use-case, so change WDT1 clock source to PRCM
-	 * 32KHz clock.
-	 */
-	clk_set_parent(&wdt1_fck, &clkdiv32k_ick);
 
 	return 0;
 }

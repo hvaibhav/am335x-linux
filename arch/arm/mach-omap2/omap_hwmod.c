@@ -138,6 +138,9 @@
 #include <linux/spinlock.h>
 #include <linux/slab.h>
 #include <linux/bootmem.h>
+#include <linux/debugfs.h>
+#include <linux/seq_file.h>
+#include <linux/uaccess.h>
 
 #include "clock.h"
 #include "omap_hwmod.h"
@@ -2167,6 +2170,7 @@ static int _enable(struct omap_hwmod *oh)
  */
 static int _idle(struct omap_hwmod *oh)
 {
+	int r, hwsup = 0;
 	pr_debug("omap_hwmod: %s: idling\n", oh->name);
 
 	if (oh->_state != _HWMOD_STATE_ENABLED) {
@@ -2181,6 +2185,23 @@ static int _idle(struct omap_hwmod *oh)
 	if (oh->class->sysc)
 		_idle_sysc(oh);
 	_del_initiator_dep(oh, mpu_oh);
+	if (oh->clkdm && oh->clkdm->flags &&
+	    (oh->clkdm->flags & CLKDM_CAN_ENABLE_AUTO) &&
+	    (oh->prcm.omap4.modulemode == MODULEMODE_HWCTRL)) {
+		/*
+		 * For modules with modulemode configured as "auto" and
+		 * if this clockdomain supports HW_AUTO mode
+		 * the clockdomain must be in SW_WKUP before disabling
+		 * a module completely.
+		 */
+		hwsup = clkdm_in_hwsup(oh->clkdm);
+		r = clkdm_hwmod_enable(oh->clkdm, oh);
+		if (r) {
+			WARN(1, "omap_hwmod: %s: could not enable clockdomain %s: %d\n",
+			     oh->name, oh->clkdm->name, r);
+			return r;
+		}
+	}
 
 	if (soc_ops.disable_module)
 		soc_ops.disable_module(oh);
@@ -2192,8 +2213,11 @@ static int _idle(struct omap_hwmod *oh)
 	 * transition to complete properly.
 	 */
 	_disable_clocks(oh);
-	if (oh->clkdm)
+	if (oh->clkdm) {
+		if (hwsup)
+			clkdm_allow_idle(oh->clkdm);
 		clkdm_hwmod_disable(oh->clkdm, oh);
+	}
 
 	/* Mux pins for device idle if populated */
 	if (oh->mux && oh->mux->pads_dynamic) {
@@ -2217,7 +2241,7 @@ static int _idle(struct omap_hwmod *oh)
  */
 static int _shutdown(struct omap_hwmod *oh)
 {
-	int ret, i;
+	int ret, i, hwsup = 0;
 	u8 prev_state;
 
 	if (oh->_state != _HWMOD_STATE_IDLE &&
@@ -2253,12 +2277,32 @@ static int _shutdown(struct omap_hwmod *oh)
 	/* clocks and deps are already disabled in idle */
 	if (oh->_state == _HWMOD_STATE_ENABLED) {
 		_del_initiator_dep(oh, mpu_oh);
+		if (oh->clkdm && oh->clkdm->flags &&
+		    (oh->clkdm->flags & CLKDM_CAN_ENABLE_AUTO) &&
+		    (oh->prcm.omap4.modulemode == MODULEMODE_HWCTRL)) {
+			/*
+			 * For modules with modulemode configured as "auto" and
+			 * if this clockdomain supports HW_AUTO mode
+			 * the clockdomain must be in SW_WKUP before disabling
+			 * a module completely.
+			 */
+			hwsup = clkdm_in_hwsup(oh->clkdm);
+			ret = clkdm_hwmod_enable(oh->clkdm, oh);
+			if (ret) {
+				WARN(1, "omap_hwmod: %s: could not enable clockdomain %s: %d\n",
+				     oh->name, oh->clkdm->name, ret);
+				return ret;
+			}
+		}
 		/* XXX what about the other system initiators here? dma, dsp */
 		if (soc_ops.disable_module)
 			soc_ops.disable_module(oh);
 		_disable_clocks(oh);
-		if (oh->clkdm)
+		if (oh->clkdm) {
+			if (hwsup)
+				clkdm_allow_idle(oh->clkdm);
 			clkdm_hwmod_disable(oh->clkdm, oh);
+		}
 	}
 	/* XXX Should this code also force-disable the optional clocks? */
 
@@ -2273,6 +2317,65 @@ static int _shutdown(struct omap_hwmod *oh)
 
 	return 0;
 }
+
+#if defined(CONFIG_DEBUG_FS)
+
+static struct dentry *omap_hwmod_dbg_dir;
+
+/* internal hwmod states */
+static const char *hwmod_states[_HWMOD_STATE_COUNT] = {
+	[_HWMOD_STATE_UNKNOWN]          = "unknown",
+	[_HWMOD_STATE_REGISTERED]       = "registered",
+	[_HWMOD_STATE_CLKS_INITED]      = "clks_inited",
+	[_HWMOD_STATE_INITIALIZED]      = "initialized",
+	[_HWMOD_STATE_ENABLED]          = "enabled",
+	[_HWMOD_STATE_IDLE]             = "idle",
+	[_HWMOD_STATE_DISABLED]         = "disabled",
+};
+
+static const char *_state_str(u8 state)
+{
+	if (state >= _HWMOD_STATE_COUNT)
+		return "invalid_state";
+	return hwmod_states[state];
+}
+
+static int omap_hwmod_dbg_show(struct seq_file *s, void *unused)
+{
+	struct omap_hwmod *oh;
+
+	list_for_each_entry(oh, &omap_hwmod_list, node) {
+		seq_printf(s, "name: %16s, state %d/%s\n", oh->name,
+			oh->_state, _state_str(oh->_state));
+	}
+
+	return 0;
+}
+
+static int omap_hwmod_dbg_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, omap_hwmod_dbg_show, inode->i_private);
+}
+
+static const struct file_operations omap_hwmod_dbg_fops = {
+	.open		= omap_hwmod_dbg_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static void __init omap_hwmod_dbg_init(void)
+{
+	omap_hwmod_dbg_dir = debugfs_create_dir("omap_hwmod", NULL);
+	if (!omap_hwmod_dbg_dir)
+		return;
+
+	(void)debugfs_create_file("state", S_IRUGO, omap_hwmod_dbg_dir,
+					NULL, &omap_hwmod_dbg_fops);
+}
+
+#endif	/* CONFIG_DEBUG_FS */
+
 
 /**
  * _init_mpu_rt_base - populate the virtual address for a hwmod
@@ -2472,6 +2575,12 @@ static void __init _setup_postsetup(struct omap_hwmod *oh)
 		oh->_int_flags |= _HWMOD_SKIP_ENABLE;
 		postsetup_state = _HWMOD_STATE_ENABLED;
 	}
+
+	/*
+	 * Process HWMOD_NO_ACCESS: module should be disabled and not accessible
+	 */
+	if (oh->flags & HWMOD_ACCESS_DISABLED)
+		postsetup_state = _HWMOD_STATE_DISABLED;
 
 	if (postsetup_state == _HWMOD_STATE_IDLE)
 		_idle(oh);
@@ -3082,6 +3191,11 @@ struct omap_hwmod *omap_hwmod_lookup(const char *name)
 		return NULL;
 
 	oh = _lookup(name);
+	/* check access flag */
+	if (oh && oh->flags & HWMOD_ACCESS_DISABLED) {
+		pr_warning("omap_hwmod: %s: access denied\n", oh->name);
+		oh = NULL;
+	}
 
 	return oh;
 }
@@ -3219,6 +3333,10 @@ static int __init omap_hwmod_setup_all(void)
 
 	omap_hwmod_for_each(_init, NULL);
 	omap_hwmod_for_each(_setup, NULL);
+
+#ifdef CONFIG_DEBUG_FS
+	omap_hwmod_dbg_init();
+#endif
 
 	return 0;
 }
@@ -3372,6 +3490,40 @@ int omap_hwmod_reset(struct omap_hwmod *oh)
 	spin_unlock_irqrestore(&oh->_lock, flags);
 
 	return r;
+}
+
+
+/**
+ * omap_hwmod_register_flags - set/clear hwmod flags
+ * @ohs: pointer to an array of omap_hwmods to register new flags
+ * @set_flags: flags which have to be set
+ * @clear_flags: flags which have to be cleared
+ *
+ * Intended to be called early in boot before the clock framework is
+ * initialized.  If @ohs is not null, will set/clear flags.
+ * Allowed to be called only in REGISTERED state.
+ * Returns 0.
+ */
+int __init omap_hwmod_register_flags(struct omap_hwmod **ohs,
+					u32 set_flags, u32 clear_flags)
+{
+	int i = 0;
+
+	if (!ohs)
+		return 0;
+
+	/* scan through list of modules */
+	do {
+		/* allow to be called only in registered state */
+		if (ohs[i]->_state != _HWMOD_STATE_REGISTERED) {
+			i++;
+			continue;
+		}
+
+		ohs[i]->flags = (ohs[i]->flags & ~clear_flags) | set_flags;
+	} while (ohs[++i]);
+
+	return 0;
 }
 
 /*
@@ -3588,7 +3740,9 @@ struct powerdomain *omap_hwmod_get_pwrdm(struct omap_hwmod *oh)
 	if (oh->clkdm)
 		return oh->clkdm->pwrdm.ptr;
 
-	if (oh->_clk) {
+	if (oh->clkdm) {
+		return oh->clkdm->pwrdm.ptr;
+	} else if (oh->_clk) {
 		c = oh->_clk;
 	} else {
 		oi = _find_mpu_rt_port(oh);

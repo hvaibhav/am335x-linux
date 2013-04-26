@@ -563,6 +563,41 @@ void omap2_clk_enable_init_clocks(const char **clk_names, u8 num_clocks)
 	}
 }
 
+void omap2_clk_rate_init_clocks(struct rate_init_clks *rclks, u8 num)
+{
+	struct clk *clk;
+	int i;
+
+	for (i = 0; i < num; i++, rclks++) {
+		clk = clk_get(NULL, rclks->name);
+		if (!IS_ERR(clk)) {
+			if (clk_set_rate(clk, rclks->rate))
+				pr_err("%s: failed to set inital rate for %s\n",
+				       __func__, rclks->name);
+		} else
+			pr_err("%s: failed to find clock %s\n", __func__,
+			       rclks->name);
+	}
+}
+
+void omap2_clk_reparent_init_clocks(struct reparent_init_clks *rclks, u8 num)
+{
+	struct clk *clk, *parent;
+	int i;
+
+	for (i = 0; i < num; i++, rclks++) {
+		clk = clk_get(NULL, rclks->name);
+		parent = clk_get(NULL, rclks->parent);
+		if (!IS_ERR(clk) && !IS_ERR(parent)) {
+			if (clk_set_parent(clk, parent))
+				pr_err("%s: failed to reparent %s\n", __func__,
+				       rclks->name);
+		} else
+			pr_err("%s: failed to find clocks %s and %s\n",
+			       __func__, rclks->name, rclks->parent);
+	}
+}
+
 const struct clk_hw_omap_ops clkhwops_wait = {
 	.find_idlest	= omap2_clk_dflt_find_idlest,
 	.find_companion	= omap2_clk_dflt_find_companion,
