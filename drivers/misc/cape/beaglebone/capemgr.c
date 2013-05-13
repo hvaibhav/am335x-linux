@@ -1589,7 +1589,7 @@ static int bone_capemgr_probe(struct platform_device *pdev)
 	eeprom_node = NULL;
 	if (bbrd->client == NULL) {
 		dev_err(&pdev->dev, "Failed to find baseboard i2c client\n");
-		ret = -ENODEV;
+		ret = -EPROBE_DEFER;
 		goto err_exit;
 	}
 
