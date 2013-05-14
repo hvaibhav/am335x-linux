@@ -590,6 +590,7 @@ void __init am33xx_init_early(void)
 void __init am33xx_init_late(void)
 {
 	omap_mux_late_init();
+	am33xx_init_opp_from_efuse();
 	omap2_common_pm_late_init();
 	am33xx_pm_init();
 }

@@ -77,6 +77,15 @@ static inline int am33xx_pm_init(void)
 }
 #endif
 
+#if defined(CONFIG_SOC_AM33XX) && defined(CONFIG_CPU_FREQ)
+int am33xx_init_opp_from_efuse(void);
+#else
+static inline int am33xx_init_opp_from_efuse(void)
+{
+	return 0;
+}
+#endif
+
 #ifdef CONFIG_OMAP_MUX
 int omap_mux_late_init(void);
 #else
