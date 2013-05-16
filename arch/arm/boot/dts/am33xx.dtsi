@@ -34,10 +34,30 @@
 			 */
 			operating-points = <
 				/* kHz    uV */
-				720000  1285000
-				600000  1225000
-				500000  1125000
-				275000  1125000
+				/*
+				 * eFuse parsing is done inside the kernel
+				 * in order to set the right OPP for the
+				 * underneath device - Currently applicable
+				 * only for PG2.1 devices.
+				 *
+				 * In case of PG1.0 and PG2.0, where eFuse's
+				 * are not blown, we stick to PG1.0 static
+				 * OPPs.
+				 *
+				 * Total available OPPs (across devices):
+				 * ES/PG 1.0:
+				 *	- 275Mhz@1.1v
+				 *	- 500Mhz@1.1v
+				 *	- 600Mhz@1.2v
+				 *	- 720Mhz@1.26v
+				 * ES/PG 2.x:
+				 *	- 300Mhz@0.95v
+				 *	- 300Mhz@1.1v
+				 *	- 600Mhz@1.1v
+				 *	- 720Mhz@1.2v
+				 *	- 800Mhz@1.26v
+				 *	- 1Ghz@1.325v
+				 */
 			>;
 			voltage-tolerance = <2>; /* 2 percentage */
 			clocks = <&dpll_mpu>;
